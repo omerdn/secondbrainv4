@@ -1,0 +1,100 @@
+/**
+ * Turkish catalog: the default language and the source of truth for keys. Every other catalog
+ * must have exactly the same shape (`Catalog`, checked by TypeScript and `test/i18n.test.ts`).
+ * Plural forms use i18next suffixes (`_one`, `_other`) with `{{count}}`.
+ */
+export const tr = {
+  common: {
+    loading: "Yükleniyor",
+    comingSoon: { title: "Yakında", description: "Bu bölüm sonraki sürümlerde gelecek." },
+    notFound: { title: "Sayfa bulunamadı", home: "Ana sayfaya dön" },
+  },
+  nav: {
+    today: "Bugün",
+    tasks: "Görevler",
+    routines: "Rutinler",
+    goals: "Hedefler",
+    trackers: "Takipler",
+    notebooks: "Defterler",
+    calendar: "Takvim",
+    settings: "Ayarlar",
+    more: "Daha fazla",
+  },
+  settings: {
+    language: "Dil",
+    languages: { tr: "Türkçe", en: "English" },
+    languageFailed: "Dil değiştirilemedi. Tekrar dene.",
+  },
+  auth: {
+    email: "E-posta",
+    password: "Şifre",
+    newPassword: "Yeni şifre",
+    confirmPassword: "Şifre (tekrar)",
+    displayName: "Adın",
+    passwordHint: "En az 8 karakter.",
+    login: {
+      title: "Giriş yap",
+      submit: "Giriş yap",
+      forgot: "Şifremi unuttum",
+      noAccount: "Hesabın yok mu?",
+      toRegister: "Kayıt ol",
+    },
+    register: {
+      title: "Hesap oluştur",
+      submit: "Kayıt ol",
+      haveAccount: "Zaten hesabın var mı?",
+      toLogin: "Giriş yap",
+    },
+    forgot: {
+      title: "Şifremi unuttum",
+      intro: "Hesabının e-posta adresini yaz, şifre sıfırlama bağlantısı gönderelim.",
+      submit: "Bağlantı gönder",
+      sent: "Bu adrese kayıtlı bir hesap varsa sıfırlama bağlantısı gönderdik. Gelen kutunu kontrol et.",
+      back: "Girişe dön",
+    },
+    reset: {
+      title: "Yeni şifre belirle",
+      submit: "Şifreyi değiştir",
+      done: "Şifren değişti. Tüm cihazlarda oturum kapatıldı, yeni şifrenle giriş yap.",
+      missingToken: "Bağlantı eksik veya bozuk. Yeni bir sıfırlama bağlantısı iste.",
+      invalidToken: "Bağlantının süresi dolmuş veya daha önce kullanılmış. Yeni bir bağlantı iste.",
+      requestNew: "Yeni bağlantı iste",
+    },
+    providers: {
+      or: "veya",
+      google: "Google ile devam et",
+      apple: "Apple ile devam et",
+      failed: {
+        google: "Google ile giriş tamamlanamadı. Tekrar dene.",
+        apple: "Apple ile giriş tamamlanamadı. Tekrar dene.",
+      },
+    },
+    session: {
+      unavailable: "Sunucuya ulaşılamadı.",
+      retry: "Tekrar dene",
+      signOut: "Çıkış yap",
+    },
+    validation: {
+      required: "Bu alan zorunlu.",
+      email: "Geçerli bir e-posta adresi yaz.",
+      passwordShort: "Şifre en az 8 karakter olmalı.",
+      passwordLong: "Şifre en fazla 128 karakter olabilir.",
+      tooLong: "Çok uzun.",
+      mismatch: "Şifreler aynı değil.",
+      invalid: "Geçersiz değer.",
+    },
+    errors: {
+      badCredentials: "E-posta veya şifre hatalı.",
+      emailTaken: "Bu e-posta adresiyle zaten bir hesap var.",
+      rateLimited: "Çok fazla deneme yaptın. Biraz sonra tekrar dene.",
+      rateLimitedSeconds_one: "Çok fazla deneme yaptın. {{count}} saniye sonra tekrar dene.",
+      rateLimitedSeconds_other: "Çok fazla deneme yaptın. {{count}} saniye sonra tekrar dene.",
+      network: "Sunucuya ulaşılamadı. Bağlantını kontrol et.",
+      generic: "Bir şeyler ters gitti. Tekrar dene.",
+    },
+  },
+} as const;
+
+/** Same keys as {@link tr}, any string values. */
+type Shape<T> = { readonly [K in keyof T]: T[K] extends string ? string : Shape<T[K]> };
+export type Catalog = Shape<typeof tr>;

@@ -15,7 +15,7 @@ describe("routes", () => {
 
   it("renders the not-found screen for unknown paths", async () => {
     await renderRouter({ "+not-found": NotFound }, { initialUrl: "/nope" });
-    expect(await screen.findByText("Page not found")).toBeOnTheScreen();
+    expect(await screen.findByText("Sayfa bulunamadı")).toBeOnTheScreen();
   });
 });
 

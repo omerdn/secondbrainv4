@@ -1,5 +1,6 @@
 /** Public surface of the auth feature (T0.4.5); other features import only from here. */
 export { ForgotPasswordScreen } from "./ForgotPasswordScreen";
+export { LanguageSync } from "./LanguageSync";
 export { LoginScreen } from "./LoginScreen";
 export { RegisterScreen } from "./RegisterScreen";
 export { ResetPasswordScreen } from "./ResetPasswordScreen";

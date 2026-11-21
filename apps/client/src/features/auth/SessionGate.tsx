@@ -2,9 +2,9 @@ import { Button, Text } from "@secondbrain/ui";
 import { Redirect } from "expo-router";
 import type { ReactNode } from "react";
 import { ActivityIndicator, View } from "react-native";
+import { useTranslation } from "react-i18next";
 
 import { useSession } from "./session";
-import { t } from "./strings";
 
 function Pending({ children }: { children?: ReactNode }) {
   return (
@@ -25,19 +25,20 @@ export function SessionGate({
   require: "signedIn" | "signedOut";
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   const { state, retry } = useSession();
   switch (state.status) {
     case "loading":
       return (
         <Pending>
-          <ActivityIndicator accessibilityLabel="Yükleniyor" />
+          <ActivityIndicator accessibilityLabel={t("common.loading")} />
         </Pending>
       );
     case "unavailable":
       return (
         <Pending>
-          <Text tone="muted">{t.session.unavailable}</Text>
-          <Button title={t.session.retry} variant="secondary" onPress={retry} />
+          <Text tone="muted">{t("auth.session.unavailable")}</Text>
+          <Button title={t("auth.session.retry")} variant="secondary" onPress={retry} />
         </Pending>
       );
     case "signedIn":

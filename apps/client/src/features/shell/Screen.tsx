@@ -1,7 +1,10 @@
 import { EmptyState, layout, Text } from "@secondbrain/ui";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import type { Section } from "./nav";
 
 /** Page frame inside the shell: title and scrollable content, width-limited on wide screens. */
 export function Screen({ title, children }: { title: string; children: ReactNode }) {
@@ -23,10 +26,14 @@ export function Screen({ title, children }: { title: string; children: ReactNode
 }
 
 /** Stand-in for a section that later tasks fill in. */
-export function PlaceholderScreen({ title }: { title: string }) {
+export function PlaceholderScreen({ section }: { section: Section }) {
+  const { t } = useTranslation();
   return (
-    <Screen title={title}>
-      <EmptyState title="Yakında" description="Bu bölüm sonraki sürümlerde gelecek." />
+    <Screen title={t(`nav.${section}`)}>
+      <EmptyState
+        title={t("common.comingSoon.title")}
+        description={t("common.comingSoon.description")}
+      />
     </Screen>
   );
 }

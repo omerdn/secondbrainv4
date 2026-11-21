@@ -1,12 +1,16 @@
 import type Ionicons from "@expo/vector-icons/Ionicons";
 import type { ComponentProps } from "react";
 
+import type { Catalog } from "@/lib/i18n/locales/tr";
+
 export type IconName = ComponentProps<typeof Ionicons>["name"];
+
+/** Section key; its label is `nav.<key>` in the catalogs. */
+export type Section = keyof Catalog["nav"];
 
 /** One top-level destination of the app (PRD §6). */
 export interface Destination {
-  key: string;
-  label: string;
+  key: Section;
   href: string;
   icon: IconName;
   /** Has its own bottom tab on phones; the others are under "More". */
@@ -14,28 +18,21 @@ export interface Destination {
 }
 
 /**
- * Top-level sections in display order. Labels are Turkish until i18n (T0.4.7). Modules (PRD §12)
+ * Top-level sections in display order; labels come from `nav.<key>` (T0.4.7). Modules (PRD §12)
  * will register more destinations through the module registry (ARCHITECTURE §13).
  */
 export const destinations: readonly Destination[] = [
-  { key: "today", label: "Bugün", href: "/", icon: "today-outline", tab: true },
-  { key: "tasks", label: "Görevler", href: "/tasks", icon: "checkbox-outline", tab: true },
-  { key: "routines", label: "Rutinler", href: "/routines", icon: "repeat-outline", tab: true },
-  { key: "goals", label: "Hedefler", href: "/goals", icon: "flag-outline", tab: false },
-  {
-    key: "trackers",
-    label: "Takipler",
-    href: "/trackers",
-    icon: "stats-chart-outline",
-    tab: false,
-  },
-  { key: "notebooks", label: "Defterler", href: "/notebooks", icon: "book-outline", tab: true },
-  { key: "calendar", label: "Takvim", href: "/calendar", icon: "calendar-outline", tab: false },
+  { key: "today", href: "/", icon: "today-outline", tab: true },
+  { key: "tasks", href: "/tasks", icon: "checkbox-outline", tab: true },
+  { key: "routines", href: "/routines", icon: "repeat-outline", tab: true },
+  { key: "goals", href: "/goals", icon: "flag-outline", tab: false },
+  { key: "trackers", href: "/trackers", icon: "stats-chart-outline", tab: false },
+  { key: "notebooks", href: "/notebooks", icon: "book-outline", tab: true },
+  { key: "calendar", href: "/calendar", icon: "calendar-outline", tab: false },
 ];
 
 export const settings: Destination = {
   key: "settings",
-  label: "Ayarlar",
   href: "/settings",
   icon: "settings-outline",
   tab: false,
@@ -43,7 +40,6 @@ export const settings: Destination = {
 
 export const more: Destination = {
   key: "more",
-  label: "Daha fazla",
   href: "/more",
   icon: "ellipsis-horizontal",
   tab: true,
@@ -62,7 +58,7 @@ export function isActive(pathname: string, href: string): boolean {
 }
 
 /** The bottom tab to highlight: a destination under "More" highlights "More". */
-export function activeTab(pathname: string): string | null {
+export function activeTab(pathname: string): Section | null {
   const direct = tabs.find((tab) => tab.key !== "more" && isActive(pathname, tab.href));
   if (direct !== undefined) return direct.key;
   return [more, ...moreItems].some((item) => isActive(pathname, item.href)) ? "more" : null;

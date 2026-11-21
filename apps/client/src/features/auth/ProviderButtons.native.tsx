@@ -6,12 +6,12 @@ import Constants from "expo-constants";
 import * as WebBrowser from "expo-web-browser";
 import { useEffect, useState } from "react";
 import { Platform, View } from "react-native";
+import { useTranslation } from "react-i18next";
 
 import { platformLabel } from "@/lib/app-info";
 
 import { OrDivider, type ProviderButtonsProps } from "./provider-shared";
 import { googleRedirectUri, providerConfig } from "./providers";
-import { t } from "./strings";
 import { fromApiError } from "./validation";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -65,6 +65,7 @@ function GoogleButton({
   onError,
   disabled,
 }: ButtonProps & { clientId: string }) {
+  const { t } = useTranslation();
   const api = useApi();
   const [busy, setBusy] = useState(false);
   const redirectUri = googleRedirectUri(clientId);
@@ -85,11 +86,11 @@ function GoogleButton({
     try {
       const result = await promptAsync();
       if (result.type !== "success") {
-        if (result.type === "error") onError(t.providers.failed.google);
+        if (result.type === "error") onError(t("auth.providers.failed.google"));
         return;
       }
       const code = result.params.code;
-      if (code === undefined) return onError(t.providers.failed.google);
+      if (code === undefined) return onError(t("auth.providers.failed.google"));
       await onSignedIn(
         await api.auth.googleNative({
           code,
@@ -100,7 +101,7 @@ function GoogleButton({
         }),
       );
     } catch (error) {
-      onError(fromApiError(error, "other").form ?? t.providers.failed.google);
+      onError(fromApiError(error, "other").form ?? t("auth.providers.failed.google"));
     } finally {
       setBusy(false);
     }
@@ -108,7 +109,7 @@ function GoogleButton({
 
   return (
     <Button
-      title={t.providers.google}
+      title={t("auth.providers.google")}
       variant="secondary"
       loading={busy}
       disabled={disabled === true || request === null}
@@ -119,6 +120,7 @@ function GoogleButton({
 
 /** Apple's own button, as its Human Interface Guidelines require on iOS. */
 function AppleButton({ onSignedIn, onError, disabled }: ButtonProps) {
+  const { t } = useTranslation();
   const api = useApi();
   const scheme = useScheme();
   const [busy, setBusy] = useState(false);
@@ -134,7 +136,7 @@ function AppleButton({ onSignedIn, onError, disabled }: ButtonProps) {
           AppleAuthentication.AppleAuthenticationScope.EMAIL,
         ],
       });
-      if (credential.authorizationCode === null) return onError(t.providers.failed.apple);
+      if (credential.authorizationCode === null) return onError(t("auth.providers.failed.apple"));
       await onSignedIn(
         await api.auth.appleNative({
           code: credential.authorizationCode,
@@ -146,7 +148,7 @@ function AppleButton({ onSignedIn, onError, disabled }: ButtonProps) {
       );
     } catch (error) {
       if ((error as { code?: string }).code === "ERR_REQUEST_CANCELED") return;
-      onError(fromApiError(error, "other").form ?? t.providers.failed.apple);
+      onError(fromApiError(error, "other").form ?? t("auth.providers.failed.apple"));
     } finally {
       setBusy(false);
     }

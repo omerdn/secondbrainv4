@@ -1,0 +1,94 @@
+import type { Catalog } from "./tr";
+
+/** English catalog: the second language (T0.4.7). Shape is checked against Turkish. */
+export const en: Catalog = {
+  common: {
+    loading: "Loading",
+    comingSoon: { title: "Coming soon", description: "This section arrives in a later version." },
+    notFound: { title: "Page not found", home: "Go home" },
+  },
+  nav: {
+    today: "Today",
+    tasks: "Tasks",
+    routines: "Routines",
+    goals: "Goals",
+    trackers: "Trackers",
+    notebooks: "Notebooks",
+    calendar: "Calendar",
+    settings: "Settings",
+    more: "More",
+  },
+  settings: {
+    language: "Language",
+    languages: { tr: "Türkçe", en: "English" },
+    languageFailed: "Could not change the language. Try again.",
+  },
+  auth: {
+    email: "Email",
+    password: "Password",
+    newPassword: "New password",
+    confirmPassword: "Confirm password",
+    displayName: "Your name",
+    passwordHint: "At least 8 characters.",
+    login: {
+      title: "Sign in",
+      submit: "Sign in",
+      forgot: "Forgot password",
+      noAccount: "No account yet?",
+      toRegister: "Sign up",
+    },
+    register: {
+      title: "Create account",
+      submit: "Sign up",
+      haveAccount: "Already have an account?",
+      toLogin: "Sign in",
+    },
+    forgot: {
+      title: "Forgot password",
+      intro: "Enter your account's email address and we'll send you a reset link.",
+      submit: "Send link",
+      sent: "If an account exists for this address, we've sent a reset link. Check your inbox.",
+      back: "Back to sign in",
+    },
+    reset: {
+      title: "Set a new password",
+      submit: "Change password",
+      done: "Your password was changed and you were signed out everywhere. Sign in with the new password.",
+      missingToken: "The link is incomplete or broken. Request a new reset link.",
+      invalidToken: "The link has expired or was already used. Request a new one.",
+      requestNew: "Request a new link",
+    },
+    providers: {
+      or: "or",
+      google: "Continue with Google",
+      apple: "Continue with Apple",
+      failed: {
+        google: "Google sign-in did not complete. Try again.",
+        apple: "Apple sign-in did not complete. Try again.",
+      },
+    },
+    session: {
+      unavailable: "Could not reach the server.",
+      retry: "Try again",
+      signOut: "Sign out",
+    },
+    validation: {
+      required: "This field is required.",
+      email: "Enter a valid email address.",
+      passwordShort: "The password must be at least 8 characters.",
+      passwordLong: "The password can be at most 128 characters.",
+      tooLong: "Too long.",
+      mismatch: "The passwords do not match.",
+      invalid: "Invalid value.",
+    },
+    errors: {
+      badCredentials: "Wrong email or password.",
+      emailTaken: "An account with this email already exists.",
+      rateLimited: "Too many attempts. Try again in a moment.",
+      rateLimitedSeconds_one: "Too many attempts. Try again in {{count}} second.",
+      rateLimitedSeconds_other: "Too many attempts. Try again in {{count}} seconds.",
+      network: "Could not reach the server. Check your connection.",
+      generic: "Something went wrong. Try again.",
+    },
+  },
+};

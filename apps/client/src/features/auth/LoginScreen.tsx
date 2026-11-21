@@ -5,6 +5,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { View } from "react-native";
+import { useTranslation } from "react-i18next";
 
 import { platformLabel } from "@/lib/app-info";
 
@@ -12,11 +13,11 @@ import { AuthScaffold, FormMessage } from "./AuthScaffold";
 import { ProviderButtons } from "./ProviderButtons";
 import { providerFromError } from "./providers";
 import { useSession } from "./session";
-import { t } from "./strings";
 import { type FieldErrors, fromApiError, hasErrors, validateLogin } from "./validation";
 
 /** E-mail + password sign-in, provider buttons, links to register and password reset (HS1). */
 export function LoginScreen() {
+  const { t } = useTranslation();
   const api = useApi();
   const session = useSession();
   const router = useRouter();
@@ -27,7 +28,7 @@ export function LoginScreen() {
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(
-    provider === null ? null : t.providers.failed[provider],
+    provider === null ? null : t(`auth.providers.failed.${provider}`),
   );
   const login = useMutation({ mutationFn: (body: LoginRequest) => api.auth.login(body) });
 
@@ -52,10 +53,10 @@ export function LoginScreen() {
   };
 
   return (
-    <AuthScaffold title={t.login.title}>
-      <FormMessage message={params.reset === "done" ? t.reset.done : null} tone="success" />
+    <AuthScaffold title={t("auth.login.title")}>
+      <FormMessage message={params.reset === "done" ? t("auth.reset.done") : null} tone="success" />
       <Input
-        label={t.email}
+        label={t("auth.email")}
         value={email}
         onChangeText={setEmail}
         error={errors.email}
@@ -66,7 +67,7 @@ export function LoginScreen() {
         inputMode="email"
       />
       <Input
-        label={t.password}
+        label={t("auth.password")}
         value={password}
         onChangeText={setPassword}
         error={errors.password}
@@ -76,9 +77,13 @@ export function LoginScreen() {
         onSubmitEditing={() => void submit()}
       />
       <FormMessage message={formError} />
-      <Button title={t.login.submit} loading={login.isPending} onPress={() => void submit()} />
       <Button
-        title={t.login.forgot}
+        title={t("auth.login.submit")}
+        loading={login.isPending}
+        onPress={() => void submit()}
+      />
+      <Button
+        title={t("auth.login.forgot")}
         variant="ghost"
         onPress={() => router.push("/forgot-password")}
       />
@@ -89,7 +94,7 @@ export function LoginScreen() {
       />
       <View className="items-center">
         <Button
-          title={`${t.login.noAccount} ${t.login.toRegister}`}
+          title={`${t("auth.login.noAccount")} ${t("auth.login.toRegister")}`}
           variant="ghost"
           onPress={() => router.push("/register")}
         />

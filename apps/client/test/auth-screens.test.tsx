@@ -1,6 +1,6 @@
 import { act, fireEvent, screen } from "expo-router/testing-library";
 
-import { t } from "@/features/auth/strings";
+import { i18n } from "@/lib/i18n";
 
 import {
   apiError,
@@ -13,6 +13,8 @@ import {
 } from "./support/api";
 import { renderApp } from "./support/router";
 
+const tr = i18n.getFixedT("tr");
+
 beforeEach(resetCredentials);
 
 const press = (name: string) => act(() => fireEvent.press(screen.getByRole("button", { name })));
@@ -22,7 +24,7 @@ const type = (label: string, text: string) =>
 describe("session gate", () => {
   it("sends visitors from / to the login screen", async () => {
     await renderApp(fakeServer({}).api, "/");
-    expect(await screen.findByRole("header", { name: t.login.title })).toBeOnTheScreen();
+    expect(await screen.findByRole("header", { name: tr("auth.login.title") })).toBeOnTheScreen();
     expect(screen).toHavePathname("/login");
   });
 
@@ -36,8 +38,8 @@ describe("session gate", () => {
   it("blocks with a retry when the server is unreachable", async () => {
     const { api } = fakeServer({ "GET /me": () => apiError(500, "internal") });
     await renderApp(api, "/", { tokenStore: memoryTokenStore("t") });
-    expect(await screen.findByText(t.session.unavailable)).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: t.session.retry })).toBeOnTheScreen();
+    expect(await screen.findByText(tr("auth.session.unavailable"))).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: tr("auth.session.retry") })).toBeOnTheScreen();
   });
 });
 
@@ -45,9 +47,9 @@ describe("login", () => {
   it("validates before calling the server", async () => {
     const { api, calls } = fakeServer({});
     await renderApp(api, "/login");
-    await screen.findByRole("header", { name: t.login.title });
-    await press(t.login.submit);
-    expect(screen.getAllByText(t.validation.required)).toHaveLength(2);
+    await screen.findByRole("header", { name: tr("auth.login.title") });
+    await press(tr("auth.login.submit"));
+    expect(screen.getAllByText(tr("auth.validation.required"))).toHaveLength(2);
     expect(calls).toEqual([]);
   });
 
@@ -61,10 +63,10 @@ describe("login", () => {
       },
     });
     await renderApp(api, "/login", { tokenStore: store });
-    await screen.findByRole("header", { name: t.login.title });
-    await type(t.email, " ali@example.com ");
-    await type(t.password, "correct horse");
-    await press(t.login.submit);
+    await screen.findByRole("header", { name: tr("auth.login.title") });
+    await type(tr("auth.email"), " ali@example.com ");
+    await type(tr("auth.password"), "correct horse");
+    await press(tr("auth.login.submit"));
     expect(await screen.findByRole("header", { name: "Bugün" })).toBeOnTheScreen();
     expect(screen).toHavePathname("/");
     expect(logins[0]?.body).toEqual({
@@ -85,29 +87,33 @@ describe("login", () => {
           : apiError(401, "unauthenticated"),
     });
     await renderApp(api, "/login");
-    await screen.findByRole("header", { name: t.login.title });
-    await type(t.email, "ali@example.com");
-    await type(t.password, "wrong");
-    await press(t.login.submit);
-    expect(await screen.findByText(t.errors.badCredentials)).toBeOnTheScreen();
+    await screen.findByRole("header", { name: tr("auth.login.title") });
+    await type(tr("auth.email"), "ali@example.com");
+    await type(tr("auth.password"), "wrong");
+    await press(tr("auth.login.submit"));
+    expect(await screen.findByText(tr("auth.errors.badCredentials"))).toBeOnTheScreen();
     limited = true;
-    await press(t.login.submit);
-    expect(await screen.findByText(t.errors.rateLimited(12))).toBeOnTheScreen();
+    await press(tr("auth.login.submit"));
+    expect(
+      await screen.findByText(tr("auth.errors.rateLimitedSeconds", { count: 12 })),
+    ).toBeOnTheScreen();
   });
 
   it("explains a failed provider sign-in from the redirect", async () => {
     await renderApp(fakeServer({}).api, "/login?error=google");
-    expect(await screen.findByText(t.providers.failed.google)).toBeOnTheScreen();
+    expect(await screen.findByText(tr("auth.providers.failed.google"))).toBeOnTheScreen();
   });
 
   it("links to register and forgot password", async () => {
     await renderApp(fakeServer({}).api, "/login");
-    await screen.findByRole("header", { name: t.login.title });
-    await press(`${t.login.noAccount} ${t.login.toRegister}`);
-    expect(await screen.findByRole("header", { name: t.register.title })).toBeOnTheScreen();
-    await press(`${t.register.haveAccount} ${t.register.toLogin}`);
-    await screen.findByRole("header", { name: t.login.title });
-    await press(t.login.forgot);
+    await screen.findByRole("header", { name: tr("auth.login.title") });
+    await press(`${tr("auth.login.noAccount")} ${tr("auth.login.toRegister")}`);
+    expect(
+      await screen.findByRole("header", { name: tr("auth.register.title") }),
+    ).toBeOnTheScreen();
+    await press(`${tr("auth.register.haveAccount")} ${tr("auth.register.toLogin")}`);
+    await screen.findByRole("header", { name: tr("auth.login.title") });
+    await press(tr("auth.login.forgot"));
     expect(screen).toHavePathname("/forgot-password");
   });
 });
@@ -118,11 +124,11 @@ describe("register", () => {
       "POST /auth/register": () => json(201, { user, token: "tok", expires_at: "x" }),
     });
     await renderApp(api, "/register");
-    await screen.findByRole("header", { name: t.register.title });
-    await type(t.displayName, " Ali ");
-    await type(t.email, "ali@example.com");
-    await type(t.password, "correct horse");
-    await press(t.register.submit);
+    await screen.findByRole("header", { name: tr("auth.register.title") });
+    await type(tr("auth.displayName"), " Ali ");
+    await type(tr("auth.email"), "ali@example.com");
+    await type(tr("auth.password"), "correct horse");
+    await press(tr("auth.register.submit"));
     expect(await screen.findByRole("header", { name: "Bugün" })).toBeOnTheScreen();
     expect(calls[0]?.body).toMatchObject({ display_name: "Ali", client: "native" });
   });
@@ -138,16 +144,16 @@ describe("register", () => {
             ]),
     });
     await renderApp(api, "/register");
-    await screen.findByRole("header", { name: t.register.title });
-    await type(t.displayName, "Ali");
-    await type(t.email, "ali@example.com");
-    await type(t.password, "correct horse");
-    await press(t.register.submit);
-    expect(await screen.findByText(t.errors.emailTaken)).toBeOnTheScreen();
+    await screen.findByRole("header", { name: tr("auth.register.title") });
+    await type(tr("auth.displayName"), "Ali");
+    await type(tr("auth.email"), "ali@example.com");
+    await type(tr("auth.password"), "correct horse");
+    await press(tr("auth.register.submit"));
+    expect(await screen.findByText(tr("auth.errors.emailTaken"))).toBeOnTheScreen();
     conflict = false;
-    await press(t.register.submit);
-    expect(await screen.findByText(t.validation.passwordShort)).toBeOnTheScreen();
-    expect(screen.queryByText(t.errors.emailTaken)).toBeNull();
+    await press(tr("auth.register.submit"));
+    expect(await screen.findByText(tr("auth.validation.passwordShort"))).toBeOnTheScreen();
+    expect(screen.queryByText(tr("auth.errors.emailTaken"))).toBeNull();
   });
 });
 
@@ -157,10 +163,10 @@ describe("forgot password", () => {
       "POST /auth/password/forgot": () => new Response(null, { status: 202 }),
     });
     await renderApp(api, "/forgot-password");
-    await screen.findByRole("header", { name: t.forgot.title });
-    await type(t.email, "nobody@example.com");
-    await press(t.forgot.submit);
-    expect(await screen.findByText(t.forgot.sent)).toBeOnTheScreen();
+    await screen.findByRole("header", { name: tr("auth.forgot.title") });
+    await type(tr("auth.email"), "nobody@example.com");
+    await press(tr("auth.forgot.submit"));
+    expect(await screen.findByText(tr("auth.forgot.sent"))).toBeOnTheScreen();
     expect(calls[0]?.body).toEqual({ email: "nobody@example.com" });
   });
 });
@@ -168,7 +174,7 @@ describe("forgot password", () => {
 describe("reset password", () => {
   it("explains a missing token", async () => {
     await renderApp(fakeServer({}).api, "/reset-password");
-    expect(await screen.findByText(t.reset.missingToken)).toBeOnTheScreen();
+    expect(await screen.findByText(tr("auth.reset.missingToken"))).toBeOnTheScreen();
   });
 
   it("sets the new password, forgets the session and returns to login", async () => {
@@ -178,14 +184,14 @@ describe("reset password", () => {
       "POST /auth/password/reset": () => new Response(null, { status: 204 }),
     });
     await renderApp(api, "/reset-password?token=abc", { tokenStore: store });
-    await screen.findByRole("header", { name: t.reset.title });
-    await type(t.newPassword, "new password");
-    await type(t.confirmPassword, "new passwort");
-    await press(t.reset.submit);
-    expect(screen.getByText(t.validation.mismatch)).toBeOnTheScreen();
-    await type(t.confirmPassword, "new password");
-    await press(t.reset.submit);
-    expect(await screen.findByText(t.reset.done)).toBeOnTheScreen();
+    await screen.findByRole("header", { name: tr("auth.reset.title") });
+    await type(tr("auth.newPassword"), "new password");
+    await type(tr("auth.confirmPassword"), "new passwort");
+    await press(tr("auth.reset.submit"));
+    expect(screen.getByText(tr("auth.validation.mismatch"))).toBeOnTheScreen();
+    await type(tr("auth.confirmPassword"), "new password");
+    await press(tr("auth.reset.submit"));
+    expect(await screen.findByText(tr("auth.reset.done"))).toBeOnTheScreen();
     expect(screen).toHavePathname("/login");
     expect(calls.find((c) => c.path === "/auth/password/reset")?.body).toEqual({
       token: "abc",
@@ -200,12 +206,12 @@ describe("reset password", () => {
         apiError(422, "validation_failed", [{ field: "token", code: "invalid", message: "" }]),
     });
     await renderApp(api, "/reset-password?token=used");
-    await screen.findByRole("header", { name: t.reset.title });
-    await type(t.newPassword, "new password");
-    await type(t.confirmPassword, "new password");
-    await press(t.reset.submit);
-    expect(await screen.findByText(t.reset.invalidToken)).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: t.reset.requestNew })).toBeOnTheScreen();
+    await screen.findByRole("header", { name: tr("auth.reset.title") });
+    await type(tr("auth.newPassword"), "new password");
+    await type(tr("auth.confirmPassword"), "new password");
+    await press(tr("auth.reset.submit"));
+    expect(await screen.findByText(tr("auth.reset.invalidToken"))).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: tr("auth.reset.requestNew") })).toBeOnTheScreen();
   });
 });
 
@@ -218,7 +224,7 @@ describe("settings", () => {
     await renderApp(api, "/settings", { tokenStore: memoryTokenStore("t") });
     await screen.findByText("Ali");
     expect(screen.getByText("ali@example.com")).toBeOnTheScreen();
-    await press(t.session.signOut);
-    expect(await screen.findByRole("header", { name: t.login.title })).toBeOnTheScreen();
+    await press(tr("auth.session.signOut"));
+    expect(await screen.findByRole("header", { name: tr("auth.login.title") })).toBeOnTheScreen();
   });
 });
