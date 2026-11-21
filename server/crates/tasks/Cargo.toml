@@ -1,0 +1,11 @@
+[package]
+name = "tasks"
+description = "Tasks, subtasks and the personal kanban (ADR-0014)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

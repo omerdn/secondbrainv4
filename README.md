@@ -21,7 +21,7 @@ Görevleri, rutinleri, hedefleri, sayısal takipleri ve defterleri **tek bir mer
 
 ## Geliştirme
 
-Gereksinimler: Node.js ≥ 24 (önerilen sürüm `.nvmrc` içinde), pnpm 12.
+Gereksinimler: Node.js ≥ 24 (önerilen sürüm `.nvmrc` içinde), pnpm 12, rustup (Rust sürümü `rust-toolchain.toml` ile sabit; macOS'ta `brew install rustup` ve `PATH`'e `/opt/homebrew/opt/rustup/bin`).
 
 ```bash
 pnpm install
@@ -38,7 +38,7 @@ Repo yapısı ([ARCHITECTURE §3](docs/ARCHITECTURE.md#3-repo-yapısı)):
 |---|---|
 | `apps/` | Expo istemcisi ve Tauri masaüstü kabuğu |
 | `packages/config` | Paylaşılan ESLint, Prettier ve tsconfig ayarları (`@secondbrain/config`) |
-| `server/` | Rust Cargo workspace (pnpm workspace'inin parçası değil) |
+| `server/` | Rust Cargo workspace (pnpm workspace'inin parçası değil). Komutlar: [server/README.md](server/README.md) |
 
 Görevler Turborepo ile paketler arasında çalıştırılır. Yeni bir TS paketi eklerken `@secondbrain/config`'ten `eslint.config.js`, `tsconfig.json` (`extends: "@secondbrain/config/tsconfig/base.json"`) devralınır ve `lint`, `typecheck`, `test` script'leri tanımlanır.
 

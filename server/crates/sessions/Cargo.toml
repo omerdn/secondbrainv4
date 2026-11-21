@@ -1,0 +1,11 @@
+[package]
+name = "sessions"
+description = "Work Sessions: timers and segments (ADR-0015)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
