@@ -25,7 +25,10 @@
     ".expo/types/**/*.ts",
     "expo-env.d.ts",
     "eslint.config.mjs",
-    "jest.config.mjs"
+    "jest.config.mjs",
+    "babel.config.js",
+    "metro.config.js",
+    "nativewind-env.d.ts"
   ],
   "exclude": ["node_modules", "dist"]
 }

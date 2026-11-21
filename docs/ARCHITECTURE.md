@@ -66,10 +66,10 @@
 │  │     └─ lib/
 │  └─ desktop/           # Tauri 2 kabuğu (src-tauri/)
 ├─ packages/
-│  ├─ ui/                # tasarım sistemi (RN bileşenleri, token'lar)
+│  ├─ ui/                # tasarım sistemi (RN bileşenleri, token'lar, Tailwind preset)
 │  ├─ api-types/         # ts-rs ile üretilen tipler (elle düzenlenmez)
 │  ├─ api-client/        # tipli HTTP + WS istemcisi, TanStack Query hook'ları
-│  └─ config/            # paylaşılan eslint, tsconfig, tailwind preset
+│  └─ config/            # paylaşılan eslint, prettier, tsconfig
 ├─ server/               # Cargo workspace
 │  ├─ crates/
 │  │  ├─ app/            # binary: config, router birleştirme, sunucu başlatma

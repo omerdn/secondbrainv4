@@ -1,0 +1,9 @@
+{
+  "extends": "@secondbrain/config/tsconfig/base.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "types": ["node", "nativewind/types"],
+    "jsx": "react-jsx"
+  },
+  "include": ["src", "test", "*.ts", "*.js"]
+}

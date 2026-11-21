@@ -62,6 +62,7 @@ Repo yapısı ([ARCHITECTURE §3](docs/ARCHITECTURE.md#3-repo-yapısı)):
 |---|---|
 | `apps/client` | Expo istemcisi (iOS, Android, web). Rotalar `app/` altında (Expo Router), kod `src/` altında |
 | `apps/` | Tauri masaüstü kabuğu (T0.6.3) |
+| `packages/ui` | Tasarım sistemi: token'lar, açık/koyu tema, takım rengi, Tailwind preset (`@secondbrain/ui`) |
 | `packages/config` | Paylaşılan ESLint, Prettier ve tsconfig ayarları (`@secondbrain/config`) |
 | `packages/api-types` | Rust DTO'larından ts-rs ile **üretilen** TS tipleri; elle düzenlenmez, CI farkı yakalar |
 | `server/` | Rust Cargo workspace (pnpm workspace'inin parçası değil). Komutlar: [server/README.md](server/README.md) |
