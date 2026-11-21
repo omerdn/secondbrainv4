@@ -67,6 +67,18 @@ export const en: Catalog = {
         apple: "Apple sign-in did not complete. Try again.",
       },
     },
+    verify: {
+      title: "Email verification",
+      verifying: "Verifying your address…",
+      done: "Your email address is verified.",
+      missingToken: "The link is incomplete or broken.",
+      invalidToken: "The link has expired or was already used.",
+      continue: "Continue",
+      toLogin: "Sign in",
+      banner: "Verify {{email}}. Click the link in your inbox.",
+      resend: "Resend link",
+      resent: "A new link was sent.",
+    },
     session: {
       unavailable: "Could not reach the server.",
       retry: "Try again",

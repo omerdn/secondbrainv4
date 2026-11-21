@@ -5,4 +5,6 @@ export { LoginScreen } from "./LoginScreen";
 export { RegisterScreen } from "./RegisterScreen";
 export { ResetPasswordScreen } from "./ResetPasswordScreen";
 export { SessionGate } from "./SessionGate";
+export { VerifyEmailBanner } from "./VerifyEmailBanner";
+export { VerifyEmailScreen } from "./VerifyEmailScreen";
 export { type Session, SessionProvider, type SessionState, useSession } from "./session";

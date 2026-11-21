@@ -18,6 +18,7 @@ import ForgotPassword from "../../app/(auth)/forgot-password";
 import Login from "../../app/(auth)/login";
 import Register from "../../app/(auth)/register";
 import ResetPassword from "../../app/reset-password";
+import VerifyEmail from "../../app/verify-email";
 import { type fakeServer, memoryTokenStore, Providers } from "./api";
 
 /** The real routes under the test providers. */
@@ -55,6 +56,7 @@ export function renderApp(
       "(auth)/register": Register,
       "(auth)/forgot-password": ForgotPassword,
       "reset-password": ResetPassword,
+      "verify-email": VerifyEmail,
     },
     { initialUrl },
   );
