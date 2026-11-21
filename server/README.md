@@ -100,6 +100,13 @@ Her mutasyon istemcide üretilen bir `Idempotency-Key` başlığı taşır (ARCH
 - İstemci gövdede `client` gönderir: `"web"` → token `sb_session` cookie'sine yazılır (`HttpOnly; Secure; SameSite=Lax`), gövdede dönmez. `"native"` → token gövdede bir kez döner, sonra `Authorization: Bearer <token>` ile gönderilir.
 - Korumalı bir uç nokta yazarken handler'a `identity::http::Authenticated` extractor'ını ekleyin. Token eksik, bozuk, bilinmeyen veya süresi dolmuşsa 401 döner. Router state'i `IdentityService`'i `FromRef` ile sağlamalıdır.
 - Oturumlar 30 gün kullanılmayınca düşer; her kullanım süreyi uzatır (en fazla 5 dakikada bir yazılır).
+- E-posta doğrulama ve şifre sıfırlama: `POST /auth/email/verify`, `POST /auth/email/verification` (yeniden gönder), `POST /auth/password/forgot` (her zaman 202), `POST /auth/password/reset` (tüm oturumları kapatır). Bağlantılar `PUBLIC_WEB_URL/verify-email?token=…` ve `…/reset-password?token=…` biçimindedir; doğrulama 24 saat, sıfırlama 1 saat geçerlidir.
+
+## E-posta (`kernel::email`)
+- Modüller e-postayı `EmailSender` arayüzüyle gönderir; sağlayıcıyı bilmez. Sağlayıcı henüz seçilmedi (ARCHITECTURE §14).
+- `EMAIL_DRIVER=log` (varsayılan): e-posta gönderilmez, konu ve gövde (bağlantı dahil) `email` hedefiyle loga yazılır. Alıcı adresi yazılmaz. Yerelde doğrulama bağlantısını logdan kopyalayabilirsiniz. **`APP_ENV=production` ise sunucu bu sürücüyle açılmaz.**
+- Testlerde `kernel::email::RecordingEmailSender` gönderilen mesajları toplar.
+- E-posta metinlerine ad gibi kişisel veri koymayın; `EmailMessage`'ın `Debug` çıktısı alıcıyı ve gövdeyi gizler.
 
 ## Loglama ve hata takibi
 - Loglar stdout'a satır başına bir JSON nesnesi olarak yazılır (`LOG_FORMAT=json`, varsayılan). Yerelde `LOG_FORMAT=pretty` daha okunaklıdır. Seviye `RUST_LOG` ile ayarlanır (varsayılan `info,sqlx=warn`).

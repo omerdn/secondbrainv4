@@ -97,7 +97,17 @@ where
 
     // `/auth/*` is exempt from idempotency keys (see `idempotency` module docs). Domain modules
     // add their routes inside `protect(..)` as they are implemented.
-    let identity = identity::IdentityService::new(pool.clone(), clock.clone());
+    let email_sender: kernel::SharedEmailSender = match config.email_driver {
+        config::EmailDriver::Log => std::sync::Arc::new(kernel::email::LogEmailSender),
+    };
+    let identity = identity::IdentityService::new(
+        pool.clone(),
+        clock.clone(),
+        identity::EmailSettings {
+            sender: email_sender,
+            web_url: config.public_web_url.clone(),
+        },
+    );
     let idempotency = idempotency::Idempotency::new(pool.clone(), identity.clone(), clock);
     let modules = identity::http::router(identity)
         .merge(idempotency::protect(axum::Router::new(), idempotency));

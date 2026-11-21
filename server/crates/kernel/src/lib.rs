@@ -8,8 +8,10 @@
 //! - [`redact`]: masking personal data in free-form text before logging
 //! - [`DomainEvent`]: events published through the outbox
 //! - [`retry`]: backoff delays
+//! - [`email`]: outgoing e-mail driver interface
 
 pub mod clock;
+pub mod email;
 pub mod error;
 pub mod event;
 pub mod id;
@@ -19,6 +21,7 @@ pub mod retry;
 pub mod validation;
 
 pub use clock::{Clock, FixedClock, SharedClock, SystemClock};
+pub use email::{EmailKind, EmailMessage, EmailSender, SharedEmailSender};
 pub use error::{AppError, BoxError, ErrorCode};
 pub use event::DomainEvent;
 pub use id::Id;

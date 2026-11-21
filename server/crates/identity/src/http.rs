@@ -7,6 +7,10 @@
 //! | POST   | `/auth/logout`         | opt. | 204, ends the presented session |
 //! | GET    | `/auth/sessions`       | yes  | 200 `SessionInfo[]` |
 //! | DELETE | `/auth/sessions/{id}`  | yes  | 204 |
+//! | POST   | `/auth/email/verify`   | –    | 204, or 422 on `token` |
+//! | POST   | `/auth/email/verification` | yes | 204, sends a new verification e-mail |
+//! | POST   | `/auth/password/forgot` | –   | 202 always (no account discovery) |
+//! | POST   | `/auth/password/reset` | –    | 204, signs out everywhere; 422 on `token` |
 //!
 //! # Token transport
 //! - **Web** (`client: "web"`): the token goes into an `HttpOnly; Secure; SameSite=Lax` cookie
@@ -28,7 +32,8 @@ use kernel::AppError;
 use uuid::Uuid;
 
 use crate::model::{
-    AuthResponse, ClientKind, CurrentUser, LoginRequest, RegisterRequest, SessionId, SessionInfo,
+    AuthResponse, ClientKind, CurrentUser, ForgotPasswordRequest, LoginRequest, RegisterRequest,
+    ResetPasswordRequest, SessionId, SessionInfo, VerifyEmailRequest,
 };
 use crate::service::{AuthContext, IdentityService, IssuedSession};
 
@@ -47,6 +52,10 @@ pub fn router(service: IdentityService) -> Router {
         .route("/auth/logout", post(logout))
         .route("/auth/sessions", get(list_sessions))
         .route("/auth/sessions/{id}", delete(revoke_session))
+        .route("/auth/email/verify", post(verify_email))
+        .route("/auth/email/verification", post(resend_verification))
+        .route("/auth/password/forgot", post(forgot_password))
+        .route("/auth/password/reset", post(reset_password))
         .with_state(service)
 }
 
@@ -192,6 +201,45 @@ async fn revoke_session(
         .revoke_session(auth.user_id, SessionId::from_uuid(id))
         .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn verify_email(
+    State(service): State<IdentityService>,
+    Json(request): Json<VerifyEmailRequest>,
+) -> Result<StatusCode, AppError> {
+    service.verify_email(&request.token).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn resend_verification(
+    State(service): State<IdentityService>,
+    Authenticated(auth): Authenticated,
+) -> Result<StatusCode, AppError> {
+    service.resend_verification(auth).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn forgot_password(
+    State(service): State<IdentityService>,
+    Json(request): Json<ForgotPasswordRequest>,
+) -> Result<StatusCode, AppError> {
+    let email = request.validate()?;
+    service.forgot_password(&email).await?;
+    Ok(StatusCode::ACCEPTED)
+}
+
+async fn reset_password(
+    State(service): State<IdentityService>,
+    Json(request): Json<ResetPasswordRequest>,
+) -> Result<Response, AppError> {
+    let (token, password) = request.validate()?;
+    service.reset_password(&token, password).await?;
+    // The browser's session (if any) has just been revoked too.
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    response
+        .headers_mut()
+        .insert(header::SET_COOKIE, clear_cookie());
+    Ok(response)
 }
 
 #[cfg(test)]

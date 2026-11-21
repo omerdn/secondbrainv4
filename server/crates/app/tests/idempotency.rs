@@ -75,7 +75,7 @@ impl App {
         let db = TestDb::new().await;
         let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 11, 21, 12, 0, 0).unwrap());
         let shared: kernel::SharedClock = Arc::new(clock.clone());
-        let identity = IdentityService::new(db.pool().clone(), shared.clone());
+        let identity = IdentityService::new(db.pool().clone(), shared.clone(), email_settings());
         let state = TestState {
             identity: identity.clone(),
             calls: Arc::new(AtomicUsize::new(0)),
@@ -383,4 +383,11 @@ async fn cleanup_deletes_only_expired_keys() {
         .await
         .unwrap();
     assert_eq!(left, ["new"]);
+}
+
+fn email_settings() -> identity::EmailSettings {
+    identity::EmailSettings {
+        sender: Arc::new(kernel::email::RecordingEmailSender::default()),
+        web_url: "https://app.test".into(),
+    }
 }
