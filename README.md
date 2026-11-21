@@ -53,6 +53,7 @@ pnpm typecheck   # tsc --noEmit (tüm paketler)
 pnpm test        # Vitest (tüm paketler)
 pnpm dev         # geliştirme sunucuları (istemci T0.4.1 ile eklenecek)
 pnpm format      # Prettier
+pnpm api-types:generate   # Rust DTO'larından packages/api-types'ı üret (ts-rs)
 ```
 
 Repo yapısı ([ARCHITECTURE §3](docs/ARCHITECTURE.md#3-repo-yapısı)):
@@ -61,6 +62,7 @@ Repo yapısı ([ARCHITECTURE §3](docs/ARCHITECTURE.md#3-repo-yapısı)):
 |---|---|
 | `apps/` | Expo istemcisi ve Tauri masaüstü kabuğu |
 | `packages/config` | Paylaşılan ESLint, Prettier ve tsconfig ayarları (`@secondbrain/config`) |
+| `packages/api-types` | Rust DTO'larından ts-rs ile **üretilen** TS tipleri; elle düzenlenmez, CI farkı yakalar |
 | `server/` | Rust Cargo workspace (pnpm workspace'inin parçası değil). Komutlar: [server/README.md](server/README.md) |
 
 ### CI
