@@ -21,10 +21,32 @@ Görevleri, rutinleri, hedefleri, sayısal takipleri ve defterleri **tek bir mer
 
 ## Geliştirme
 
-Gereksinimler: Node.js ≥ 24 (önerilen sürüm `.nvmrc` içinde), pnpm 12, rustup (Rust sürümü `rust-toolchain.toml` ile sabit; macOS'ta `brew install rustup` ve `PATH`'e `/opt/homebrew/opt/rustup/bin`).
+### Gereksinimler
+- Node.js ≥ 24 (önerilen sürüm `.nvmrc` içinde) ve pnpm 12
+- rustup: Rust sürümü `rust-toolchain.toml` ile sabittir. macOS'ta `brew install rustup`, ardından `PATH`'e `/opt/homebrew/opt/rustup/bin` eklenir.
+- Docker (Docker Desktop veya OrbStack) ve Docker Compose v2
+
+### İlk kurulum
+```bash
+cp .env.example .env   # yerel ayarlar; .env git'e girmez
+pnpm install
+pnpm db:up             # Postgres 17'yi başlatır ve hazır olana kadar bekler
+pnpm db:check          # sürümü ve pg_trgm/unaccent uzantılarını doğrular
+```
+
+### Yerel veritabanı
+Postgres 17, `compose.yaml` ile çalışır ve sadece `127.0.0.1:5432` adresinden erişilebilir. Bağlantı adresi `.env` içindeki `DATABASE_URL` değişkenindedir. İlk açılışta `infra/postgres/init/` altındaki betik `pg_trgm` ve `unaccent` uzantılarını hem uygulama veritabanına hem `template1`'e kurar.
 
 ```bash
-pnpm install
+pnpm db:up      # başlat
+pnpm db:down    # durdur (veriler korunur)
+pnpm db:psql    # psql oturumu aç
+pnpm db:check   # sağlık kontrolü
+pnpm db:reset   # DİKKAT: yerel veritabanını tamamen siler ve sıfırdan kurar
+```
+
+### Komutlar
+```bash
 pnpm lint        # ESLint (tüm paketler)
 pnpm typecheck   # tsc --noEmit (tüm paketler)
 pnpm test        # Vitest (tüm paketler)
