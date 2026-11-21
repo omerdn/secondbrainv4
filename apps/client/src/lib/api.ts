@@ -6,8 +6,9 @@ import { Platform } from "react-native";
 export const API_URL: string = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8080";
 
 /**
- * Session credentials held in memory for now. Persisting them (secure storage on native, the
- * CSRF token after a reload on web) is part of the auth screens (T0.4.5).
+ * Session credentials read by the API client. The session feature (`features/auth`, T0.4.5)
+ * fills them: the native token is also kept in secure storage, the web CSRF token is fetched
+ * again after a reload.
  */
 export const credentials = {
   /** Native bearer token. */
