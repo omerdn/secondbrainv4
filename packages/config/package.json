@@ -1,0 +1,38 @@
+{
+  "name": "@secondbrain/config",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared ESLint, Prettier and TypeScript configuration for the secondbrainv4 monorepo.",
+  "type": "module",
+  "exports": {
+    "./eslint": "./src/eslint.js",
+    "./prettier": "./src/prettier.js",
+    "./tsconfig/base.json": "./tsconfig/base.json"
+  },
+  "files": [
+    "src",
+    "tsconfig"
+  ],
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "eslint": "^10.15.0",
+    "prettier": "^3.10.1",
+    "typescript": "~6.0.3",
+    "vitest": "^5.1.1"
+  },
+  "dependencies": {
+    "@eslint/js": "^10.0.1",
+    "globals": "^17.14.0",
+    "typescript-eslint": "^8.73.0"
+  },
+  "peerDependencies": {
+    "eslint": "^10.0.0",
+    "prettier": "^3.0.0",
+    "typescript": ">=5.8 <6.1"
+  }
+}

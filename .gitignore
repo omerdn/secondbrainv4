@@ -1,0 +1,25 @@
+# dependencies
+node_modules/
+
+# build / tool output
+dist/
+build/
+.turbo/
+coverage/
+*.tsbuildinfo
+
+# Rust
+target/
+
+# env & secrets (never commit)
+.env
+.env.*
+!.env.example
+.mcp.json
+
+# OS / editor
+.DS_Store
+*.log
+.idea/
+.vscode/*
+!.vscode/extensions.json
