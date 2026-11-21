@@ -56,6 +56,16 @@ pub struct TestDb {
 impl TestDb {
     /// Creates a fresh schema, migrates it and returns a pool bound to it.
     pub async fn new() -> Self {
+        let db = Self::new_unmigrated().await;
+        crate::migrate(&db.pool)
+            .await
+            .expect("apply migrations to test schema");
+        db
+    }
+
+    /// Creates a fresh, **empty** schema without applying migrations (for testing the migration
+    /// flow itself).
+    pub async fn new_unmigrated() -> Self {
         let server = server_url().await;
         let schema = format!("{SCHEMA_PREFIX}{}", Uuid::now_v7().simple());
 
@@ -76,10 +86,6 @@ impl TestDb {
             .connect_with(options)
             .await
             .expect("connect test pool");
-
-        crate::migrate(&pool)
-            .await
-            .expect("apply migrations to test schema");
 
         // Same database, same schema, as a URL (for code that takes a `DatabaseUrl`).
         let separator = if server.contains('?') { '&' } else { '?' };

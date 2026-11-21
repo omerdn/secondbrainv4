@@ -17,7 +17,7 @@ pub mod telemetry;
 pub use config::{Config, ConfigError};
 
 /// Starts the application: connects to the database, applies migrations (unless disabled),
-/// then serves HTTP on `listener` until `shutdown` resolves.
+/// starts the outbox dispatcher, then serves HTTP on `listener` until `shutdown` resolves.
 pub async fn run<S>(config: Config, listener: TcpListener, shutdown: S) -> Result<(), RunError>
 where
     S: Future<Output = ()> + Send + 'static,
@@ -31,6 +31,18 @@ where
         tracing::info!("database migrations applied");
     }
 
+    // Domain modules register their subscribers here as they are implemented.
+    let dispatcher = db::outbox::Dispatcher::new(db::outbox::DispatchConfig::default());
+    let (stop_dispatcher, dispatcher_stopped) = tokio::sync::oneshot::channel::<()>();
+    let dispatcher_pool = pool.clone();
+    let dispatcher_task = tokio::spawn(async move {
+        dispatcher
+            .run(&dispatcher_pool, async {
+                let _ = dispatcher_stopped.await;
+            })
+            .await;
+    });
+
     if let Ok(addr) = listener.local_addr() {
         tracing::info!(%addr, "listening");
     }
@@ -40,6 +52,11 @@ where
         .await
         .map_err(RunError::Serve);
 
+    // Let the dispatcher finish its current batch before closing the pool.
+    let _ = stop_dispatcher.send(());
+    if dispatcher_task.await.is_err() {
+        tracing::error!("outbox dispatcher task panicked");
+    }
     pool.close().await;
     tracing::info!("shut down");
     result

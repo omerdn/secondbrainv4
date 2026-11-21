@@ -613,10 +613,16 @@ dependencies = [
 name = "db"
 version = "0.0.0"
 dependencies = [
+ "chrono",
  "db",
+ "kernel",
+ "proptest",
+ "serde",
+ "serde_json",
  "sqlx",
  "testcontainers",
  "tokio",
+ "tracing",
  "uuid",
 ]
 
