@@ -17,7 +17,7 @@ pub mod telemetry;
 pub use config::{Config, ConfigError};
 
 /// Starts the application: connects to the database, applies migrations (unless disabled),
-/// starts the outbox dispatcher, then serves HTTP on `listener` until `shutdown` resolves.
+/// starts the outbox dispatcher, job worker and scheduler, then serves HTTP on `listener` until `shutdown` resolves.
 pub async fn run<S>(config: Config, listener: TcpListener, shutdown: S) -> Result<(), RunError>
 where
     S: Future<Output = ()> + Send + 'static,
@@ -43,6 +43,33 @@ where
             .await;
     });
 
+    // Background jobs: modules register handlers and schedules here as they are implemented.
+    let worker = jobs::Worker::new(jobs::WorkerConfig::default());
+    let scheduler = jobs::Scheduler::new(jobs::SchedulerConfig::default());
+    let (stop_jobs, jobs_stopped) = tokio::sync::watch::channel(false);
+    let jobs_task = {
+        let pool = pool.clone();
+        let mut stopped = jobs_stopped.clone();
+        tokio::spawn(async move {
+            worker
+                .run(&pool, async move {
+                    let _ = stopped.wait_for(|stop| *stop).await;
+                })
+                .await;
+        })
+    };
+    let scheduler_task = {
+        let pool = pool.clone();
+        let mut stopped = jobs_stopped;
+        tokio::spawn(async move {
+            scheduler
+                .run(&pool, &kernel::SystemClock, async move {
+                    let _ = stopped.wait_for(|stop| *stop).await;
+                })
+                .await;
+        })
+    };
+
     if let Ok(addr) = listener.local_addr() {
         tracing::info!(%addr, "listening");
     }
@@ -52,10 +79,17 @@ where
         .await
         .map_err(RunError::Serve);
 
-    // Let the dispatcher finish its current batch before closing the pool.
+    // Let background tasks finish their current batch before closing the pool.
     let _ = stop_dispatcher.send(());
-    if dispatcher_task.await.is_err() {
-        tracing::error!("outbox dispatcher task panicked");
+    let _ = stop_jobs.send(true);
+    for (name, task) in [
+        ("outbox dispatcher", dispatcher_task),
+        ("job worker", jobs_task),
+        ("job scheduler", scheduler_task),
+    ] {
+        if task.await.is_err() {
+            tracing::error!(task = name, "background task panicked");
+        }
     }
     pool.close().await;
     tracing::info!("shut down");

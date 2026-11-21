@@ -47,6 +47,31 @@ dispatcher.subscribe("search-index", |event: ItemCreated, stored| async move { /
 - Hatalı teslimler üstel bekleme (backoff) ile tekrar denenir; maskelenmiş hata `outbox.last_error` alanında tutulur.
 - Katı sıra garantisi yoktur: tekrar denenen bir olay daha yenilerinden sonra gelebilir.
 
+## Arka plan işleri (`jobs`)
+```rust
+#[derive(Serialize, Deserialize, Clone)]
+struct SendWeeklySummary { user_id: UserId }
+impl jobs::Job for SendWeeklySummary {
+    const KIND: &'static str = "summary.weekly"; // kalıcı, yeniden adlandırılmaz
+    const MAX_ATTEMPTS: u32 = 5;                 // varsayılan 10
+}
+
+// Kuyruğa ekle (çağıranın transaction'ı içinde)
+jobs::enqueue(&mut tx, &job, EnqueueOptions { run_at: Some(at), dedupe_key: None }).await?;
+
+// İşleyici (app::run içinde kaydedilir)
+worker.register(|job: SendWeeklySummary, claimed| async move { /* ... */ Ok(()) });
+
+// Tekrarlayan iş (6 alanlı cron, UTC): her pazartesi 08:00
+scheduler.add("weekly-summary", "0 0 8 * * Mon", SendWeeklySummary { .. })?;
+```
+
+- İşçi, vadesi gelen işleri `FOR UPDATE SKIP LOCKED` ile **kira (lease)** altında alır ve işleyiciyi transaction dışında çalıştırır. Kira süresini aşan işleyici iptal edilir ve iş tekrar denenir. Çöken bir işçinin işi kira bitince başka işçiye geçer.
+- **En az bir kez çalışır:** İşleyiciler idempotent olmalıdır (`claimed.id` iş kimliğidir).
+- Hatalar üstel backoff ile tekrar denenir. `MAX_ATTEMPTS` dolunca iş `failed_at` ile işaretlenir ve bir daha çalışmaz. Maskelenmiş son hata `last_error` alanındadır.
+- Zamanlayıcı her tetiklemede her takvimin **bir sonraki** çalışma anını kuyruğa koyar (`cron:<ad>:<an>` benzersiz anahtarıyla). Birden fazla sunucu örneği aynı anı tek kez ekler. Sunucu kapalıyken kaçırılan tetiklemeler topluca çalıştırılmaz.
+- Kullanıcının saat dilimine bağlı işler (ör. rutin hatırlatmaları) cron ile değil, `run_at` ile tek tek kuyruğa eklenir.
+
 ## Veritabanı testleri
 `db::testing::TestDb` (feature `testing`) her test için ayrı bir şema açar, tüm migration'ları o şemada uygular ve o şemaya bağlı bir pool verir:
 
