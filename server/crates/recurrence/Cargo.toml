@@ -1,0 +1,11 @@
+[package]
+name = "recurrence"
+description = "RRULE recurrence generation and schedule versions; pure library (ADR-0008)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

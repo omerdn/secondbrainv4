@@ -1,0 +1,11 @@
+[package]
+name = "realtime"
+description = "WebSocket hub, channel subscriptions and the LISTEN/NOTIFY bridge."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
