@@ -8,6 +8,8 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 use std::time::Duration;
 
+use db::{DatabaseUrl, PoolConfig};
+
 /// Server configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
@@ -16,6 +18,10 @@ pub struct Config {
     /// Maximum time to wait for in-flight requests after a shutdown signal
     /// (`SHUTDOWN_TIMEOUT_SECS`).
     pub shutdown_timeout: Duration,
+    /// Database pool settings (`DATABASE_URL` required, `DB_MAX_CONNECTIONS`).
+    pub database: PoolConfig,
+    /// Apply pending migrations before serving (`DB_MIGRATE_ON_START`, default `true`).
+    pub migrate_on_start: bool,
 }
 
 impl Config {
@@ -31,8 +37,8 @@ impl Config {
         Self::from_lookup(|key| std::env::var(key).ok())
     }
 
-    /// Builds the configuration from an arbitrary key lookup. Missing or empty values fall back
-    /// to defaults; present but malformed values are an error.
+    /// Builds the configuration from an arbitrary key lookup. Missing or empty optional values
+    /// fall back to defaults; a missing `DATABASE_URL` or a malformed value is an error.
     pub fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Result<Self, ConfigError> {
         let host: IpAddr = parse(&lookup, "APP_HOST", Self::DEFAULT_HOST)?;
         let port: u16 = parse(&lookup, "APP_PORT", Self::DEFAULT_PORT)?;
@@ -42,9 +48,30 @@ impl Config {
             Self::DEFAULT_SHUTDOWN_TIMEOUT_SECS,
         )?;
 
+        let database_url = lookup("DATABASE_URL")
+            .filter(|url| !url.trim().is_empty())
+            .ok_or(ConfigError::Missing {
+                key: "DATABASE_URL",
+            })?;
+        let mut database = PoolConfig::new(DatabaseUrl::new(database_url.trim()));
+        database.max_connections = parse(
+            &lookup,
+            "DB_MAX_CONNECTIONS",
+            PoolConfig::DEFAULT_MAX_CONNECTIONS,
+        )?;
+        if database.max_connections == 0 {
+            return Err(ConfigError::Invalid {
+                key: "DB_MAX_CONNECTIONS",
+                reason: "must be at least 1".into(),
+            });
+        }
+        let migrate_on_start: bool = parse(&lookup, "DB_MIGRATE_ON_START", true)?;
+
         Ok(Self {
             bind_addr: SocketAddr::new(host, port),
             shutdown_timeout: Duration::from_secs(shutdown_secs),
+            database,
+            migrate_on_start,
         })
     }
 }
@@ -77,6 +104,11 @@ where
 /// error messages end up in logs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigError {
+    /// A required `key` is not set.
+    Missing {
+        /// Environment variable name.
+        key: &'static str,
+    },
     /// `key` was set but could not be parsed.
     Invalid {
         /// Environment variable name.
@@ -89,6 +121,7 @@ pub enum ConfigError {
 impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Missing { key } => write!(f, "{key} is required"),
             Self::Invalid { key, reason } => write!(f, "invalid value for {key}: {reason}"),
         }
     }
@@ -102,12 +135,14 @@ mod tests {
 
     use super::*;
 
+    const URL: &str = "postgres://app:pw@localhost:5432/secondbrain";
+
+    /// Lookup with `DATABASE_URL` preset (overridable by `vars`).
     fn config(vars: &[(&str, &str)]) -> Result<Config, ConfigError> {
-        let vars: HashMap<String, String> = vars
-            .iter()
-            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-            .collect();
-        Config::from_lookup(|key| vars.get(key).cloned())
+        let mut map: HashMap<String, String> =
+            HashMap::from([("DATABASE_URL".to_owned(), URL.to_owned())]);
+        map.extend(vars.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())));
+        Config::from_lookup(|key| map.get(key).cloned())
     }
 
     #[test]
@@ -115,6 +150,58 @@ mod tests {
         let config = config(&[]).unwrap();
         assert_eq!(config.bind_addr, "127.0.0.1:8080".parse().unwrap());
         assert_eq!(config.shutdown_timeout, Duration::from_secs(30));
+        assert_eq!(config.database.url.expose(), URL);
+        assert_eq!(
+            config.database.max_connections,
+            PoolConfig::DEFAULT_MAX_CONNECTIONS
+        );
+        assert!(config.migrate_on_start);
+    }
+
+    #[test]
+    fn database_url_is_required() {
+        let err = config(&[("DATABASE_URL", "  ")]).unwrap_err();
+        assert_eq!(
+            err,
+            ConfigError::Missing {
+                key: "DATABASE_URL"
+            }
+        );
+        assert_eq!(err.to_string(), "DATABASE_URL is required");
+    }
+
+    #[test]
+    fn reads_database_settings() {
+        let parsed = config(&[
+            ("DB_MAX_CONNECTIONS", "3"),
+            ("DB_MIGRATE_ON_START", "false"),
+        ])
+        .unwrap();
+        assert_eq!(parsed.database.max_connections, 3);
+        assert!(!parsed.migrate_on_start);
+
+        let err = config(&[("DB_MAX_CONNECTIONS", "0")]).unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                key: "DB_MAX_CONNECTIONS",
+                ..
+            }
+        ));
+        let err = config(&[("DB_MIGRATE_ON_START", "yes")]).unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                key: "DB_MIGRATE_ON_START",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn debug_output_redacts_database_password() {
+        let config = config(&[]).unwrap();
+        assert!(!format!("{config:?}").contains(":pw@"));
     }
 
     #[test]

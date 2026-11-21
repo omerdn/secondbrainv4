@@ -12,12 +12,15 @@ workspace = true
 
 [dependencies]
 axum.workspace = true
+db = { path = "../db" }
 dotenvy.workspace = true
 serde.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+db = { path = "../db", features = ["testing"] }
 http-body-util.workspace = true
 serde_json.workspace = true
+sqlx.workspace = true
 tokio = { workspace = true, features = ["io-util"] }
 tower.workspace = true
