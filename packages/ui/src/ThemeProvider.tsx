@@ -5,11 +5,17 @@ import { StyleSheet, View } from "react-native";
 import { teamVars, themeVars } from "./theme";
 import type { ColorScheme } from "./tokens";
 
-const SchemeContext = createContext<ColorScheme>("light");
+interface ThemeContextValue {
+  scheme: ColorScheme;
+  /** NativeWind `vars()` style carrying the theme variables. */
+  style: ReturnType<typeof vars> | undefined;
+}
+
+const ThemeContext = createContext<ThemeContextValue>({ scheme: "light", style: undefined });
 
 /** The color scheme the nearest {@link ThemeProvider} applies. */
 export function useScheme(): ColorScheme {
-  return useContext(SchemeContext);
+  return useContext(ThemeContext).scheme;
 }
 
 export interface ThemeProviderProps {
@@ -31,12 +37,26 @@ export function ThemeProvider({ scheme, teamColor, children }: ThemeProviderProp
     () => vars(themeVars({ scheme: resolved, teamColor })),
     [resolved, teamColor],
   );
+  const value = useMemo(() => ({ scheme: resolved, style }), [resolved, style]);
   return (
-    <SchemeContext.Provider value={resolved}>
+    <ThemeContext.Provider value={value}>
       <View testID="theme-root" style={[styles.fill, style]}>
         {children}
       </View>
-    </SchemeContext.Provider>
+    </ThemeContext.Provider>
+  );
+}
+
+/**
+ * Re-applies the current theme variables. Needed inside portals: react-native-web renders a
+ * `Modal` under `<body>`, outside the {@link ThemeProvider} element that defines the variables.
+ */
+export function ThemeScope({ children }: { children: ReactNode }) {
+  const { style } = useContext(ThemeContext);
+  return (
+    <View testID="theme-scope" style={[styles.fill, style]}>
+      {children}
+    </View>
   );
 }
 

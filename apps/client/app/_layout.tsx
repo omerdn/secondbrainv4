@@ -1,6 +1,6 @@
 import "../global.css";
 
-import { ThemeProvider, useScheme } from "@secondbrain/ui";
+import { ThemeProvider, ToastProvider, useScheme } from "@secondbrain/ui";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -14,8 +14,10 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <ThemedStatusBar />
-        <Stack screenOptions={{ headerShown: false }} />
+        <ToastProvider>
+          <ThemedStatusBar />
+          <Stack screenOptions={{ headerShown: false }} />
+        </ToastProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );
