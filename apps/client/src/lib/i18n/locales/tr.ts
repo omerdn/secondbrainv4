@@ -69,6 +69,18 @@ export const tr = {
         apple: "Apple ile giriş tamamlanamadı. Tekrar dene.",
       },
     },
+    verify: {
+      title: "E-posta doğrulama",
+      verifying: "Adresin doğrulanıyor…",
+      done: "E-posta adresin doğrulandı.",
+      missingToken: "Bağlantı eksik veya bozuk.",
+      invalidToken: "Bağlantının süresi dolmuş veya daha önce kullanılmış.",
+      continue: "Devam et",
+      toLogin: "Giriş yap",
+      banner: "{{email}} adresini doğrula. Gelen kutundaki bağlantıya tıkla.",
+      resend: "Bağlantıyı tekrar gönder",
+      resent: "Yeni bağlantı gönderildi.",
+    },
     session: {
       unavailable: "Sunucuya ulaşılamadı.",
       retry: "Tekrar dene",

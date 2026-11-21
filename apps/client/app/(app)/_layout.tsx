@@ -1,6 +1,6 @@
 import { Slot } from "expo-router";
 
-import { SessionGate, useSession } from "@/features/auth";
+import { SessionGate, useSession, VerifyEmailBanner } from "@/features/auth";
 import { AppShell } from "@/features/shell";
 
 /** Every signed-in screen: session gate (T0.4.5) + app shell (T0.4.6). */
@@ -16,6 +16,7 @@ function Shell() {
   const { state } = useSession();
   return (
     <AppShell account={state.status === "signedIn" ? state.user.display_name : null}>
+      <VerifyEmailBanner />
       <Slot />
     </AppShell>
   );
