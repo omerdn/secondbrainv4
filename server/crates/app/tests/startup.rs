@@ -40,7 +40,15 @@ async fn get_health(addr: std::net::SocketAddr) -> String {
     buf
 }
 
+/// Applied migrations in the test schema (0 if the history table does not exist yet).
 async fn applied_migrations(db: &TestDb) -> i64 {
+    let exists: bool = sqlx::query_scalar("SELECT to_regclass('_sqlx_migrations') IS NOT NULL")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+    if !exists {
+        return 0;
+    }
     sqlx::query_scalar("SELECT count(*) FROM _sqlx_migrations")
         .fetch_one(db.pool())
         .await
@@ -49,12 +57,8 @@ async fn applied_migrations(db: &TestDb) -> i64 {
 
 #[tokio::test]
 async fn starts_migrates_serves_and_stops() {
-    let test_db = TestDb::new().await;
-    // Start from an empty migration history to prove `run` applies them.
-    sqlx::query("TRUNCATE _sqlx_migrations")
-        .execute(test_db.pool())
-        .await
-        .unwrap();
+    // Start from an empty schema to prove `run` applies the migrations.
+    let test_db = TestDb::new_unmigrated().await;
     assert_eq!(applied_migrations(&test_db).await, 0);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -80,12 +84,50 @@ async fn starts_migrates_serves_and_stops() {
 }
 
 #[tokio::test]
-async fn migrate_on_start_can_be_disabled() {
+async fn runs_the_outbox_dispatcher_in_the_background() {
     let test_db = TestDb::new().await;
-    sqlx::query("TRUNCATE _sqlx_migrations")
+    let event_id = uuid::Uuid::now_v7();
+    sqlx::query("INSERT INTO outbox (id, event_type, payload) VALUES ($1, 'test.ping', '{}')")
+        .bind(event_id)
         .execute(test_db.pool())
         .await
         .unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let (stop, stopped) = oneshot::channel::<()>();
+    let handle = tokio::spawn(app::run(
+        config_for(test_db.url(), true),
+        listener,
+        async move {
+            let _ = stopped.await;
+        },
+    ));
+
+    // No subscriber for `test.ping`: the dispatcher marks it dispatched.
+    let dispatched = timeout(WITHIN, async {
+        loop {
+            let done: bool =
+                sqlx::query_scalar("SELECT dispatched_at IS NOT NULL FROM outbox WHERE id = $1")
+                    .bind(event_id)
+                    .fetch_one(test_db.pool())
+                    .await
+                    .unwrap();
+            if done {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await;
+    assert!(dispatched.is_ok(), "event not dispatched by app::run");
+
+    stop.send(()).unwrap();
+    timeout(WITHIN, handle).await.unwrap().unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn migrate_on_start_can_be_disabled() {
+    let test_db = TestDb::new_unmigrated().await;
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let (stop, stopped) = oneshot::channel::<()>();

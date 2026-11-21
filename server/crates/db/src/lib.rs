@@ -3,10 +3,12 @@
 //! - [`connect`] builds the shared [`PgPool`].
 //! - [`MIGRATOR`] embeds every file in `server/migrations/` into the binary; [`migrate`] applies
 //!   pending ones. Migrations are append-only: never edit a migration that has been merged.
+//! - [`outbox`]: transactional outbox and domain event dispatcher.
 //! - `testing` (feature `testing`): [`testing::TestDb`] gives each test its own schema in a
 //!   shared Postgres 17 container.
 //!
-//! Module boundary (ADR-0007): this crate owns no domain tables. Each domain crate queries only
+//! Module boundary (ADR-0007): this crate owns no domain tables (only the infrastructure
+//! `outbox` table). Each domain crate queries only
 //! its own tables through the pool it receives.
 
 use std::fmt;
@@ -18,6 +20,7 @@ pub use sqlx::migrate::MigrateError;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::PgPoolOptions;
 
+pub mod outbox;
 #[cfg(feature = "testing")]
 pub mod testing;
 

@@ -23,6 +23,30 @@ Crate listesi ARCHITECTURE §3 ile `crates/app/tests/workspace_layout.rs` testiy
 - Her domain crate'i sadece kendi tablolarının migration'larını yazar (ADR-0007). Tablo adları modül önekiyle anlaşılır olmalı.
 - Yeni dosya elle oluşturulabilir veya [sqlx-cli](https://github.com/launchbadge/sqlx/tree/main/sqlx-cli) ile: `sqlx migrate add <açıklama>` (isteğe bağlı kurulum).
 
+## Domain olayları (outbox)
+Modüller birbirinin tablosuna dokunmadan haberleşmek için domain olayı yayınlar (ADR-0007, ARCHITECTURE §4.5):
+
+```rust
+// 1) Olayı tanımla (kernel::DomainEvent). EVENT_TYPE kalıcıdır, yeniden adlandırılmaz.
+#[derive(Serialize, Deserialize)]
+struct ItemCreated { item_id: ItemId }
+impl DomainEvent for ItemCreated { const EVENT_TYPE: &'static str = "item.created"; }
+
+// 2) Değişiklikle AYNI transaction içinde yayınla
+let mut tx = pool.begin().await?;
+/* INSERT ... */
+db::outbox::publish(&mut tx, &ItemCreated { item_id }).await?;
+tx.commit().await?;
+
+// 3) Başka bir modülde abone ol (app::run içinde kaydedilir)
+dispatcher.subscribe("search-index", |event: ItemCreated, stored| async move { /* ... */ Ok(()) });
+```
+
+- Dağıtıcı `app::run` içinde arka planda çalışır, olayları `FOR UPDATE SKIP LOCKED` ile alır. Birden fazla sunucu örneği güvenle birlikte çalışır.
+- **En az bir kez teslim:** Bir abone hata verirse veya süreç yarıda kalırsa olay tekrar teslim edilir. **Aboneler idempotent olmalıdır** (`stored.id` olay kimliğidir, tekrarları ayıklamak için kullanılabilir).
+- Hatalı teslimler üstel bekleme (backoff) ile tekrar denenir; maskelenmiş hata `outbox.last_error` alanında tutulur.
+- Katı sıra garantisi yoktur: tekrar denenen bir olay daha yenilerinden sonra gelebilir.
+
 ## Veritabanı testleri
 `db::testing::TestDb` (feature `testing`) her test için ayrı bir şema açar, tüm migration'ları o şemada uygular ve o şemaya bağlı bir pool verir:
 
@@ -31,6 +55,8 @@ Crate listesi ARCHITECTURE §3 ile `crates/app/tests/workspace_layout.rs` testiy
 let db = db::testing::TestDb::new().await;
 sqlx::query("...").execute(db.pool()).await?;
 ```
+
+Migration akışının kendisini test etmek için boş bir şema: `TestDb::new_unmigrated()`.
 
 - İlk kullanımda testcontainers ile **tek bir Postgres 17 konteyneri** (`secondbrainv4-test-postgres`) başlatılır ve sonraki çalıştırmalarda yeniden kullanılır. Bir saatten eski test şemaları otomatik silinir. Konteyneri tamamen kaldırmak için: `docker rm -f secondbrainv4-test-postgres`.
 - Docker gerekir. **OrbStack kullanıyorsanız** testcontainers Docker soketini kendiliğinden bulamaz, kabuğunuzda şunu tanımlayın: `export DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock`.

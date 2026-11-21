@@ -6,18 +6,21 @@
 //! - [`pagination`]: cursor pagination
 //! - [`validation`]: input validation helpers
 //! - [`redact`]: masking personal data in free-form text before logging
-//!
-//! The domain event bus is added with the outbox (T0.2.5).
+//! - [`DomainEvent`]: events published through the outbox
+//! - [`retry`]: backoff delays
 
 pub mod clock;
 pub mod error;
+pub mod event;
 pub mod id;
 pub mod pagination;
 pub mod redact;
+pub mod retry;
 pub mod validation;
 
 pub use clock::{Clock, FixedClock, SharedClock, SystemClock};
 pub use error::{AppError, BoxError};
+pub use event::DomainEvent;
 pub use id::Id;
 pub use pagination::{Cursor, Page, PageParams, PageRequest};
 pub use validation::{FieldError, FieldErrorCode, ValidationErrors};
