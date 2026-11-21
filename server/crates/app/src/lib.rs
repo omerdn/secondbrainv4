@@ -11,6 +11,7 @@ use tokio::net::TcpListener;
 
 pub mod config;
 pub mod http;
+pub mod idempotency;
 pub mod server;
 pub mod telemetry;
 
@@ -44,8 +45,28 @@ where
     });
 
     // Background jobs: modules register handlers and schedules here as they are implemented.
-    let worker = jobs::Worker::new(jobs::WorkerConfig::default());
-    let scheduler = jobs::Scheduler::new(jobs::SchedulerConfig::default());
+    let clock: kernel::SharedClock = std::sync::Arc::new(kernel::SystemClock);
+    let mut worker = jobs::Worker::new(jobs::WorkerConfig::default());
+    let mut scheduler = jobs::Scheduler::new(jobs::SchedulerConfig::default());
+    {
+        let pool = pool.clone();
+        let clock = clock.clone();
+        worker.register(move |_: idempotency::CleanupIdempotencyKeys, _| {
+            let pool = pool.clone();
+            let before = clock.now() - idempotency::RETENTION;
+            async move {
+                idempotency::delete_expired(&pool, before).await?;
+                Ok(())
+            }
+        });
+    }
+    scheduler
+        .add(
+            "idempotency-cleanup",
+            idempotency::CLEANUP_CRON,
+            idempotency::CleanupIdempotencyKeys {},
+        )
+        .map_err(RunError::Schedule)?;
     let (stop_jobs, jobs_stopped) = tokio::sync::watch::channel(false);
     let jobs_task = {
         let pool = pool.clone();
@@ -74,10 +95,12 @@ where
         tracing::info!(%addr, "listening");
     }
 
-    // Domain modules contribute their routes here as they are implemented.
-    let clock: kernel::SharedClock = std::sync::Arc::new(kernel::SystemClock);
-    let identity = identity::IdentityService::new(pool.clone(), clock);
-    let modules = identity::http::router(identity);
+    // `/auth/*` is exempt from idempotency keys (see `idempotency` module docs). Domain modules
+    // add their routes inside `protect(..)` as they are implemented.
+    let identity = identity::IdentityService::new(pool.clone(), clock.clone());
+    let idempotency = idempotency::Idempotency::new(pool.clone(), identity.clone(), clock);
+    let modules = identity::http::router(identity)
+        .merge(idempotency::protect(axum::Router::new(), idempotency));
     let result = server::serve(
         listener,
         http::router_with(modules),
@@ -111,6 +134,8 @@ pub enum RunError {
     Database(db::DbError),
     /// A migration failed.
     Migrate(db::MigrateError),
+    /// A built-in recurring job has an invalid schedule.
+    Schedule(jobs::ScheduleError),
     /// The HTTP server failed or could not drain within the shutdown timeout.
     Serve(io::Error),
 }
@@ -120,6 +145,7 @@ impl fmt::Display for RunError {
         match self {
             Self::Database(err) => write!(f, "database connection failed: {err}"),
             Self::Migrate(err) => write!(f, "database migration failed: {err}"),
+            Self::Schedule(err) => write!(f, "invalid job schedule: {err}"),
             Self::Serve(err) => write!(f, "server error: {err}"),
         }
     }
@@ -130,6 +156,7 @@ impl std::error::Error for RunError {
         match self {
             Self::Database(err) => Some(err),
             Self::Migrate(err) => Some(err),
+            Self::Schedule(err) => Some(err),
             Self::Serve(err) => Some(err),
         }
     }

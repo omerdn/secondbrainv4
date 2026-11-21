@@ -17,7 +17,7 @@ Crate listesi ARCHITECTURE §3 ile `crates/app/tests/workspace_layout.rs` testiy
 - Entegrasyon testi dosyaları (`tests/*.rs`) en üstte `#![allow(clippy::unwrap_used, clippy::expect_used)]` taşır. Clippy'nin testlerdeki istisnası yardımcı fonksiyonları kapsamıyor.
 
 ## Veritabanı ve migration'lar
-- Migration'lar `server/migrations/` altında, sqlx formatında: `<YYYYMMDDHHMMSS>_<açıklama>.sql`. Derleme sırasında binary'ye gömülür (`db::MIGRATOR`).
+- Migration'lar `server/migrations/` altında (klasördeki her değişiklik `db` crate'ini yeniden derletir, bkz. `crates/db/build.rs`), sqlx formatında: `<YYYYMMDDHHMMSS>_<açıklama>.sql`. Derleme sırasında binary'ye gömülür (`db::MIGRATOR`).
 - Sunucu açılışta bekleyen migration'ları uygular (`DB_MIGRATE_ON_START=false` ile kapatılabilir). Birden fazla örnek aynı anda başlarsa sqlx advisory lock ile sıraya girer.
 - **Merge edilmiş bir migration asla düzenlenmez.** Değişiklik için yeni bir migration eklenir.
 - Her domain crate'i sadece kendi tablolarının migration'larını yazar (ADR-0007). Tablo adları modül önekiyle anlaşılır olmalı.
@@ -86,6 +86,14 @@ Migration akışının kendisini test etmek için boş bir şema: `TestDb::new_u
 - İlk kullanımda testcontainers ile **tek bir Postgres 17 konteyneri** (`secondbrainv4-test-postgres`) başlatılır ve sonraki çalıştırmalarda yeniden kullanılır. Bir saatten eski test şemaları otomatik silinir. Konteyneri tamamen kaldırmak için: `docker rm -f secondbrainv4-test-postgres`.
 - Docker gerekir. **OrbStack kullanıyorsanız** testcontainers Docker soketini kendiliğinden bulamaz, kabuğunuzda şunu tanımlayın: `export DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock`.
 - Konteyner yerine mevcut bir sunucu kullanmak için: `TEST_DATABASE_URL=postgres://...` (ör. compose veritabanı).
+
+## Idempotency key'leri (`app::idempotency`)
+Her mutasyon istemcide üretilen bir `Idempotency-Key` başlığı taşır (ARCHITECTURE §10, ADR-0003).
+- Domain modüllerinin router'ları `app::run` içinde `idempotency::protect(..)` içine eklenir. Bu router'larda oturum açmış kullanıcının `POST/PUT/PATCH/DELETE` istekleri başlıksız gelirse 422 döner.
+- Aynı kullanıcı + anahtar için ilk yanıt (2xx/4xx) 24 saat saklanır; tekrarında handler çalışmaz, saklanan yanıt `Idempotent-Replayed: true` ile döner. Aynı anahtar farklı istekle gelirse 422, ilk istek sürerken 409. 5xx saklanmaz (istemci aynı anahtarla tekrar deneyebilir). Yarıda kalan bir denemenin kilidi 2 dakika sonra düşer.
+- `/auth/*` muaftır: oturum öncesi isteklerdir ve yanıtları token taşır (token asla saklanmaz).
+- Sınır: kayıt ile handler'ın kendi transaction'ı ayrıdır. Süreç handler commit'inden hemen sonra çökerse, kilit süresi dolduktan sonraki tekrar yeniden çalışır.
+- Eski anahtarlar her gün 03:30 UTC'de `idempotency.cleanup` işiyle silinir.
 
 ## Kimlik doğrulama (`identity`)
 - Uç noktalar: `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/sessions`, `DELETE /auth/sessions/{id}` (ayrıntı: `crates/identity/src/http.rs`).
