@@ -102,6 +102,13 @@ pub struct IdTokenFields {
 }
 impl ExtraTokenFields for IdTokenFields {}
 
+impl IdTokenFields {
+    /// The raw ID token.
+    pub fn id_token(&self) -> &str {
+        &self.id_token
+    }
+}
+
 type GoogleClient = Client<
     BasicErrorResponse,
     StandardTokenResponse<IdTokenFields, BasicTokenType>,

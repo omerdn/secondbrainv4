@@ -36,6 +36,41 @@ pub struct Config {
     pub public_api_url: String,
     /// Google sign-in clients; `None` = disabled.
     pub google: Option<GoogleClients>,
+    /// Sign in with Apple settings; `None` = disabled.
+    pub apple: Option<AppleSettings>,
+}
+
+/// Sign in with Apple (`APPLE_*`).
+#[derive(Clone, PartialEq, Eq)]
+pub struct AppleSettings {
+    pub team_id: String,
+    pub key_id: String,
+    /// PKCS#8 PEM of the `.p8` key.
+    pub private_key_pem: String,
+    pub services_id: String,
+    pub bundle_ids: Vec<String>,
+}
+
+/// The private key is never printed.
+impl fmt::Debug for AppleSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AppleSettings")
+            .field("team_id", &self.team_id)
+            .field("services_id", &self.services_id)
+            .field("bundle_ids", &self.bundle_ids)
+            .finish_non_exhaustive()
+    }
+}
+
+fn comma_list(value: Option<String>) -> Vec<String> {
+    value
+        .map(|ids| {
+            ids.split(',')
+                .map(|id| id.trim().to_owned())
+                .filter(|id| !id.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Google OAuth clients (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_NATIVE_CLIENT_IDS`).
@@ -173,14 +208,7 @@ impl Config {
             (Some(web_client_id), Some(web_client_secret)) => Some(GoogleClients {
                 web_client_id,
                 web_client_secret,
-                native_client_ids: non_empty("GOOGLE_NATIVE_CLIENT_IDS")
-                    .map(|ids| {
-                        ids.split(',')
-                            .map(|id| id.trim().to_owned())
-                            .filter(|id| !id.is_empty())
-                            .collect()
-                    })
-                    .unwrap_or_default(),
+                native_client_ids: comma_list(non_empty("GOOGLE_NATIVE_CLIENT_IDS")),
             }),
             (None, None) => None,
             _ => {
@@ -191,7 +219,50 @@ impl Config {
             }
         };
 
+        let apple_key = match (
+            non_empty("APPLE_PRIVATE_KEY"),
+            non_empty("APPLE_PRIVATE_KEY_PATH"),
+        ) {
+            (Some(pem), _) => Some(pem.replace("\\n", "\n")),
+            (None, Some(path)) => {
+                Some(
+                    std::fs::read_to_string(&path).map_err(|err| ConfigError::Invalid {
+                        key: "APPLE_PRIVATE_KEY_PATH",
+                        reason: format!("cannot read the key file: {}", err.kind()),
+                    })?,
+                )
+            }
+            (None, None) => None,
+        };
+        let apple_parts = (
+            non_empty("APPLE_TEAM_ID"),
+            non_empty("APPLE_KEY_ID"),
+            apple_key,
+            non_empty("APPLE_SERVICES_ID"),
+        );
+        let apple = match apple_parts {
+            (Some(team_id), Some(key_id), Some(private_key_pem), Some(services_id)) => {
+                Some(AppleSettings {
+                    team_id,
+                    key_id,
+                    private_key_pem,
+                    services_id,
+                    bundle_ids: comma_list(non_empty("APPLE_BUNDLE_IDS")),
+                })
+            }
+            (None, None, None, None) => None,
+            _ => {
+                return Err(ConfigError::Invalid {
+                    key: "APPLE_TEAM_ID",
+                    reason: "APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_PRIVATE_KEY(_PATH) and \
+                             APPLE_SERVICES_ID must be set together"
+                        .into(),
+                });
+            }
+        };
+
         Ok(Self {
+            apple,
             public_api_url,
             google,
             email_driver,
@@ -535,5 +606,54 @@ mod tests {
     #[test]
     fn public_api_url_defaults_to_local_server() {
         assert_eq!(config(&[]).unwrap().public_api_url, "http://localhost:8080");
+    }
+
+    #[test]
+    fn apple_requires_all_settings_together() {
+        assert_eq!(config(&[]).unwrap().apple, None);
+        let err = config_err(&[("APPLE_TEAM_ID", "T")]);
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                key: "APPLE_TEAM_ID",
+                ..
+            }
+        ));
+        let apple = config(&[
+            ("APPLE_TEAM_ID", "T"),
+            ("APPLE_KEY_ID", "K"),
+            (
+                "APPLE_PRIVATE_KEY",
+                "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----",
+            ),
+            ("APPLE_SERVICES_ID", "com.example.web"),
+            ("APPLE_BUNDLE_IDS", "com.example.app"),
+        ])
+        .unwrap()
+        .apple
+        .unwrap();
+        assert!(
+            apple.private_key_pem.contains("\nabc\n"),
+            "escaped newlines are expanded"
+        );
+        assert_eq!(apple.bundle_ids, ["com.example.app"]);
+        assert!(!format!("{apple:?}").contains("PRIVATE KEY"));
+    }
+
+    #[test]
+    fn unreadable_apple_key_file_is_reported() {
+        let err = config_err(&[
+            ("APPLE_TEAM_ID", "T"),
+            ("APPLE_KEY_ID", "K"),
+            ("APPLE_PRIVATE_KEY_PATH", "/nonexistent/key.p8"),
+            ("APPLE_SERVICES_ID", "s"),
+        ]);
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                key: "APPLE_PRIVATE_KEY_PATH",
+                ..
+            }
+        ));
     }
 }

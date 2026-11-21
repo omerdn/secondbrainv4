@@ -70,6 +70,7 @@ pub(crate) struct Inner {
     pub(crate) clock: SharedClock,
     pub(crate) email: EmailSettings,
     pub(crate) google: Option<crate::oauth::google::Google>,
+    pub(crate) apple: Option<crate::oauth::apple::Apple>,
 }
 
 /// How identity e-mails are delivered.
@@ -139,6 +140,7 @@ impl IdentityService {
                 clock,
                 email,
                 google: None,
+                apple: None,
             }),
         }
     }
@@ -152,6 +154,21 @@ impl IdentityService {
                 clock: inner.clock.clone(),
                 email: inner.email.clone(),
                 google: Some(google),
+                apple: inner.apple.clone(),
+            }),
+        }
+    }
+
+    /// Enables Sign in with Apple (T0.3.5). Without it the Apple endpoints answer 404.
+    pub fn with_apple(self, apple: crate::oauth::apple::Apple) -> Self {
+        let inner = &self.inner;
+        Self {
+            inner: Arc::new(Inner {
+                pool: inner.pool.clone(),
+                clock: inner.clock.clone(),
+                email: inner.email.clone(),
+                google: inner.google.clone(),
+                apple: Some(apple),
             }),
         }
     }

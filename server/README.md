@@ -104,6 +104,8 @@ Her mutasyon istemcide üretilen bir `Idempotency-Key` başlığı taşır (ARCH
 
 - Google ile giriş (T0.3.4): web'de `GET /auth/google/start` → Google → `GET /auth/google/callback` (sunucu kodu değiştirir, cookie'yi yazar, web uygulamasına yönlendirir). Mobilde uygulama PKCE ile kodu kendisi alır ve `POST /auth/google/native`'e gönderir. `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` boşsa Google uç noktaları 404 döner. Hesap bağlama kuralları `crates/identity/src/oauth/mod.rs` başındadır (doğrulanmamış hesaba bağlanırken eski şifre ve oturumlar silinir).
 
+- Apple ile giriş (T0.3.5): web'de `GET /auth/apple/start` → Apple → `POST /auth/apple/callback` (Apple `form_post` ile döner; bu yüzden state cookie'si `SameSite=None`). iOS'ta uygulama `authorizationCode` ve ilk girişte adı `POST /auth/apple/native`'e gönderir. Apple adı sadece ilk yetkilendirmede gönderir; gizli (private relay) adresler normal doğrulanmış adres gibi saklanır. Token uç noktası için `client_secret`, `.p8` anahtarıyla her istekte imzalanan 5 dakikalık bir ES256 JWT'dir. `APPLE_*` boşsa Apple uç noktaları 404 döner.
+
 ## E-posta (`kernel::email`)
 - Modüller e-postayı `EmailSender` arayüzüyle gönderir; sağlayıcıyı bilmez. Sağlayıcı henüz seçilmedi (ARCHITECTURE §14).
 - `EMAIL_DRIVER=log` (varsayılan): e-posta gönderilmez, konu ve gövde (bağlantı dahil) `email` hedefiyle loga yazılır. Alıcı adresi yazılmaz. Yerelde doğrulama bağlantısını logdan kopyalayabilirsiniz. **`APP_ENV=production` ise sunucu bu sürücüyle açılmaz.**

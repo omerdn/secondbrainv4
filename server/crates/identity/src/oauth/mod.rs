@@ -13,6 +13,7 @@
 //!    the address becomes verified.
 //! 4. Otherwise a new account is created with a verified address and no password.
 
+pub mod apple;
 pub mod google;
 
 use chrono::{DateTime, Utc};
@@ -62,6 +63,26 @@ impl std::fmt::Debug for ProviderClaims {
         f.debug_struct("ProviderClaims")
             .field("email_verified", &self.email_verified)
             .finish_non_exhaustive()
+    }
+}
+
+/// Decodes the payload of a JWT **without** checking its signature. Only for ID tokens received
+/// directly from a provider's token endpoint over TLS (OpenID Connect Core §3.1.3.7).
+pub(crate) fn jwt_payload<T: serde::de::DeserializeOwned>(token: &str) -> Option<T> {
+    use base64::Engine;
+    let payload = token.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload.trim_end_matches('='))
+        .ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// `true` for JSON `true` or the string `"true"` (Apple and older Google tokens use strings).
+pub(crate) fn json_bool(value: Option<&serde_json::Value>) -> bool {
+    match value {
+        Some(serde_json::Value::Bool(b)) => *b,
+        Some(serde_json::Value::String(s)) => s == "true",
+        _ => false,
     }
 }
 

@@ -178,6 +178,64 @@ impl GoogleNativeRequest {
     }
 }
 
+/// `POST /auth/apple/native`: the iOS app's `ASAuthorizationAppleIDCredential`.
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+pub struct AppleNativeRequest {
+    /// `authorizationCode` from the credential.
+    pub code: String,
+    /// The app's bundle id.
+    pub client_id: String,
+    /// `fullName.givenName` (Apple sends it only on the first authorization).
+    #[serde(default)]
+    #[ts(optional)]
+    pub given_name: Option<String>,
+    /// `fullName.familyName` (first authorization only).
+    #[serde(default)]
+    #[ts(optional)]
+    pub family_name: Option<String>,
+    /// Optional label for the session list.
+    #[serde(default)]
+    #[ts(optional)]
+    pub device: Option<String>,
+}
+
+impl AppleNativeRequest {
+    /// Checks presence and length of each field.
+    pub fn validate(self) -> Result<crate::oauth::apple::AppleNativeSignIn, ValidationErrors> {
+        let device = clean_device(self.device);
+        let mut errors = ValidationErrors::new();
+        errors
+            .check(non_blank("code", &self.code))
+            .check(max_chars("code", &self.code, 2048))
+            .check(non_blank("client_id", &self.client_id))
+            .check(max_chars("client_id", &self.client_id, 255));
+        for (field, value) in [
+            ("given_name", &self.given_name),
+            ("family_name", &self.family_name),
+        ] {
+            if let Some(value) = value {
+                errors.check(max_chars(field, value, MAX_DISPLAY_NAME_CHARS));
+            }
+        }
+        if let Some(device) = &device {
+            errors.check(max_chars("device", device, MAX_DEVICE_CHARS));
+        }
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+        Ok(crate::oauth::apple::AppleNativeSignIn {
+            name: crate::oauth::apple::full_name(
+                self.given_name.as_deref(),
+                self.family_name.as_deref(),
+            ),
+            code: self.code,
+            client_id: self.client_id,
+            device,
+        })
+    }
+}
+
 /// The signed-in user's own account.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[ts(export)]
