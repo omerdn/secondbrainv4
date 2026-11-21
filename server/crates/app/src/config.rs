@@ -34,6 +34,9 @@ pub struct Config {
     pub public_web_url: String,
     /// Public URL of this server for OAuth callbacks (`PUBLIC_API_URL`).
     pub public_api_url: String,
+    /// Browser origins allowed to call the API with credentials (CORS): the origin of
+    /// `PUBLIC_WEB_URL` plus `CORS_EXTRA_ORIGINS` (comma-separated). Never a wildcard.
+    pub cors_origins: Vec<String>,
     /// Google sign-in clients; `None` = disabled.
     pub google: Option<GoogleClients>,
     /// Sign in with Apple settings; `None` = disabled.
@@ -265,7 +268,23 @@ impl Config {
 
         let trust_proxy_headers: bool = parse(&lookup, "TRUST_PROXY_HEADERS", false)?;
 
+        let mut cors_origins = vec![origin_of(&public_web_url, "PUBLIC_WEB_URL")?];
+        for extra in comma_list(non_empty("CORS_EXTRA_ORIGINS")) {
+            let origin = origin_of(extra.trim_end_matches('/'), "CORS_EXTRA_ORIGINS")?;
+            if origin != extra.trim_end_matches('/') {
+                return Err(ConfigError::Invalid {
+                    key: "CORS_EXTRA_ORIGINS",
+                    reason: "each entry must be an origin (scheme://host[:port]) without a path"
+                        .into(),
+                });
+            }
+            if !cors_origins.contains(&origin) {
+                cors_origins.push(origin);
+            }
+        }
+
         Ok(Self {
+            cors_origins,
             trust_proxy_headers,
             apple,
             public_api_url,
@@ -299,6 +318,28 @@ fn http_url(
             reason: "must start with http:// or https://".into(),
         })
     }
+}
+
+/// The origin (`scheme://host[:port]`, lower-cased) of an `http(s)://` URL. Rejects wildcards
+/// and anything that is not a plain host.
+fn origin_of(url: &str, key: &'static str) -> Result<String, ConfigError> {
+    let invalid = |reason: &str| ConfigError::Invalid {
+        key,
+        reason: reason.into(),
+    };
+    let (scheme, rest) = url
+        .split_once("://")
+        .filter(|(scheme, _)| matches!(*scheme, "http" | "https"))
+        .ok_or_else(|| invalid("must start with http:// or https://"))?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let valid_host = !authority.is_empty()
+        && authority
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b':' | b'[' | b']'));
+    if !valid_host {
+        return Err(invalid("must name a host (no wildcards or credentials)"));
+    }
+    Ok(format!("{scheme}://{}", authority.to_ascii_lowercase()))
 }
 
 fn parse<T>(
@@ -660,6 +701,63 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn cors_allows_only_the_web_origin_by_default() {
+        assert_eq!(config(&[]).unwrap().cors_origins, ["http://localhost:8081"]);
+        let config = config(&[("PUBLIC_WEB_URL", "https://App.Example.com/app/")]).unwrap();
+        assert_eq!(config.cors_origins, ["https://app.example.com"]);
+    }
+
+    #[test]
+    fn cors_extra_origins_are_added_once() {
+        let config = config(&[(
+            "CORS_EXTRA_ORIGINS",
+            " http://localhost:19006 , http://localhost:8081/, tauri://localhost",
+        )]);
+        // `tauri://` is not http(s): rejected rather than silently dropped.
+        assert!(matches!(
+            config.unwrap_err(),
+            ConfigError::Invalid {
+                key: "CORS_EXTRA_ORIGINS",
+                ..
+            }
+        ));
+        let config = config_ok(&[(
+            "CORS_EXTRA_ORIGINS",
+            "http://localhost:19006,http://localhost:8081/",
+        )]);
+        assert_eq!(
+            config.cors_origins,
+            ["http://localhost:8081", "http://localhost:19006"]
+        );
+    }
+
+    #[test]
+    fn cors_rejects_wildcards_and_paths() {
+        for value in [
+            "*",
+            "https://*.example.com",
+            "https://example.com/app",
+            "https://u:p@x.com",
+        ] {
+            let err = config_err(&[("CORS_EXTRA_ORIGINS", value)]);
+            assert!(
+                matches!(
+                    err,
+                    ConfigError::Invalid {
+                        key: "CORS_EXTRA_ORIGINS",
+                        ..
+                    }
+                ),
+                "{value}: {err:?}"
+            );
+        }
+    }
+
+    fn config_ok(vars: &[(&str, &str)]) -> Config {
+        config(vars).unwrap()
     }
 
     #[test]

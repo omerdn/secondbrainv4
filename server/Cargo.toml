@@ -50,7 +50,7 @@ thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
 tower = { version = "0.5.3", features = ["util"] }
 tower_governor = "0.8.0"
-tower-http = { version = "0.7.1", features = ["request-id", "trace"] }
+tower-http = { version = "0.7.1", features = ["cors", "request-id", "trace"] }
 tracing = "0.1.44"
 ts-rs = { version = "12.0.1", features = ["uuid-impl", "chrono-impl", "serde-json-impl", "no-serde-warnings"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }

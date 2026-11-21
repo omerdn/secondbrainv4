@@ -7,16 +7,24 @@
 //! Only: method, **route template** (`/items/{id}`, never the raw path), status, latency and
 //! request id. Query strings, headers (cookies, `Authorization`), client IP addresses and bodies
 //! are **never** logged; under KVKK/GDPR an IP address is personal data too.
+//!
+//! # CORS (T0.4.9)
+//! The web client is served from another origin (`PUBLIC_WEB_URL`) and sends the session cookie
+//! with `credentials: "include"`. Only the configured origins ([`crate::Config::cors_origins`])
+//! get CORS headers, with credentials allowed; any other origin gets none, so the browser blocks
+//! the response. Native apps do not use CORS. CSRF protection (T0.3.6) still applies to
+//! cookie-authenticated mutations: CORS only decides which pages may *read* responses.
 
 use std::time::Duration;
 
 use axum::extract::{MatchedPath, Request};
-use axum::http::{HeaderName, HeaderValue};
+use axum::http::{HeaderName, HeaderValue, Method, header};
 use axum::response::Response;
 use axum::routing::get;
 use axum::{Json, Router};
 use serde::Serialize;
 use tower::ServiceBuilder;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::request_id::PropagateRequestIdLayer;
 use tower_http::trace::TraceLayer;
 use tracing::Span;
@@ -28,15 +36,76 @@ pub const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id"
 /// Longest client-supplied request id that is accepted as-is.
 const MAX_REQUEST_ID_LEN: usize = 64;
 
-/// Builds the application router with only the infrastructure routes (`/health`).
+/// How long browsers may cache a preflight response.
+const PREFLIGHT_MAX_AGE: Duration = Duration::from_secs(600);
+
+/// Builds the application router with only the infrastructure routes (`/health`) and no
+/// allowed CORS origins.
 pub fn router() -> Router {
-    router_with(Router::new())
+    router_with(Router::new(), &[])
 }
 
 /// Builds the application router: infrastructure routes plus the given module routes
-/// (each module applies its own state), wrapped in request observability.
-pub fn router_with(modules: Router) -> Router {
-    with_observability(Router::new().route("/health", get(health)).merge(modules))
+/// (each module applies its own state), wrapped in CORS for `cors_origins` and request
+/// observability.
+pub fn router_with(modules: Router, cors_origins: &[String]) -> Router {
+    with_observability(
+        Router::new()
+            .route("/health", get(health))
+            .merge(modules)
+            .layer(cors(cors_origins))
+            .layer(axum::middleware::map_response(strip_unapproved_cors)),
+    )
+}
+
+/// `CorsLayer` adds `Access-Control-Allow-{Credentials,Methods,Headers}` even when the origin is
+/// not allowed; drop every `Access-Control-*` header unless an origin was approved, so other
+/// origins get no CORS headers at all.
+async fn strip_unapproved_cors(mut response: Response) -> Response {
+    let headers = response.headers_mut();
+    if !headers.contains_key(header::ACCESS_CONTROL_ALLOW_ORIGIN) {
+        let cors: Vec<HeaderName> = headers
+            .keys()
+            .filter(|name| name.as_str().starts_with("access-control-"))
+            .cloned()
+            .collect();
+        for name in cors {
+            headers.remove(name);
+        }
+    }
+    response
+}
+
+/// CORS for the given exact origins (no wildcard), with credentials. Answers preflight
+/// (`OPTIONS`) requests itself, before rate limits, CSRF and idempotency checks.
+pub fn cors(origins: &[String]) -> CorsLayer {
+    let origins: Vec<HeaderValue> = origins
+        .iter()
+        .filter_map(|origin| HeaderValue::from_str(origin).ok())
+        .collect();
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::list(origins))
+        .allow_credentials(true)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+        ])
+        .allow_headers([
+            header::CONTENT_TYPE,
+            header::AUTHORIZATION,
+            HeaderName::from_static("x-csrf-token"),
+            crate::idempotency::KEY_HEADER,
+        ])
+        // Response headers the client reads besides the CORS-safelisted ones.
+        .expose_headers([
+            header::RETRY_AFTER,
+            REQUEST_ID_HEADER,
+            crate::idempotency::REPLAYED_HEADER,
+        ])
+        .max_age(PREFLIGHT_MAX_AGE)
 }
 
 /// Adds request ids and request logging to `router`. Apply after all routes are added.
