@@ -18,12 +18,14 @@
 use std::fmt;
 
 use serde::Serialize;
+use ts_rs::TS;
 
 use crate::AppError;
 
 /// Machine-readable reason a field is invalid.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
+#[ts(export)]
 pub enum FieldErrorCode {
     /// Missing or blank.
     Required,
@@ -38,7 +40,8 @@ pub enum FieldErrorCode {
 }
 
 /// One invalid field.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
 pub struct FieldError {
     /// Field name as sent by the client (e.g. `title`, `subtasks[2].title`).
     pub field: String,
@@ -60,8 +63,9 @@ impl FieldError {
 }
 
 /// A collection of field errors.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, TS)]
 #[serde(transparent)]
+#[ts(export, as = "Vec<FieldError>")]
 pub struct ValidationErrors {
     errors: Vec<FieldError>,
 }

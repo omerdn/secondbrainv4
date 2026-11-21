@@ -39,6 +39,10 @@ jobs:
         with:
           workspaces: server
 
+      # `cargo test` rewrites the ts-rs bindings; clearing first also catches removed types.
+      - name: Clear generated API types
+        run: rm -rf ../packages/api-types/src/generated
+
       - name: cargo fmt
         run: cargo fmt --all --check
 
@@ -48,6 +52,18 @@ jobs:
       # testcontainers-based integration tests use the runner's Docker daemon.
       - name: cargo test
         run: cargo test --workspace --locked
+
+      # T0.2.7: packages/api-types must match the Rust DTOs (never edited by hand).
+      - name: API types are up to date
+        working-directory: .
+        run: |
+          node packages/api-types/scripts/build-index.mjs
+          if [ -n "$(git status --porcelain -- packages/api-types)" ]; then
+            git status --porcelain -- packages/api-types
+            git --no-pager diff -- packages/api-types
+            echo "::error::packages/api-types is out of date. Run 'pnpm api-types:generate' and commit the result."
+            exit 1
+          fi
 
   typescript:
     name: TypeScript (lint, typecheck, test)

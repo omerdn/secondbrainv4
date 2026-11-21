@@ -19,7 +19,7 @@ pub mod retry;
 pub mod validation;
 
 pub use clock::{Clock, FixedClock, SharedClock, SystemClock};
-pub use error::{AppError, BoxError};
+pub use error::{AppError, BoxError, ErrorCode};
 pub use event::DomainEvent;
 pub use id::Id;
 pub use pagination::{Cursor, Page, PageParams, PageRequest};

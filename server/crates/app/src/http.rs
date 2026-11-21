@@ -20,6 +20,7 @@ use tower::ServiceBuilder;
 use tower_http::request_id::PropagateRequestIdLayer;
 use tower_http::trace::TraceLayer;
 use tracing::Span;
+use ts_rs::TS;
 
 /// Request id header.
 pub const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id");
@@ -98,9 +99,11 @@ fn on_response(response: &Response, latency: Duration, _span: &Span) {
 }
 
 /// Body of `GET /health`.
-#[derive(Debug, Serialize)]
-struct Health {
-    status: &'static str,
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct Health {
+    /// Always `"ok"` when the process is serving.
+    pub status: &'static str,
 }
 
 /// Liveness probe: the process is up and serving HTTP.

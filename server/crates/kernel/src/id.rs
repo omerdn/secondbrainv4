@@ -130,6 +130,20 @@ impl<T> From<Id<T>> for Uuid {
     }
 }
 
+/// Ids are UUID strings in TypeScript (`packages/api-types`).
+impl<T> ts_rs::TS for Id<T> {
+    type WithoutGenerics = Id<ts_rs::Dummy>;
+    type OptionInnerType = Self;
+
+    fn name(_: &ts_rs::Config) -> String {
+        "string".to_owned()
+    }
+
+    fn inline(cfg: &ts_rs::Config) -> String {
+        Self::name(cfg)
+    }
+}
+
 impl<T> Serialize for Id<T> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.uuid.serialize(serializer)

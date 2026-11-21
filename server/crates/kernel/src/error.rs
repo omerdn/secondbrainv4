@@ -19,6 +19,7 @@ use axum::Json;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::Serialize;
+use ts_rs::TS;
 
 use crate::validation::ValidationErrors;
 
@@ -61,15 +62,15 @@ impl AppError {
     }
 
     /// Stable machine-readable code (part of the API contract).
-    pub fn code(&self) -> &'static str {
+    pub fn code(&self) -> ErrorCode {
         match self {
-            Self::NotFound => "not_found",
-            Self::Unauthenticated => "unauthenticated",
-            Self::Forbidden => "forbidden",
-            Self::Validation(_) => "validation_failed",
-            Self::Conflict(_) => "conflict",
-            Self::RateLimited { .. } => "rate_limited",
-            Self::Internal(_) => "internal",
+            Self::NotFound => ErrorCode::NotFound,
+            Self::Unauthenticated => ErrorCode::Unauthenticated,
+            Self::Forbidden => ErrorCode::Forbidden,
+            Self::Validation(_) => ErrorCode::ValidationFailed,
+            Self::Conflict(_) => ErrorCode::Conflict,
+            Self::RateLimited { .. } => ErrorCode::RateLimited,
+            Self::Internal(_) => ErrorCode::Internal,
         }
     }
 
@@ -93,22 +94,46 @@ impl From<ValidationErrors> for AppError {
     }
 }
 
+/// Machine-readable error code sent to clients (`error.code`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum ErrorCode {
+    /// See [`AppError::NotFound`].
+    NotFound,
+    /// See [`AppError::Unauthenticated`].
+    Unauthenticated,
+    /// See [`AppError::Forbidden`].
+    Forbidden,
+    /// See [`AppError::Validation`].
+    ValidationFailed,
+    /// See [`AppError::Conflict`].
+    Conflict,
+    /// See [`AppError::RateLimited`].
+    RateLimited,
+    /// See [`AppError::Internal`].
+    Internal,
+}
+
 /// Wire format of an error response.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 pub struct ErrorBody<'a> {
     /// The error payload.
     pub error: ErrorPayload<'a>,
 }
 
 /// Inner error object.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 pub struct ErrorPayload<'a> {
     /// See [`AppError::code`].
-    pub code: &'static str,
+    pub code: ErrorCode,
     /// Human-readable message. Generic for internal errors.
     pub message: String,
     /// Field errors, only for `validation_failed`.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub fields: Option<&'a ValidationErrors>,
 }
 
