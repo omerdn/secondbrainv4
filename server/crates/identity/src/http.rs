@@ -19,6 +19,14 @@
 //! | POST   | `/auth/apple/callback` | –    | Apple's form POST; 303 to the web app |
 //! | POST   | `/auth/apple/native`   | –    | 200 [`AuthResponse`] with bearer token |
 //!
+//! Profile routes ([`profile_router`], T0.3.7). The application mounts them inside
+//! `app::idempotency::protect`, so `PATCH` needs an `Idempotency-Key`.
+//!
+//! | Method | Path  | Auth | Result |
+//! |--------|-------|------|--------|
+//! | GET    | `/me` | yes  | 200 [`CurrentUser`] |
+//! | PATCH  | `/me` | yes  | 200 [`CurrentUser`]; body [`UpdateProfileRequest`], 422 on invalid fields |
+//!
 //! Google / Apple endpoints answer 404 when that provider is not configured.
 //!
 //! # Token transport
@@ -53,6 +61,7 @@ use crate::model::{
     GoogleNativeRequest, LoginRequest, RegisterRequest, ResetPasswordRequest, SessionId,
     SessionInfo, VerifyEmailRequest,
 };
+use crate::profile::UpdateProfileRequest;
 use crate::rate_limit::{self, RateLimits};
 use crate::service::{AuthContext, IdentityService, IssuedSession};
 use crate::token;
@@ -107,6 +116,32 @@ fn routes(service: IdentityService, limits: Option<RateLimits>) -> Router {
         .merge(credentials)
         .merge(email)
         .with_state(service)
+}
+
+/// The signed-in user's profile: `GET /me` and `PATCH /me` (T0.3.7).
+pub fn profile_router(service: IdentityService) -> Router {
+    Router::new()
+        .route("/me", get(get_profile).patch(update_profile))
+        .with_state(service)
+}
+
+async fn get_profile(
+    State(service): State<IdentityService>,
+    Authenticated(auth): Authenticated,
+) -> Result<Json<CurrentUser>, AppError> {
+    service.current_user(auth.user_id).await.map(Json)
+}
+
+async fn update_profile(
+    State(service): State<IdentityService>,
+    Authenticated(auth): Authenticated,
+    Json(request): Json<UpdateProfileRequest>,
+) -> Result<Json<CurrentUser>, AppError> {
+    let changes = request.validate()?;
+    service
+        .update_profile(auth.user_id, changes)
+        .await
+        .map(Json)
 }
 
 /// Extractor for endpoints that require a signed-in user. Rejects with 401

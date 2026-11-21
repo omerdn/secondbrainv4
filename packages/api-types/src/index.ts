@@ -19,5 +19,6 @@ export type * from "./generated/Page";
 export type * from "./generated/RegisterRequest";
 export type * from "./generated/ResetPasswordRequest";
 export type * from "./generated/SessionInfo";
+export type * from "./generated/UpdateProfileRequest";
 export type * from "./generated/ValidationErrors";
 export type * from "./generated/VerifyEmailRequest";

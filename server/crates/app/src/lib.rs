@@ -143,8 +143,9 @@ where
         trust_proxy_headers: config.trust_proxy_headers,
         ..identity::rate_limit::RateLimits::default()
     };
+    let profile = identity::http::profile_router(identity.clone());
     let modules = identity::http::rate_limited_router(identity, limits)
-        .merge(idempotency::protect(axum::Router::new(), idempotency));
+        .merge(idempotency::protect(profile, idempotency));
     let result = server::serve(
         listener,
         http::router_with(modules),
