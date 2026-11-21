@@ -14,8 +14,11 @@
 //! | GET    | `/auth/google/start`   | –    | 303 to Google (web) |
 //! | GET    | `/auth/google/callback` | –   | 303 to the web app, session cookie set |
 //! | POST   | `/auth/google/native`  | –    | 200 [`AuthResponse`] with bearer token |
+//! | GET    | `/auth/apple/start`    | –    | 303 to Apple (web) |
+//! | POST   | `/auth/apple/callback` | –    | Apple's form POST; 303 to the web app |
+//! | POST   | `/auth/apple/native`   | –    | 200 [`AuthResponse`] with bearer token |
 //!
-//! Google endpoints answer 404 when Google sign-in is not configured.
+//! Google / Apple endpoints answer 404 when that provider is not configured.
 //!
 //! # Token transport
 //! - **Web** (`client: "web"`): the token goes into an `HttpOnly; Secure; SameSite=Lax` cookie
@@ -37,9 +40,9 @@ use kernel::AppError;
 use uuid::Uuid;
 
 use crate::model::{
-    AuthResponse, ClientKind, CurrentUser, ForgotPasswordRequest, GoogleNativeRequest,
-    LoginRequest, RegisterRequest, ResetPasswordRequest, SessionId, SessionInfo,
-    VerifyEmailRequest,
+    AppleNativeRequest, AuthResponse, ClientKind, CurrentUser, ForgotPasswordRequest,
+    GoogleNativeRequest, LoginRequest, RegisterRequest, ResetPasswordRequest, SessionId,
+    SessionInfo, VerifyEmailRequest,
 };
 use crate::service::{AuthContext, IdentityService, IssuedSession};
 
@@ -65,6 +68,9 @@ pub fn router(service: IdentityService) -> Router {
         .route("/auth/google/start", get(google_start))
         .route("/auth/google/callback", get(google_callback))
         .route("/auth/google/native", post(google_native))
+        .route("/auth/apple/start", get(apple_start))
+        .route("/auth/apple/callback", post(apple_callback))
+        .route("/auth/apple/native", post(apple_native))
         .with_state(service)
 }
 
@@ -259,25 +265,109 @@ async fn reset_password(
     Ok(response)
 }
 
-async fn google_start(State(service): State<IdentityService>) -> Result<Response, AppError> {
-    let start = service.google_web_start().await?;
+/// Browser sign-in kind: decides the state cookie's path and `SameSite` and the error tag.
+#[derive(Clone, Copy)]
+enum WebProvider {
+    Google,
+    Apple,
+}
+
+impl WebProvider {
+    fn path(self) -> &'static str {
+        match self {
+            Self::Google => "/auth/google",
+            Self::Apple => "/auth/apple",
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Google => "google",
+            Self::Apple => "apple",
+        }
+    }
+
+    /// Google returns with a top-level GET (Lax cookies are sent); Apple returns with a
+    /// cross-site form POST, which only carries `SameSite=None` cookies.
+    fn same_site(self) -> &'static str {
+        match self {
+            Self::Google => "Lax",
+            Self::Apple => "None",
+        }
+    }
+
+    fn state_cookie(self, value: &str, max_age: i64) -> Result<HeaderValue, AppError> {
+        HeaderValue::from_str(&format!(
+            "{OAUTH_STATE_COOKIE}={value}; Path={}; Max-Age={max_age}; HttpOnly; Secure; SameSite={}",
+            self.path(),
+            self.same_site()
+        ))
+        .map_err(AppError::internal)
+    }
+}
+
+/// 303 to the provider with the state cookie set.
+fn redirect_to_provider(
+    provider: WebProvider,
+    url: &str,
+    state: &str,
+    max_age: i64,
+) -> Result<Response, AppError> {
     let mut response = StatusCode::SEE_OTHER.into_response();
     let headers = response.headers_mut();
     headers.insert(
         header::LOCATION,
-        HeaderValue::from_str(&start.authorization_url).map_err(AppError::internal)?,
+        HeaderValue::from_str(url).map_err(AppError::internal)?,
     );
-    let max_age = crate::oauth::google::STATE_TTL.num_seconds();
-    let cookie = format!(
-        "{OAUTH_STATE_COOKIE}={}; Path=/auth/google; Max-Age={max_age}; HttpOnly; Secure; SameSite=Lax",
-        start.state
-    );
-    headers.insert(
-        header::SET_COOKIE,
-        HeaderValue::from_str(&cookie).map_err(AppError::internal)?,
-    );
+    headers.insert(header::SET_COOKIE, provider.state_cookie(state, max_age)?);
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     Ok(response)
+}
+
+/// Ends a browser sign-in with a redirect to the web app either way: `/` (session cookie set)
+/// on success, `/login?error=<provider>` on failure (cancelled consent, expired state, refused
+/// account…). The state cookie is cleared.
+fn finish_web_sign_in(
+    provider: WebProvider,
+    web_url: &str,
+    result: Result<(CurrentUser, IssuedSession), AppError>,
+) -> Response {
+    let (location, session) = match result {
+        Ok((_, session)) => (
+            format!("{web_url}/"),
+            Some(session_cookie(session.token.expose())),
+        ),
+        Err(err) => {
+            if let AppError::Internal(_) = err {
+                // Logged with the request context; the user still lands on the login page.
+                let _ = err.into_response();
+            }
+            (format!("{web_url}/login?error={}", provider.name()), None)
+        }
+    };
+    let mut response = StatusCode::SEE_OTHER.into_response();
+    let out = response.headers_mut();
+    if let Ok(value) = HeaderValue::from_str(&location) {
+        out.insert(header::LOCATION, value);
+    }
+    if let Ok(clear) = provider.state_cookie("", 0) {
+        out.append(header::SET_COOKIE, clear);
+    }
+    if let Some(cookie) = session {
+        out.append(header::SET_COOKIE, cookie);
+    }
+    out.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+async fn google_start(State(service): State<IdentityService>) -> Result<Response, AppError> {
+    let start = service.google_web_start().await?;
+    redirect_to_provider(
+        WebProvider::Google,
+        &start.authorization_url,
+        &start.state,
+        crate::oauth::google::STATE_TTL.num_seconds(),
+    )
 }
 
 /// Query of Google's redirect back to us.
@@ -287,8 +377,6 @@ struct CallbackQuery {
     state: Option<String>,
 }
 
-/// Ends with a redirect to the web app either way: `/` on success, `/login?error=google` on
-/// failure (cancelled consent, expired state, refused account…).
 async fn google_callback(
     State(service): State<IdentityService>,
     headers: HeaderMap,
@@ -306,34 +394,54 @@ async fn google_callback(
         }
         _ => Err(AppError::Unauthenticated),
     };
-    let (location, session_cookie) = match result {
-        Ok((_, session)) => (
-            format!("{web_url}/"),
-            Some(session_cookie(session.token.expose())),
-        ),
-        Err(AppError::Internal(err)) => {
-            // Logged with the request context; the user still lands on the login page.
-            let _ = AppError::Internal(err).into_response();
-            (format!("{web_url}/login?error=google"), None)
-        }
-        Err(_) => (format!("{web_url}/login?error=google"), None),
+    finish_web_sign_in(WebProvider::Google, &web_url, result)
+}
+
+async fn apple_start(State(service): State<IdentityService>) -> Result<Response, AppError> {
+    let start = service.apple_web_start().await?;
+    redirect_to_provider(
+        WebProvider::Apple,
+        &start.authorization_url,
+        &start.state,
+        crate::oauth::apple::STATE_TTL.num_seconds(),
+    )
+}
+
+/// Apple's `form_post` back to us. `user` is only present on the first authorization.
+#[derive(Debug, serde::Deserialize)]
+struct AppleCallbackForm {
+    code: Option<String>,
+    state: Option<String>,
+    user: Option<String>,
+}
+
+async fn apple_callback(
+    State(service): State<IdentityService>,
+    headers: HeaderMap,
+    axum::extract::Form(form): axum::extract::Form<AppleCallbackForm>,
+) -> Response {
+    let Some(web_url) = service.apple_web_url() else {
+        return AppError::NotFound.into_response();
     };
-    let mut response = StatusCode::SEE_OTHER.into_response();
-    let out = response.headers_mut();
-    if let Ok(value) = HeaderValue::from_str(&location) {
-        out.insert(header::LOCATION, value);
-    }
-    out.append(
-        header::SET_COOKIE,
-        HeaderValue::from_static(
-            "sb_oauth_state=; Path=/auth/google; Max-Age=0; HttpOnly; Secure; SameSite=Lax",
-        ),
-    );
-    if let Some(cookie) = session_cookie {
-        out.append(header::SET_COOKIE, cookie);
-    }
-    out.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    response
+    let cookie_state = cookie(&headers, OAUTH_STATE_COOKIE);
+    let result = match (form.code, form.state) {
+        (Some(code), Some(state)) => {
+            service
+                .apple_web_callback(code, &state, cookie_state.as_deref(), form.user.as_deref())
+                .await
+        }
+        _ => Err(AppError::Unauthenticated),
+    };
+    finish_web_sign_in(WebProvider::Apple, &web_url, result)
+}
+
+async fn apple_native(
+    State(service): State<IdentityService>,
+    Json(request): Json<AppleNativeRequest>,
+) -> Result<Response, AppError> {
+    let sign_in = request.validate()?;
+    let (user, session) = service.apple_native(sign_in).await?;
+    Ok(signed_in(StatusCode::OK, ClientKind::Native, user, session))
 }
 
 async fn google_native(

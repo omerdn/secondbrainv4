@@ -118,9 +118,25 @@ where
             auth_url: identity::oauth::google::AUTH_URL.to_owned(),
             token_url: identity::oauth::google::TOKEN_URL.to_owned(),
         })
-        .map_err(|err| RunError::Google(err.to_string()))?;
+        .map_err(|err| RunError::Google(setup_error(err)))?;
         identity = identity.with_google(google);
         tracing::info!("google sign-in enabled");
+    }
+    if let Some(apple) = &config.apple {
+        let apple = identity::oauth::apple::Apple::new(identity::oauth::apple::AppleConfig {
+            team_id: apple.team_id.clone(),
+            key_id: apple.key_id.clone(),
+            private_key_pem: apple.private_key_pem.clone(),
+            services_id: apple.services_id.clone(),
+            bundle_ids: apple.bundle_ids.clone(),
+            callback_url: format!("{}/auth/apple/callback", config.public_api_url),
+            web_url: config.public_web_url.clone(),
+            auth_url: identity::oauth::apple::AUTH_URL.to_owned(),
+            token_url: identity::oauth::apple::TOKEN_URL.to_owned(),
+        })
+        .map_err(|err| RunError::Apple(setup_error(err)))?;
+        identity = identity.with_apple(apple);
+        tracing::info!("sign in with apple enabled");
     }
     let idempotency = idempotency::Idempotency::new(pool.clone(), identity.clone(), clock);
     let modules = identity::http::router(identity)
@@ -151,6 +167,14 @@ where
     result
 }
 
+/// Startup message for a provider setup error: the cause, not the generic "internal error".
+fn setup_error(err: kernel::AppError) -> String {
+    match err {
+        kernel::AppError::Internal(cause) => cause.to_string(),
+        other => other.to_string(),
+    }
+}
+
 /// Fatal errors while starting or running the server.
 #[derive(Debug)]
 pub enum RunError {
@@ -160,6 +184,8 @@ pub enum RunError {
     Migrate(db::MigrateError),
     /// The Google sign-in client could not be built.
     Google(String),
+    /// Sign in with Apple could not be set up (e.g. invalid private key).
+    Apple(String),
     /// A built-in recurring job has an invalid schedule.
     Schedule(jobs::ScheduleError),
     /// The HTTP server failed or could not drain within the shutdown timeout.
@@ -172,6 +198,7 @@ impl fmt::Display for RunError {
             Self::Database(err) => write!(f, "database connection failed: {err}"),
             Self::Migrate(err) => write!(f, "database migration failed: {err}"),
             Self::Google(err) => write!(f, "google sign-in setup failed: {err}"),
+            Self::Apple(err) => write!(f, "sign in with apple setup failed: {err}"),
             Self::Schedule(err) => write!(f, "invalid job schedule: {err}"),
             Self::Serve(err) => write!(f, "server error: {err}"),
         }
@@ -183,7 +210,7 @@ impl std::error::Error for RunError {
         match self {
             Self::Database(err) => Some(err),
             Self::Migrate(err) => Some(err),
-            Self::Google(_) => None,
+            Self::Google(_) | Self::Apple(_) => None,
             Self::Schedule(err) => Some(err),
             Self::Serve(err) => Some(err),
         }
