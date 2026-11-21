@@ -102,6 +102,8 @@ Her mutasyon istemcide üretilen bir `Idempotency-Key` başlığı taşır (ARCH
 - Oturumlar 30 gün kullanılmayınca düşer; her kullanım süreyi uzatır (en fazla 5 dakikada bir yazılır).
 - E-posta doğrulama ve şifre sıfırlama: `POST /auth/email/verify`, `POST /auth/email/verification` (yeniden gönder), `POST /auth/password/forgot` (her zaman 202), `POST /auth/password/reset` (tüm oturumları kapatır). Bağlantılar `PUBLIC_WEB_URL/verify-email?token=…` ve `…/reset-password?token=…` biçimindedir; doğrulama 24 saat, sıfırlama 1 saat geçerlidir.
 
+- Google ile giriş (T0.3.4): web'de `GET /auth/google/start` → Google → `GET /auth/google/callback` (sunucu kodu değiştirir, cookie'yi yazar, web uygulamasına yönlendirir). Mobilde uygulama PKCE ile kodu kendisi alır ve `POST /auth/google/native`'e gönderir. `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` boşsa Google uç noktaları 404 döner. Hesap bağlama kuralları `crates/identity/src/oauth/mod.rs` başındadır (doğrulanmamış hesaba bağlanırken eski şifre ve oturumlar silinir).
+
 ## E-posta (`kernel::email`)
 - Modüller e-postayı `EmailSender` arayüzüyle gönderir; sağlayıcıyı bilmez. Sağlayıcı henüz seçilmedi (ARCHITECTURE §14).
 - `EMAIL_DRIVER=log` (varsayılan): e-posta gönderilmez, konu ve gövde (bağlantı dahil) `email` hedefiyle loga yazılır. Alıcı adresi yazılmaz. Yerelde doğrulama bağlantısını logdan kopyalayabilirsiniz. **`APP_ENV=production` ise sunucu bu sürücüyle açılmaz.**

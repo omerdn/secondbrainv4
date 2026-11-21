@@ -32,6 +32,28 @@ pub struct Config {
     pub email_driver: EmailDriver,
     /// Public URL of the web app for links in e-mails (`PUBLIC_WEB_URL`).
     pub public_web_url: String,
+    /// Public URL of this server for OAuth callbacks (`PUBLIC_API_URL`).
+    pub public_api_url: String,
+    /// Google sign-in clients; `None` = disabled.
+    pub google: Option<GoogleClients>,
+}
+
+/// Google OAuth clients (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_NATIVE_CLIENT_IDS`).
+#[derive(Clone, PartialEq, Eq)]
+pub struct GoogleClients {
+    pub web_client_id: String,
+    pub web_client_secret: String,
+    pub native_client_ids: Vec<String>,
+}
+
+/// The secret is never printed.
+impl fmt::Debug for GoogleClients {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GoogleClients")
+            .field("web_client_id", &self.web_client_id)
+            .field("native_client_ids", &self.native_client_ids)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Outgoing e-mail driver.
@@ -61,6 +83,8 @@ impl Config {
     pub const DEFAULT_SHUTDOWN_TIMEOUT_SECS: u64 = 30;
     /// Expo's web dev server.
     pub const DEFAULT_PUBLIC_WEB_URL: &str = "http://localhost:8081";
+    /// This server in local development.
+    pub const DEFAULT_PUBLIC_API_URL: &str = "http://localhost:8080";
 
     /// Reads the configuration from the process environment.
     pub fn from_env() -> Result<Self, ConfigError> {
@@ -134,18 +158,42 @@ impl Config {
                     .into(),
             });
         }
-        let public_web_url = lookup("PUBLIC_WEB_URL")
-            .map(|u| u.trim().trim_end_matches('/').to_owned())
-            .filter(|u| !u.is_empty())
-            .unwrap_or_else(|| Self::DEFAULT_PUBLIC_WEB_URL.to_owned());
-        if !(public_web_url.starts_with("https://") || public_web_url.starts_with("http://")) {
-            return Err(ConfigError::Invalid {
-                key: "PUBLIC_WEB_URL",
-                reason: "must start with http:// or https://".into(),
-            });
-        }
+        let public_web_url = http_url(&lookup, "PUBLIC_WEB_URL", Self::DEFAULT_PUBLIC_WEB_URL)?;
+
+        let public_api_url = http_url(&lookup, "PUBLIC_API_URL", Self::DEFAULT_PUBLIC_API_URL)?;
+        let non_empty = |key: &str| {
+            lookup(key)
+                .map(|v| v.trim().to_owned())
+                .filter(|v| !v.is_empty())
+        };
+        let google = match (
+            non_empty("GOOGLE_CLIENT_ID"),
+            non_empty("GOOGLE_CLIENT_SECRET"),
+        ) {
+            (Some(web_client_id), Some(web_client_secret)) => Some(GoogleClients {
+                web_client_id,
+                web_client_secret,
+                native_client_ids: non_empty("GOOGLE_NATIVE_CLIENT_IDS")
+                    .map(|ids| {
+                        ids.split(',')
+                            .map(|id| id.trim().to_owned())
+                            .filter(|id| !id.is_empty())
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            }),
+            (None, None) => None,
+            _ => {
+                return Err(ConfigError::Invalid {
+                    key: "GOOGLE_CLIENT_ID",
+                    reason: "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set together".into(),
+                });
+            }
+        };
 
         Ok(Self {
+            public_api_url,
+            google,
             email_driver,
             public_web_url,
             bind_addr: SocketAddr::new(host, port),
@@ -153,6 +201,26 @@ impl Config {
             database,
             migrate_on_start,
             telemetry,
+        })
+    }
+}
+
+/// An `http(s)://` URL without a trailing slash.
+fn http_url(
+    lookup: &impl Fn(&str) -> Option<String>,
+    key: &'static str,
+    default: &str,
+) -> Result<String, ConfigError> {
+    let url = lookup(key)
+        .map(|u| u.trim().trim_end_matches('/').to_owned())
+        .filter(|u| !u.is_empty())
+        .unwrap_or_else(|| default.to_owned());
+    if url.starts_with("https://") || url.starts_with("http://") {
+        Ok(url)
+    } else {
+        Err(ConfigError::Invalid {
+            key,
+            reason: "must start with http:// or https://".into(),
         })
     }
 }
@@ -439,5 +507,33 @@ mod tests {
 
     fn config_err(vars: &[(&str, &str)]) -> ConfigError {
         config(vars).unwrap_err()
+    }
+
+    #[test]
+    fn google_is_disabled_unless_both_web_credentials_are_set() {
+        assert_eq!(config(&[]).unwrap().google, None);
+        let err = config_err(&[("GOOGLE_CLIENT_ID", "id")]);
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                key: "GOOGLE_CLIENT_ID",
+                ..
+            }
+        ));
+        let google = config(&[
+            ("GOOGLE_CLIENT_ID", "id"),
+            ("GOOGLE_CLIENT_SECRET", "s3cr3t"),
+            ("GOOGLE_NATIVE_CLIENT_IDS", " ios , android ,"),
+        ])
+        .unwrap()
+        .google
+        .unwrap();
+        assert_eq!(google.native_client_ids, ["ios", "android"]);
+        assert!(!format!("{google:?}").contains("s3cr3t"));
+    }
+
+    #[test]
+    fn public_api_url_defaults_to_local_server() {
+        assert_eq!(config(&[]).unwrap().public_api_url, "http://localhost:8080");
     }
 }

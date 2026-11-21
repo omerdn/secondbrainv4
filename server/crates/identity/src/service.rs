@@ -69,6 +69,7 @@ pub(crate) struct Inner {
     pub(crate) pool: PgPool,
     pub(crate) clock: SharedClock,
     pub(crate) email: EmailSettings,
+    pub(crate) google: Option<crate::oauth::google::Google>,
 }
 
 /// How identity e-mails are delivered.
@@ -133,7 +134,25 @@ impl IdentityService {
     /// Creates the service.
     pub fn new(pool: PgPool, clock: SharedClock, email: EmailSettings) -> Self {
         Self {
-            inner: Arc::new(Inner { pool, clock, email }),
+            inner: Arc::new(Inner {
+                pool,
+                clock,
+                email,
+                google: None,
+            }),
+        }
+    }
+
+    /// Enables Google sign-in (T0.3.4). Without it the Google endpoints answer 404.
+    pub fn with_google(self, google: crate::oauth::google::Google) -> Self {
+        let inner = &self.inner;
+        Self {
+            inner: Arc::new(Inner {
+                pool: inner.pool.clone(),
+                clock: inner.clock.clone(),
+                email: inner.email.clone(),
+                google: Some(google),
+            }),
         }
     }
 

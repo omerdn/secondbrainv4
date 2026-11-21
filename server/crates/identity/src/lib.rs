@@ -7,11 +7,13 @@
 //! - [`token`]: opaque 256-bit session tokens, stored as SHA-256 digests
 //! - [`service`]: register, login, authenticate, session list and revocation
 //! - [`email_flow`]: e-mail verification and password reset
+//! - [`oauth`]: Google / Apple sign-in and account linking
 //! - [`http`]: `/auth/*` endpoints
 
 pub mod email_flow;
 pub mod http;
 pub mod model;
+pub mod oauth;
 pub mod password;
 pub mod service;
 pub mod token;

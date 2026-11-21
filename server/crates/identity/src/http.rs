@@ -11,6 +11,11 @@
 //! | POST   | `/auth/email/verification` | yes | 204, sends a new verification e-mail |
 //! | POST   | `/auth/password/forgot` | –   | 202 always (no account discovery) |
 //! | POST   | `/auth/password/reset` | –    | 204, signs out everywhere; 422 on `token` |
+//! | GET    | `/auth/google/start`   | –    | 303 to Google (web) |
+//! | GET    | `/auth/google/callback` | –   | 303 to the web app, session cookie set |
+//! | POST   | `/auth/google/native`  | –    | 200 [`AuthResponse`] with bearer token |
+//!
+//! Google endpoints answer 404 when Google sign-in is not configured.
 //!
 //! # Token transport
 //! - **Web** (`client: "web"`): the token goes into an `HttpOnly; Secure; SameSite=Lax` cookie
@@ -32,8 +37,9 @@ use kernel::AppError;
 use uuid::Uuid;
 
 use crate::model::{
-    AuthResponse, ClientKind, CurrentUser, ForgotPasswordRequest, LoginRequest, RegisterRequest,
-    ResetPasswordRequest, SessionId, SessionInfo, VerifyEmailRequest,
+    AuthResponse, ClientKind, CurrentUser, ForgotPasswordRequest, GoogleNativeRequest,
+    LoginRequest, RegisterRequest, ResetPasswordRequest, SessionId, SessionInfo,
+    VerifyEmailRequest,
 };
 use crate::service::{AuthContext, IdentityService, IssuedSession};
 
@@ -56,6 +62,9 @@ pub fn router(service: IdentityService) -> Router {
         .route("/auth/email/verification", post(resend_verification))
         .route("/auth/password/forgot", post(forgot_password))
         .route("/auth/password/reset", post(reset_password))
+        .route("/auth/google/start", get(google_start))
+        .route("/auth/google/callback", get(google_callback))
+        .route("/auth/google/native", post(google_native))
         .with_state(service)
 }
 
@@ -95,16 +104,24 @@ pub fn presented_token(headers: &HeaderMap) -> Option<String> {
             .eq_ignore_ascii_case("bearer")
             .then(|| token.trim().to_owned());
     }
+    cookie(headers, SESSION_COOKIE)
+}
+
+/// Value of the cookie `name`, if present.
+fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
         .get_all(header::COOKIE)
         .iter()
         .filter_map(|value| value.to_str().ok())
         .flat_map(|value| value.split(';'))
         .find_map(|pair| {
-            let (name, value) = pair.trim().split_once('=')?;
-            (name == SESSION_COOKIE).then(|| value.to_owned())
+            let (key, value) = pair.trim().split_once('=')?;
+            (key == name).then(|| value.to_owned())
         })
 }
+
+/// Cookie holding the OAuth `state` between the redirect to Google and the callback.
+const OAUTH_STATE_COOKIE: &str = "sb_oauth_state";
 
 fn session_cookie(token: &str) -> HeaderValue {
     let cookie = format!(
@@ -240,6 +257,92 @@ async fn reset_password(
         .headers_mut()
         .insert(header::SET_COOKIE, clear_cookie());
     Ok(response)
+}
+
+async fn google_start(State(service): State<IdentityService>) -> Result<Response, AppError> {
+    let start = service.google_web_start().await?;
+    let mut response = StatusCode::SEE_OTHER.into_response();
+    let headers = response.headers_mut();
+    headers.insert(
+        header::LOCATION,
+        HeaderValue::from_str(&start.authorization_url).map_err(AppError::internal)?,
+    );
+    let max_age = crate::oauth::google::STATE_TTL.num_seconds();
+    let cookie = format!(
+        "{OAUTH_STATE_COOKIE}={}; Path=/auth/google; Max-Age={max_age}; HttpOnly; Secure; SameSite=Lax",
+        start.state
+    );
+    headers.insert(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&cookie).map_err(AppError::internal)?,
+    );
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    Ok(response)
+}
+
+/// Query of Google's redirect back to us.
+#[derive(Debug, serde::Deserialize)]
+struct CallbackQuery {
+    code: Option<String>,
+    state: Option<String>,
+}
+
+/// Ends with a redirect to the web app either way: `/` on success, `/login?error=google` on
+/// failure (cancelled consent, expired state, refused account…).
+async fn google_callback(
+    State(service): State<IdentityService>,
+    headers: HeaderMap,
+    axum::extract::Query(query): axum::extract::Query<CallbackQuery>,
+) -> Response {
+    let Some(web_url) = service.google_web_url() else {
+        return AppError::NotFound.into_response();
+    };
+    let cookie_state = cookie(&headers, OAUTH_STATE_COOKIE);
+    let result = match (query.code, query.state) {
+        (Some(code), Some(state)) => {
+            service
+                .google_web_callback(code, &state, cookie_state.as_deref())
+                .await
+        }
+        _ => Err(AppError::Unauthenticated),
+    };
+    let (location, session_cookie) = match result {
+        Ok((_, session)) => (
+            format!("{web_url}/"),
+            Some(session_cookie(session.token.expose())),
+        ),
+        Err(AppError::Internal(err)) => {
+            // Logged with the request context; the user still lands on the login page.
+            let _ = AppError::Internal(err).into_response();
+            (format!("{web_url}/login?error=google"), None)
+        }
+        Err(_) => (format!("{web_url}/login?error=google"), None),
+    };
+    let mut response = StatusCode::SEE_OTHER.into_response();
+    let out = response.headers_mut();
+    if let Ok(value) = HeaderValue::from_str(&location) {
+        out.insert(header::LOCATION, value);
+    }
+    out.append(
+        header::SET_COOKIE,
+        HeaderValue::from_static(
+            "sb_oauth_state=; Path=/auth/google; Max-Age=0; HttpOnly; Secure; SameSite=Lax",
+        ),
+    );
+    if let Some(cookie) = session_cookie {
+        out.append(header::SET_COOKIE, cookie);
+    }
+    out.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+async fn google_native(
+    State(service): State<IdentityService>,
+    Json(request): Json<GoogleNativeRequest>,
+) -> Result<Response, AppError> {
+    let sign_in = request.validate()?;
+    let (user, session) = service.google_native(sign_in).await?;
+    Ok(signed_in(StatusCode::OK, ClientKind::Native, user, session))
 }
 
 #[cfg(test)]

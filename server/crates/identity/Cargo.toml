@@ -18,7 +18,9 @@ chrono.workspace = true
 db = { path = "../db" }
 getrandom.workspace = true
 kernel = { path = "../kernel" }
+oauth2.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 sha2.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
@@ -31,5 +33,4 @@ uuid.workspace = true
 db = { path = "../db", features = ["testing"] }
 http-body-util.workspace = true
 proptest.workspace = true
-serde_json.workspace = true
 tower.workspace = true

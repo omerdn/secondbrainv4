@@ -10,6 +10,7 @@ export type * from "./generated/ErrorPayload";
 export type * from "./generated/FieldError";
 export type * from "./generated/FieldErrorCode";
 export type * from "./generated/ForgotPasswordRequest";
+export type * from "./generated/GoogleNativeRequest";
 export type * from "./generated/Health";
 export type * from "./generated/LoginRequest";
 export type * from "./generated/Page";
