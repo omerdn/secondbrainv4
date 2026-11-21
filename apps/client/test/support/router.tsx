@@ -27,11 +27,12 @@ export function renderApp(
   {
     transport = "bearer",
     tokenStore = memoryTokenStore(),
-  }: { transport?: Transport; tokenStore?: TokenStore } = {},
+    devices,
+  }: { transport?: Transport; tokenStore?: TokenStore; devices?: () => string[] } = {},
 ) {
   function Root() {
     return (
-      <Providers api={api} transport={transport} tokenStore={tokenStore}>
+      <Providers api={api} transport={transport} tokenStore={tokenStore} devices={devices}>
         <Slot />
       </Providers>
     );

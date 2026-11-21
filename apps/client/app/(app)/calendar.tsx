@@ -1,5 +1,5 @@
 import { PlaceholderScreen } from "@/features/shell";
 
 export default function Page() {
-  return <PlaceholderScreen title="Takvim" />;
+  return <PlaceholderScreen section="calendar" />;
 }

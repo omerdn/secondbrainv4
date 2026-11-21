@@ -12,7 +12,7 @@ Uygulamada tema, `apps/client` içindeki `ThemeProvider` ile NativeWind'in `vars
 `Text`, `Button`, `Input`, `Card`, `Sheet` (telefonda alttan açılan sayfa, geniş ekranda diyalog), `Toast` (`ToastProvider` + `useToast`), `Avatar`, `TagChip` (takım etiketleri takım rengiyle dolu, kişisel etiketler çerçeveli; PRD E3), `EmptyState`.
 
 - Yalnızca React Native bileşenleri; hover'a bağlı davranış yok (ADR-0012).
-- Erişilebilirlik rolleri ve etiketleri her bileşende tanımlı. Metinler (ör. "Close") prop olarak verilir; i18n T0.4.7 ile bağlanacak.
+- Erişilebilirlik rolleri ve etiketleri her bileşende tanımlı. Metinler (ör. "Close") prop olarak verilir; çeviriyi çağıran taraf yapar (`apps/client/src/lib/i18n`, T0.4.7).
 - Portallarda (web'de `Modal`) tema değişkenleri `ThemeScope` ile yeniden uygulanır.
 - Geliştirme galerisi: istemcide `/dev/components` (yalnızca `__DEV__`).
 - Testler: `jest-expo` + React Native Testing Library (`test/`).

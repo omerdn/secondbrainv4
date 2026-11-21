@@ -4,7 +4,7 @@ import { ThemeProvider } from "@secondbrain/ui";
 import { QueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
-import { SessionProvider } from "@/features/auth";
+import { LanguageSync, SessionProvider } from "@/features/auth";
 import type { TokenStore, Transport } from "@/features/auth/session";
 import { credentials } from "@/lib/api";
 
@@ -86,15 +86,20 @@ export function memoryTokenStore(initial: string | null = null): TokenStore & {
   return store;
 }
 
+const turkishDevice = () => ["tr-TR"];
+
 export function Providers({
   api,
   transport,
   tokenStore = memoryTokenStore(),
+  devices = turkishDevice,
   children,
 }: {
   api: ReturnType<typeof fakeServer>["api"];
   transport: Transport;
   tokenStore?: TokenStore;
+  /** Device languages seen by `LanguageSync`. */
+  devices?: () => string[];
   children: ReactNode;
 }) {
   const queryClient = new QueryClient({
@@ -103,6 +108,7 @@ export function Providers({
   return (
     <ApiProvider api={api} queryClient={queryClient} idempotencyKey={() => "key"}>
       <SessionProvider transport={transport} tokenStore={tokenStore}>
+        <LanguageSync devices={devices} />
         <ThemeProvider>{children}</ThemeProvider>
       </SessionProvider>
     </ApiProvider>

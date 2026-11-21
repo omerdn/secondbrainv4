@@ -1,5 +1,5 @@
 import { PlaceholderScreen } from "@/features/shell";
 
 export default function Page() {
-  return <PlaceholderScreen title="Rutinler" />;
+  return <PlaceholderScreen section="routines" />;
 }

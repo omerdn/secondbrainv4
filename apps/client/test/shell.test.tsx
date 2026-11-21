@@ -5,6 +5,7 @@ import { act, fireEvent, screen } from "expo-router/testing-library";
 import { useWindowDimensions } from "react-native";
 
 import { activeTab, destinations, isActive, moreItems, settings, tabs } from "@/features/shell";
+import { i18n } from "@/lib/i18n";
 
 import { fakeServer, json, memoryTokenStore, resetCredentials, user } from "./support/api";
 import { renderApp } from "./support/router";
@@ -103,7 +104,7 @@ describe("wide layout (≥ md)", () => {
     expect(screen.getByTestId("sidebar")).toBeOnTheScreen();
     expect(screen.queryByTestId("tab-bar")).toBeNull();
     for (const d of [...destinations, settings]) {
-      expect(screen.getByRole("link", { name: d.label })).toBeOnTheScreen();
+      expect(screen.getByRole("link", { name: i18n.t(`nav.${d.key}`) })).toBeOnTheScreen();
     }
     expect(screen.getByText("Ali")).toBeOnTheScreen();
     expect(screen.getByRole("link", { name: "Bugün" })).toBeSelected();

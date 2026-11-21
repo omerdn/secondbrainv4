@@ -5,10 +5,10 @@ import { Button, Input } from "@secondbrain/ui";
 import { useMutation } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { AuthScaffold, FormMessage } from "./AuthScaffold";
 import { useSession } from "./session";
-import { t } from "./strings";
 import { type FieldErrors, fromApiError, hasErrors, validateReset } from "./validation";
 
 /**
@@ -16,6 +16,7 @@ import { type FieldErrors, fromApiError, hasErrors, validateReset } from "./vali
  * out every session on the server, so the local session is forgotten too.
  */
 export function ResetPasswordScreen() {
+  const { t } = useTranslation();
   const api = useApi();
   const session = useSession();
   const router = useRouter();
@@ -31,7 +32,7 @@ export function ResetPasswordScreen() {
 
   const requestNew = (
     <Button
-      title={t.reset.requestNew}
+      title={t("auth.reset.requestNew")}
       variant="ghost"
       onPress={() => router.replace("/forgot-password")}
     />
@@ -39,8 +40,10 @@ export function ResetPasswordScreen() {
 
   if (token === undefined || token.length === 0 || tokenRejected) {
     return (
-      <AuthScaffold title={t.reset.title}>
-        <FormMessage message={tokenRejected ? t.reset.invalidToken : t.reset.missingToken} />
+      <AuthScaffold title={t("auth.reset.title")}>
+        <FormMessage
+          message={tokenRejected ? t("auth.reset.invalidToken") : t("auth.reset.missingToken")}
+        />
         {requestNew}
       </AuthScaffold>
     );
@@ -67,19 +70,19 @@ export function ResetPasswordScreen() {
   };
 
   return (
-    <AuthScaffold title={t.reset.title}>
+    <AuthScaffold title={t("auth.reset.title")}>
       <Input
-        label={t.newPassword}
+        label={t("auth.newPassword")}
         value={password}
         onChangeText={setPassword}
         error={errors.password}
-        hint={t.passwordHint}
+        hint={t("auth.passwordHint")}
         secureTextEntry
         autoComplete="new-password"
         textContentType="newPassword"
       />
       <Input
-        label={t.confirmPassword}
+        label={t("auth.confirmPassword")}
         value={confirm}
         onChangeText={setConfirm}
         error={errors.confirm}
@@ -89,7 +92,11 @@ export function ResetPasswordScreen() {
         onSubmitEditing={() => void submit()}
       />
       <FormMessage message={formError} />
-      <Button title={t.reset.submit} loading={reset.isPending} onPress={() => void submit()} />
+      <Button
+        title={t("auth.reset.submit")}
+        loading={reset.isPending}
+        onPress={() => void submit()}
+      />
       {requestNew}
     </AuthScaffold>
   );

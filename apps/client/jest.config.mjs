@@ -4,4 +4,5 @@ export default {
   preset: "jest-expo",
   testMatch: ["<rootDir>/test/**/*.test.{ts,tsx}"],
   moduleNameMapper: { "^@/(.*)$": "<rootDir>/src/$1" },
+  setupFiles: ["<rootDir>/test/support/setup.ts"],
 };

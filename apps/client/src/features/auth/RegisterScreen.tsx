@@ -5,17 +5,18 @@ import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { View } from "react-native";
+import { useTranslation } from "react-i18next";
 
 import { platformLabel } from "@/lib/app-info";
 
 import { AuthScaffold, FormMessage } from "./AuthScaffold";
 import { ProviderButtons } from "./ProviderButtons";
 import { useSession } from "./session";
-import { t } from "./strings";
 import { type FieldErrors, fromApiError, hasErrors, validateRegister } from "./validation";
 
 /** E-mail + password registration (HS1); the account is signed in right away. */
 export function RegisterScreen() {
+  const { t } = useTranslation();
   const api = useApi();
   const session = useSession();
   const router = useRouter();
@@ -51,9 +52,9 @@ export function RegisterScreen() {
   };
 
   return (
-    <AuthScaffold title={t.register.title}>
+    <AuthScaffold title={t("auth.register.title")}>
       <Input
-        label={t.displayName}
+        label={t("auth.displayName")}
         value={displayName}
         onChangeText={setDisplayName}
         error={errors.display_name}
@@ -61,7 +62,7 @@ export function RegisterScreen() {
         textContentType="name"
       />
       <Input
-        label={t.email}
+        label={t("auth.email")}
         value={email}
         onChangeText={setEmail}
         error={errors.email}
@@ -72,11 +73,11 @@ export function RegisterScreen() {
         inputMode="email"
       />
       <Input
-        label={t.password}
+        label={t("auth.password")}
         value={password}
         onChangeText={setPassword}
         error={errors.password}
-        hint={t.passwordHint}
+        hint={t("auth.passwordHint")}
         secureTextEntry
         autoComplete="new-password"
         textContentType="newPassword"
@@ -84,7 +85,7 @@ export function RegisterScreen() {
       />
       <FormMessage message={formError} />
       <Button
-        title={t.register.submit}
+        title={t("auth.register.submit")}
         loading={register.isPending}
         onPress={() => void submit()}
       />
@@ -95,7 +96,7 @@ export function RegisterScreen() {
       />
       <View className="items-center">
         <Button
-          title={`${t.register.haveAccount} ${t.register.toLogin}`}
+          title={`${t("auth.register.haveAccount")} ${t("auth.register.toLogin")}`}
           variant="ghost"
           onPress={() => router.replace("/login")}
         />

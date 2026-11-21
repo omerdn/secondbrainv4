@@ -1,6 +1,7 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { cx, Text, themes, useScheme } from "@secondbrain/ui";
 import { type Href, Link, useRouter } from "expo-router";
+import { useTranslation } from "react-i18next";
 import { Pressable, View } from "react-native";
 
 import type { Destination } from "./nav";
@@ -20,6 +21,8 @@ export function NavItem({
   variant: "sidebar" | "tab" | "list";
 }) {
   const colors = themes[useScheme()];
+  const { t } = useTranslation();
+  const label = t(`nav.${destination.key}`);
   const tint = active ? colors.primary : colors.muted;
   const iconSize = variant === "tab" ? 24 : 20;
   const router = useRouter();
@@ -28,7 +31,7 @@ export function NavItem({
     <Pressable
       accessibilityRole={variant === "tab" ? "tab" : "link"}
       onPress={variant === "tab" ? () => router.navigate(href) : undefined}
-      accessibilityLabel={destination.label}
+      accessibilityLabel={label}
       accessibilityState={{ selected: active }}
       aria-current={active ? "page" : undefined}
       className={cx(
@@ -50,7 +53,7 @@ export function NavItem({
             active && "font-semibold",
           )}
         >
-          {destination.label}
+          {label}
         </Text>
       </View>
     </Pressable>

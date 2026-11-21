@@ -40,6 +40,8 @@ export interface Session {
   forget: () => Promise<void>;
   /** Restores the session again after `unavailable`. */
   retry: () => void;
+  /** Replaces the signed-in user after a profile change (`PATCH /me`). */
+  updateUser: (user: CurrentUser) => void;
 }
 
 export type TokenStore = typeof defaultTokenStore;
@@ -139,10 +141,14 @@ export function SessionProvider({
     setAttempt((n) => n + 1);
   }, []);
 
+  const updateUser = useCallback((user: CurrentUser) => {
+    setState((current) => (current.status === "signedIn" ? { status: "signedIn", user } : current));
+  }, []);
+
   const client: ClientKind = transport === "cookie" ? "web" : "native";
   const value = useMemo(
-    () => ({ state, client, signedIn, signOut, forget, retry }),
-    [state, client, signedIn, signOut, forget, retry],
+    () => ({ state, client, signedIn, signOut, forget, retry, updateUser }),
+    [state, client, signedIn, signOut, forget, retry, updateUser],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

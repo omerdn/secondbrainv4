@@ -1,9 +1,9 @@
 import type { AuthResponse } from "@secondbrain/api-types";
 import { Text } from "@secondbrain/ui";
 import { View } from "react-native";
+import { useTranslation } from "react-i18next";
 
 import type { ProviderConfig } from "./providers";
-import { t } from "./strings";
 
 /** Props of `ProviderButtons` (web and native variants). */
 export interface ProviderButtonsProps {
@@ -18,11 +18,12 @@ export interface ProviderButtonsProps {
 
 /** "or" line between the e-mail form and the provider buttons. */
 export function OrDivider() {
+  const { t } = useTranslation();
   return (
     <View className="flex-row items-center gap-3">
       <View className="h-px flex-1 bg-border" />
       <Text variant="caption" tone="muted">
-        {t.providers.or}
+        {t("auth.providers.or")}
       </Text>
       <View className="h-px flex-1 bg-border" />
     </View>

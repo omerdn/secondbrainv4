@@ -3,9 +3,9 @@ import { Button, Input, Text } from "@secondbrain/ui";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { AuthScaffold, FormMessage } from "./AuthScaffold";
-import { t } from "./strings";
 import { type FieldErrors, fromApiError, hasErrors, validateForgot } from "./validation";
 
 /**
@@ -13,6 +13,7 @@ import { type FieldErrors, fromApiError, hasErrors, validateForgot } from "./val
  * the screen always shows the same confirmation (no account discovery).
  */
 export function ForgotPasswordScreen() {
+  const { t } = useTranslation();
   const api = useApi();
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -37,14 +38,14 @@ export function ForgotPasswordScreen() {
   };
 
   return (
-    <AuthScaffold title={t.forgot.title}>
+    <AuthScaffold title={t("auth.forgot.title")}>
       {forgot.isSuccess ? (
-        <FormMessage message={t.forgot.sent} tone="success" />
+        <FormMessage message={t("auth.forgot.sent")} tone="success" />
       ) : (
         <>
-          <Text tone="muted">{t.forgot.intro}</Text>
+          <Text tone="muted">{t("auth.forgot.intro")}</Text>
           <Input
-            label={t.email}
+            label={t("auth.email")}
             value={email}
             onChangeText={setEmail}
             error={errors.email}
@@ -56,13 +57,17 @@ export function ForgotPasswordScreen() {
           />
           <FormMessage message={formError} />
           <Button
-            title={t.forgot.submit}
+            title={t("auth.forgot.submit")}
             loading={forgot.isPending}
             onPress={() => void submit()}
           />
         </>
       )}
-      <Button title={t.forgot.back} variant="ghost" onPress={() => router.replace("/login")} />
+      <Button
+        title={t("auth.forgot.back")}
+        variant="ghost"
+        onPress={() => router.replace("/login")}
+      />
     </AuthScaffold>
   );
 }
