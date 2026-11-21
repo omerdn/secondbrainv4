@@ -391,3 +391,35 @@ fn email_settings() -> identity::EmailSettings {
         web_url: "https://app.test".into(),
     }
 }
+
+#[tokio::test]
+async fn cookie_mutations_without_csrf_are_rejected_before_claiming_the_key() {
+    let app = App::new().await;
+    let token = app.token("csrf@x.test").await;
+    let request = |csrf: Option<String>| {
+        let mut builder = Request::builder()
+            .method(Method::POST)
+            .uri("/things")
+            .header(header::COOKIE, format!("sb_session={token}"))
+            .header(KEY_HEADER, "k");
+        if let Some(csrf) = csrf {
+            builder = builder.header("x-csrf-token", csrf);
+        }
+        builder.body(Body::from("x")).unwrap()
+    };
+
+    let forged = app.router.clone().oneshot(request(None)).await.unwrap();
+    assert_eq!(forged.status(), StatusCode::FORBIDDEN);
+    assert_eq!(app.rows().await, 0);
+    assert_eq!(app.calls(), 0);
+
+    let csrf = identity::token::csrf_for(&token);
+    let ok = app
+        .router
+        .clone()
+        .oneshot(request(Some(csrf)))
+        .await
+        .unwrap();
+    assert_eq!(ok.status(), StatusCode::CREATED);
+    assert_eq!(app.calls(), 1);
+}

@@ -5,6 +5,7 @@
 //! | POST   | `/auth/register`       | –    | 201 [`AuthResponse`] |
 //! | POST   | `/auth/login`          | –    | 200 [`AuthResponse`] |
 //! | POST   | `/auth/logout`         | opt. | 204, ends the presented session |
+//! | GET    | `/auth/csrf`           | yes  | 200 [`CsrfResponse`] for the cookie session |
 //! | GET    | `/auth/sessions`       | yes  | 200 `SessionInfo[]` |
 //! | DELETE | `/auth/sessions/{id}`  | yes  | 204 |
 //! | POST   | `/auth/email/verify`   | –    | 204, or 422 on `token` |
@@ -22,17 +23,25 @@
 //!
 //! # Token transport
 //! - **Web** (`client: "web"`): the token goes into an `HttpOnly; Secure; SameSite=Lax` cookie
-//!   and is never in a response body, so page scripts cannot read it. CSRF protection for
-//!   cookie-authenticated mutations is added in T0.3.6.
+//!   and is never in a response body, so page scripts cannot read it.
 //! - **Native** (`client: "native"`): the token is returned once in the body; the app keeps it
 //!   in secure storage and sends `Authorization: Bearer <token>`.
+//!
+//! # CSRF (T0.3.6)
+//! A browser sends cookies automatically, so a cookie-authenticated `POST/PUT/PATCH/DELETE`
+//! must also carry `X-CSRF-Token`, which a foreign site cannot know. The value is derived from
+//! the session token ([`token::csrf_for`]); web clients get it in [`AuthResponse::csrf_token`]
+//! and, after a page reload, from `GET /auth/csrf`. A missing or wrong value is 403. Bearer
+//! requests need no CSRF token: browsers never attach an `Authorization` header on their own.
+//! Unauthenticated JSON endpoints (login, register…) are covered by requiring
+//! `Content-Type: application/json`, which cross-site HTML forms cannot send.
 //!
 //! A request with an `Authorization` header is authenticated by that header only (no cookie
 //! fallback), so an invalid bearer token is always a 401.
 
 use axum::extract::{FromRef, FromRequestParts, Path, State};
 use axum::http::request::Parts;
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
@@ -44,7 +53,9 @@ use crate::model::{
     GoogleNativeRequest, LoginRequest, RegisterRequest, ResetPasswordRequest, SessionId,
     SessionInfo, VerifyEmailRequest,
 };
+use crate::rate_limit::{self, RateLimits};
 use crate::service::{AuthContext, IdentityService, IssuedSession};
+use crate::token;
 
 /// Name of the session cookie for web clients.
 pub const SESSION_COOKIE: &str = "sb_session";
@@ -53,24 +64,48 @@ pub const SESSION_COOKIE: &str = "sb_session";
 /// the cookie only has to outlive it. 400 days is the maximum browsers honour.
 const COOKIE_MAX_AGE_SECS: u64 = 400 * 24 * 60 * 60;
 
-/// Auth routes with their state applied, ready to merge into the application router.
+/// Auth routes with their state applied, **without** rate limits (tests, tools). The application
+/// serves [`rate_limited_router`].
 pub fn router(service: IdentityService) -> Router {
-    Router::new()
+    routes(service, None)
+}
+
+/// [`router`] with per-client rate limits on the sensitive endpoints (T0.3.6). This is what
+/// the application serves; the server must provide `ConnectInfo<SocketAddr>` (see
+/// `app::server`) unless `trust_proxy_headers` is set.
+pub fn rate_limited_router(service: IdentityService, limits: RateLimits) -> Router {
+    routes(service, Some(limits))
+}
+
+fn routes(service: IdentityService, limits: Option<RateLimits>) -> Router {
+    let credentials = Router::new()
         .route("/auth/register", post(register))
         .route("/auth/login", post(login))
+        .route("/auth/password/reset", post(reset_password))
+        .route("/auth/email/verify", post(verify_email))
+        .route("/auth/google/native", post(google_native))
+        .route("/auth/apple/native", post(apple_native));
+    let email = Router::new()
+        .route("/auth/password/forgot", post(forgot_password))
+        .route("/auth/email/verification", post(resend_verification));
+    let (credentials, email) = match limits {
+        Some(limits) => (
+            rate_limit::limit(credentials, rate_limit::CREDENTIALS, limits),
+            rate_limit::limit(email, rate_limit::EMAIL, limits),
+        ),
+        None => (credentials, email),
+    };
+    Router::new()
         .route("/auth/logout", post(logout))
+        .route("/auth/csrf", get(csrf))
         .route("/auth/sessions", get(list_sessions))
         .route("/auth/sessions/{id}", delete(revoke_session))
-        .route("/auth/email/verify", post(verify_email))
-        .route("/auth/email/verification", post(resend_verification))
-        .route("/auth/password/forgot", post(forgot_password))
-        .route("/auth/password/reset", post(reset_password))
         .route("/auth/google/start", get(google_start))
         .route("/auth/google/callback", get(google_callback))
-        .route("/auth/google/native", post(google_native))
         .route("/auth/apple/start", get(apple_start))
         .route("/auth/apple/callback", post(apple_callback))
-        .route("/auth/apple/native", post(apple_native))
+        .merge(credentials)
+        .merge(email)
         .with_state(service)
 }
 
@@ -92,12 +127,43 @@ where
         if let Some(auth) = parts.extensions.get::<AuthContext>() {
             return Ok(Self(*auth));
         }
-        let token = presented_token(&parts.headers).ok_or(AppError::Unauthenticated)?;
         let service = IdentityService::from_ref(state);
-        let auth = service.authenticate(&token).await?;
+        let auth = authenticate_request(&service, &parts.headers, &parts.method).await?;
         parts.extensions.insert(auth);
         Ok(Self(auth))
     }
+}
+
+/// Request header carrying the CSRF token.
+pub const CSRF_HEADER: &str = "x-csrf-token";
+
+fn is_unsafe(method: &Method) -> bool {
+    !matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS)
+}
+
+/// Authenticates a request from its headers: bearer token, or session cookie plus — for
+/// unsafe methods — a matching `X-CSRF-Token`.
+///
+/// Errors: 401 without a valid session; 403 when a cookie-authenticated mutation lacks the
+/// right CSRF token.
+pub async fn authenticate_request(
+    service: &IdentityService,
+    headers: &HeaderMap,
+    method: &Method,
+) -> Result<AuthContext, AppError> {
+    let via_cookie = !headers.contains_key(header::AUTHORIZATION);
+    let token = presented_token(headers).ok_or(AppError::Unauthenticated)?;
+    let auth = service.authenticate(&token).await?;
+    if via_cookie && is_unsafe(method) {
+        let presented = headers
+            .get(CSRF_HEADER)
+            .map(HeaderValue::as_bytes)
+            .unwrap_or_default();
+        if !token::constant_time_eq(presented, token::csrf_for(&token).as_bytes()) {
+            return Err(AppError::Forbidden);
+        }
+    }
+    Ok(auth)
 }
 
 /// The token from `Authorization: Bearer` or, if there is no `Authorization` header, from the
@@ -148,13 +214,18 @@ fn signed_in(
     session: IssuedSession,
 ) -> Response {
     let IssuedSession { token, expires_at } = session;
-    let (body_token, cookie) = match client {
-        ClientKind::Native => (Some(token.expose().to_owned()), None),
-        ClientKind::Web => (None, Some(session_cookie(token.expose()))),
+    let (body_token, csrf_token, cookie) = match client {
+        ClientKind::Native => (Some(token.expose().to_owned()), None, None),
+        ClientKind::Web => (
+            None,
+            Some(token::csrf_for(token.expose())),
+            Some(session_cookie(token.expose())),
+        ),
     };
     let body = AuthResponse {
         user,
         token: body_token,
+        csrf_token,
         expires_at,
     };
     let mut response = (status, Json(body)).into_response();
@@ -191,9 +262,8 @@ async fn login(
 /// Ends the presented session if it is valid, and always clears the cookie, so signing out
 /// works even with an already expired session.
 async fn logout(State(service): State<IdentityService>, headers: HeaderMap) -> Response {
-    if let Some(token) = presented_token(&headers)
-        && let Ok(auth) = service.authenticate(&token).await
-    {
+    // Without a valid CSRF token a cookie session is not revoked (only the cookie is cleared).
+    if let Ok(auth) = authenticate_request(&service, &headers, &Method::POST).await {
         match service.revoke_session(auth.user_id, auth.session_id).await {
             Ok(()) | Err(AppError::NotFound) => {}
             Err(err) => return err.into_response(),
@@ -204,6 +274,31 @@ async fn logout(State(service): State<IdentityService>, headers: HeaderMap) -> R
         .headers_mut()
         .insert(header::SET_COOKIE, clear_cookie());
     response
+}
+
+/// Body of `GET /auth/csrf`.
+#[derive(Debug, serde::Serialize, ts_rs::TS)]
+#[ts(export)]
+pub struct CsrfResponse {
+    /// Value for the `X-CSRF-Token` header of cookie-authenticated mutations.
+    pub csrf_token: String,
+}
+
+/// The CSRF token of the presented session (for a web app after a page reload).
+async fn csrf(
+    State(service): State<IdentityService>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let auth_token = presented_token(&headers).ok_or(AppError::Unauthenticated)?;
+    service.authenticate(&auth_token).await?;
+    let mut response = Json(CsrfResponse {
+        csrf_token: token::csrf_for(&auth_token),
+    })
+    .into_response();
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    Ok(response)
 }
 
 async fn list_sessions(

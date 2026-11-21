@@ -295,13 +295,14 @@ async fn middleware(State(state): State<Idempotency>, request: Request, next: Ne
     if !is_mutation(request.method()) {
         return next.run(request).await;
     }
-    let Some(token) = identity::http::presented_token(request.headers()) else {
-        return next.run(request).await;
-    };
-    let auth: AuthContext = match state.identity.authenticate(&token).await {
+    let authenticated =
+        identity::http::authenticate_request(&state.identity, request.headers(), request.method())
+            .await;
+    let auth: AuthContext = match authenticated {
         Ok(auth) => auth,
         // Not signed in: the handler's own extractor answers 401.
         Err(AppError::Unauthenticated) => return next.run(request).await,
+        // Includes a failed CSRF check (403): nothing is claimed or executed.
         Err(err) => return err.into_response(),
     };
     let key = match validate_key(request.headers().get(&KEY_HEADER)) {

@@ -3,6 +3,7 @@
 export type * from "./generated/AppleNativeRequest";
 export type * from "./generated/AuthResponse";
 export type * from "./generated/ClientKind";
+export type * from "./generated/CsrfResponse";
 export type * from "./generated/CurrentUser";
 export type * from "./generated/Cursor";
 export type * from "./generated/ErrorBody";

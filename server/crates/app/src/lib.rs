@@ -139,7 +139,10 @@ where
         tracing::info!("sign in with apple enabled");
     }
     let idempotency = idempotency::Idempotency::new(pool.clone(), identity.clone(), clock);
-    let modules = identity::http::router(identity)
+    let limits = identity::rate_limit::RateLimits {
+        trust_proxy_headers: config.trust_proxy_headers,
+    };
+    let modules = identity::http::rate_limited_router(identity, limits)
         .merge(idempotency::protect(axum::Router::new(), idempotency));
     let result = server::serve(
         listener,

@@ -52,6 +52,21 @@ fn digest(token: &str) -> TokenHash {
     Sha256::digest(token.as_bytes()).into()
 }
 
+/// CSRF token for cookie-authenticated web requests (T0.3.6): derived from the session token,
+/// so it is bound to that session, needs no storage, and cannot be computed without the
+/// (HttpOnly) session cookie.
+pub fn csrf_for(session_token: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"secondbrain-csrf-v1\0");
+    hasher.update(session_token.as_bytes());
+    URL_SAFE_NO_PAD.encode(hasher.finalize())
+}
+
+/// Equality that does not stop at the first differing byte.
+pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
 /// Digest of a token presented by a client, or `None` if it is not well-formed (so garbage
 /// never reaches the database).
 pub fn hash_presented(token: &str) -> Option<TokenHash> {
@@ -81,6 +96,24 @@ mod tests {
     fn debug_does_not_leak_the_token() {
         let token = SessionToken::generate().unwrap();
         assert!(!format!("{token:?}").contains(token.expose()));
+    }
+
+    #[test]
+    fn csrf_token_is_bound_to_the_session() {
+        let a = SessionToken::generate().unwrap();
+        let b = SessionToken::generate().unwrap();
+        assert_eq!(csrf_for(a.expose()), csrf_for(a.expose()));
+        assert_ne!(csrf_for(a.expose()), csrf_for(b.expose()));
+        assert_ne!(csrf_for(a.expose()), a.expose());
+        assert_eq!(csrf_for(a.expose()).len(), 43);
+    }
+
+    #[test]
+    fn constant_time_eq_compares_whole_values() {
+        assert!(constant_time_eq(b"abc", b"abc"));
+        assert!(!constant_time_eq(b"abc", b"abd"));
+        assert!(!constant_time_eq(b"abc", b"ab"));
+        assert!(constant_time_eq(b"", b""));
     }
 
     #[test]
