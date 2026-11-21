@@ -96,6 +96,9 @@ Görev satırı formatı: `ID · başlık · alan · boyut`. Altındaki girintil
 - **T0.2.7** · ts-rs tip üretimi · backend · S
   - `packages/api-types` paketine üretim
   - Üretilen tiplerde fark varsa CI başarısız olur
+- **T0.2.8** · Sunucu tarafı idempotency key işleme · backend · S
+  - `Idempotency-Key` başlığı; ilk yanıt saklanır, tekrarında aynı yanıt döner
+  - Eski anahtarlar periyodik olarak temizlenir
 
 ### E0.3 · Kimlik doğrulama (`identity`) · bağımlılık: E0.2
 - **T0.3.1** · `users`, `auth_identities`, `sessions` migration'ları · backend · S
@@ -112,6 +115,7 @@ Görev satırı formatı: `ID · başlık · alan · boyut`. Altındaki girintil
 - **T0.3.6** · Hız sınırlama ve CSRF koruması · backend · S
 - **T0.3.7** · Profil API · backend · S
   - Görünen ad, avatar URL, saat dilimi, dil
+- **T0.3.8** · Süresi dolmuş oturumların temizlenmesi · backend · S
 
 ### E0.4 · İstemci iskeleti · bağımlılık: T0.1.1
 - **T0.4.1** · Expo + Expo Router + react-native-web · client · M

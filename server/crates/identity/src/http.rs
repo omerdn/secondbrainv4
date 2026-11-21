@@ -63,15 +63,22 @@ where
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        // A middleware earlier in the stack (e.g. idempotency) may have authenticated the
+        // request already; extensions can only be set server-side.
+        if let Some(auth) = parts.extensions.get::<AuthContext>() {
+            return Ok(Self(*auth));
+        }
         let token = presented_token(&parts.headers).ok_or(AppError::Unauthenticated)?;
         let service = IdentityService::from_ref(state);
-        service.authenticate(&token).await.map(Self)
+        let auth = service.authenticate(&token).await?;
+        parts.extensions.insert(auth);
+        Ok(Self(auth))
     }
 }
 
 /// The token from `Authorization: Bearer` or, if there is no `Authorization` header, from the
 /// session cookie.
-fn presented_token(headers: &HeaderMap) -> Option<String> {
+pub fn presented_token(headers: &HeaderMap) -> Option<String> {
     if let Some(value) = headers.get(header::AUTHORIZATION) {
         let value = value.to_str().ok()?;
         let (scheme, token) = value.split_once(' ')?;
