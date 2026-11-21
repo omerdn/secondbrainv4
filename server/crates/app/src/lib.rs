@@ -141,14 +141,24 @@ where
 
     // `/auth/*` is exempt from idempotency keys (see `idempotency` module docs). Domain modules
     // add their routes inside `protect(..)` as they are implemented.
-    let idempotency = idempotency::Idempotency::new(pool.clone(), identity.clone(), clock);
+    let idempotency = idempotency::Idempotency::new(pool.clone(), identity.clone(), clock.clone());
     let limits = identity::rate_limit::RateLimits {
         trust_proxy_headers: config.trust_proxy_headers,
         ..identity::rate_limit::RateLimits::default()
     };
     let profile = identity::http::profile_router(identity.clone());
+    // Domain modules publish "something changed" events through the hub (T0.5.1); the
+    // LISTEN/NOTIFY bridge (T0.5.2) will feed it from other instances.
+    let hub = realtime::Hub::new();
+    let ws = realtime::router(realtime::RealtimeState {
+        hub,
+        identity: identity.clone(),
+        clock: clock.clone(),
+        config: realtime::RealtimeConfig::new(config.cors_origins.clone()),
+    });
     let modules = identity::http::rate_limited_router(identity, limits)
-        .merge(idempotency::protect(profile, idempotency));
+        .merge(idempotency::protect(profile, idempotency))
+        .merge(ws);
     let result = server::serve(
         listener,
         http::router_with(modules, &config.cors_origins),

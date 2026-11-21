@@ -3,6 +3,7 @@
 export type * from "./generated/AppleNativeRequest";
 export type * from "./generated/AuthResponse";
 export type * from "./generated/ClientKind";
+export type * from "./generated/ClientMessage";
 export type * from "./generated/CsrfResponse";
 export type * from "./generated/CurrentUser";
 export type * from "./generated/Cursor";
@@ -18,7 +19,10 @@ export type * from "./generated/LoginRequest";
 export type * from "./generated/Page";
 export type * from "./generated/RegisterRequest";
 export type * from "./generated/ResetPasswordRequest";
+export type * from "./generated/ServerMessage";
 export type * from "./generated/SessionInfo";
 export type * from "./generated/UpdateProfileRequest";
 export type * from "./generated/ValidationErrors";
 export type * from "./generated/VerifyEmailRequest";
+export type * from "./generated/WsErrorCode";
+export type * from "./generated/WsEvent";

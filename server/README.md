@@ -124,6 +124,12 @@ Her mutasyon istemcide üretilen bir `Idempotency-Key` başlığı taşır (ARCH
   - Yeni log satırı eklerken: kullanıcı adı, e-posta, not içeriği, başlık gibi alanları log alanı olarak yazmayın. Gerekirse id kullanın.
 - **Sentry** isteğe bağlıdır (`SENTRY_DSN` boşsa kapalı). Sadece `error` seviyesindeki olaylar gönderilir ve sadece izin listesindeki veriler gider: olay mesajı, `error` alanı ve `method`/`route`/`request_id` etiketleri. `send_default_pii` kapalıdır.
 
+## Gerçek zamanlı kanal (`/ws`, T0.5.1)
+- `realtime` crate'i: `GET /ws` el sıkışması diğer istekler gibi doğrulanır (`Authorization: Bearer` ya da web'de oturum cookie'si). Cookie ile gelen el sıkışmada `Origin` izinli web origin'lerinden (CORS listesi) biri olmalıdır; aksi 403 (cross-site WebSocket hijacking).
+- Mesajlar JSON, `type` alanıyla etiketli; tipler `packages/api-types` içinde (`ClientMessage`, `ServerMessage`). Sunucu ilk olarak `hello` ile kendi saatini gönderir. İstemci `subscribe`/`unsubscribe` ile kanallara abone olur (şimdilik yalnız `user:<kendi id>`), 25 sn'de bir `ping` gönderir; 60 sn sessiz kalan bağlantı 4000 koduyla kapanır.
+- WS veri taşımaz, sadece "değişti" der (`event {channel, event: {name, data}}`). Modüller `realtime::Hub::publish` ile yayınlar. Yavaş tüketici (64 mesajlık tampon dolarsa) düşürülür ve 4001 koduyla kapanır; istemci yeniden bağlanıp tazeler.
+- Nesne ve takım kanalları eklendiğinde yetki `PermissionService` üzerinden verilecek.
+
 ## Sunucuyu çalıştırma
 ```bash
 cargo run -p app        # .env okunur; varsayılan http://127.0.0.1:8080

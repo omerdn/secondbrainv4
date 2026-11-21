@@ -18,6 +18,7 @@ dotenvy.workspace = true
 identity = { path = "../identity" }
 jobs = { path = "../jobs" }
 kernel = { path = "../kernel" }
+realtime = { path = "../realtime" }
 sentry.workspace = true
 serde.workspace = true
 sha2.workspace = true
