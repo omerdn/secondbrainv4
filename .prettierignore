@@ -4,3 +4,10 @@ CLAUDE.md
 README.md
 **/README.md
 packages/api-types/src/
+
+# Expo generated (apps/client/.gitignore)
+apps/client/ios/
+apps/client/android/
+apps/client/.expo/
+apps/client/dist/
+apps/client/expo-env.d.ts

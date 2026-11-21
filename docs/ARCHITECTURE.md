@@ -48,7 +48,7 @@
 | Kimlik doğrulama | Kendi implementasyonumuz | argon2id; opak oturum token'ı (veritabanında hash'li saklanır); OAuth (Google, Apple) için `oauth2` crate. |
 | Arka plan işleri | Postgres tablosu + `FOR UPDATE SKIP LOCKED` | Redis yok (ADR-0009). |
 | Gözlemlenebilirlik | `tracing` + OpenTelemetry | Hata takibi için Sentry. |
-| Test | Rust: `cargo test`, `proptest`, testcontainers. TS: Vitest, React Native Testing Library. E2E: Playwright (web). | |
+| Test | Rust: `cargo test`, `proptest`, testcontainers. TS: Vitest (saf TS paketleri), jest-expo + React Native Testing Library (RN bileşenleri). E2E: Playwright (web). | Vitest, React Native'in Flow kaynaklarını işleyemez; RN tarafında Expo'nun resmî Jest preset'i kullanılır. |
 | Monorepo | pnpm workspaces + Turborepo (TS) · Cargo workspace (Rust) | |
 | CI | GitHub Actions | |
 | Dağıtım (staging ve beta) | Docker Compose: tek VPS + Caddy (TLS) + Postgres | Yedekler S3 uyumlu depoya alınır. |

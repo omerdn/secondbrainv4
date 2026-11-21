@@ -50,8 +50,8 @@ pnpm db:reset   # DİKKAT: yerel veritabanını tamamen siler ve sıfırdan kura
 ```bash
 pnpm lint        # ESLint (tüm paketler)
 pnpm typecheck   # tsc --noEmit (tüm paketler)
-pnpm test        # Vitest (tüm paketler)
-pnpm dev         # geliştirme sunucuları (istemci T0.4.1 ile eklenecek)
+pnpm test        # Vitest (TS paketleri) ve jest-expo (istemci)
+pnpm dev         # geliştirme sunucuları (istemci: Expo web, http://localhost:8081)
 pnpm format      # Prettier
 pnpm api-types:generate   # Rust DTO'larından packages/api-types'ı üret (ts-rs)
 ```
@@ -60,10 +60,19 @@ Repo yapısı ([ARCHITECTURE §3](docs/ARCHITECTURE.md#3-repo-yapısı)):
 
 | Klasör | İçerik |
 |---|---|
-| `apps/` | Expo istemcisi ve Tauri masaüstü kabuğu |
+| `apps/client` | Expo istemcisi (iOS, Android, web). Rotalar `app/` altında (Expo Router), kod `src/` altında |
+| `apps/` | Tauri masaüstü kabuğu (T0.6.3) |
 | `packages/config` | Paylaşılan ESLint, Prettier ve tsconfig ayarları (`@secondbrain/config`) |
 | `packages/api-types` | Rust DTO'larından ts-rs ile **üretilen** TS tipleri; elle düzenlenmez, CI farkı yakalar |
 | `server/` | Rust Cargo workspace (pnpm workspace'inin parçası değil). Komutlar: [server/README.md](server/README.md) |
+
+### İstemci (`apps/client`)
+```bash
+pnpm --filter @secondbrain/client web   # web (önce web geliştirilir, ADR-0012)
+pnpm --filter @secondbrain/client exec expo run:ios   # iOS simülatörü (Xcode + CocoaPods gerekir)
+```
+- `expo run:ios` yerel `ios/` klasörünü üretir; bu klasör git'e girmez (CNG). CocoaPods UTF-8 ister: `export LANG=en_US.UTF-8`.
+- Bileşen testleri `jest-expo` + React Native Testing Library ile yazılır (`apps/client/test`). Vitest, React Native'in Flow kaynaklarını işleyemediği için yalnızca saf TS paketlerinde kullanılır.
 
 ### CI
 Her PR'da ve `main`'e her push'ta [`.github/workflows/ci.yml`](.github/workflows/ci.yml) çalışır. Üç iş vardır: **Rust** (fmt, clippy, test), **TypeScript** (format, lint, typecheck, test) ve **Dev environment** (Compose ile Postgres + `db-check`). pnpm deposu, Cargo derlemeleri ve Turborepo çıktıları önbelleğe alınır. Bir PR, üç iş de yeşil olmadan merge edilmez.
