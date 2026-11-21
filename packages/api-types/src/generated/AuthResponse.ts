@@ -14,6 +14,11 @@ user: CurrentUser,
  */
 token?: string, 
 /**
+ * CSRF token for cookie-authenticated mutations, only for [`ClientKind::Web`] (send it as
+ * `X-CSRF-Token`).
+ */
+csrf_token?: string, 
+/**
  * When the session expires if it is not used. Each use extends it.
  */
 expires_at: string, };

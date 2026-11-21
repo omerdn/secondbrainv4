@@ -29,9 +29,13 @@ where
         let _ = signalled_tx.send(true);
     };
 
-    let server = axum::serve(listener, router)
-        .with_graceful_shutdown(signal)
-        .into_future();
+    // Peer addresses are needed by per-client rate limits; they are never logged.
+    let server = axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(signal)
+    .into_future();
 
     let drain_deadline = async move {
         if signalled_rx.wait_for(|signalled| *signalled).await.is_err() {

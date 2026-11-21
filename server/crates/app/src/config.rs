@@ -38,6 +38,8 @@ pub struct Config {
     pub google: Option<GoogleClients>,
     /// Sign in with Apple settings; `None` = disabled.
     pub apple: Option<AppleSettings>,
+    /// Take the client IP for rate limits from proxy headers (`TRUST_PROXY_HEADERS`).
+    pub trust_proxy_headers: bool,
 }
 
 /// Sign in with Apple (`APPLE_*`).
@@ -261,7 +263,10 @@ impl Config {
             }
         };
 
+        let trust_proxy_headers: bool = parse(&lookup, "TRUST_PROXY_HEADERS", false)?;
+
         Ok(Self {
+            trust_proxy_headers,
             apple,
             public_api_url,
             google,
@@ -655,5 +660,15 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn proxy_headers_are_not_trusted_by_default() {
+        assert!(!config(&[]).unwrap().trust_proxy_headers);
+        assert!(
+            config(&[("TRUST_PROXY_HEADERS", "true")])
+                .unwrap()
+                .trust_proxy_headers
+        );
     }
 }

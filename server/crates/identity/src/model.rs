@@ -268,6 +268,11 @@ pub struct AuthResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub token: Option<String>,
+    /// CSRF token for cookie-authenticated mutations, only for [`ClientKind::Web`] (send it as
+    /// `X-CSRF-Token`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub csrf_token: Option<String>,
     /// When the session expires if it is not used. Each use extends it.
     pub expires_at: DateTime<Utc>,
 }

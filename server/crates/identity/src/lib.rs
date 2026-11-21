@@ -15,6 +15,7 @@ pub mod http;
 pub mod model;
 pub mod oauth;
 pub mod password;
+pub mod rate_limit;
 pub mod service;
 pub mod token;
 
