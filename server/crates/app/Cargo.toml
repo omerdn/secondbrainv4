@@ -14,6 +14,7 @@ workspace = true
 axum.workspace = true
 db = { path = "../db" }
 dotenvy.workspace = true
+jobs = { path = "../jobs" }
 kernel = { path = "../kernel" }
 sentry.workspace = true
 serde.workspace = true
