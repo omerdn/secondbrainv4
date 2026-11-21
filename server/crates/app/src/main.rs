@@ -13,19 +13,25 @@ async fn main() -> Result<(), StartupError> {
     let _ = dotenvy::dotenv();
 
     let config = Config::from_env().map_err(StartupError::Config)?;
+    let _telemetry = app::telemetry::init(&config.telemetry).map_err(StartupError::Telemetry)?;
+
     let listener = TcpListener::bind(config.bind_addr)
         .await
         .map_err(StartupError::Bind)?;
 
     app::run(config, listener, app::server::shutdown_signal())
         .await
-        .map_err(StartupError::Run)
+        .map_err(|err| {
+            tracing::error!(error = %kernel::redact::redact(&err.to_string()), "fatal");
+            StartupError::Run(err)
+        })
 }
 
 /// Fatal startup errors. `Debug` delegates to `Display` because `main` prints the error with
 /// `{:?}` on exit.
 enum StartupError {
     Config(ConfigError),
+    Telemetry(app::telemetry::TelemetryError),
     Bind(io::Error),
     Run(RunError),
 }
@@ -34,6 +40,7 @@ impl fmt::Display for StartupError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Config(err) => write!(f, "configuration error: {err}"),
+            Self::Telemetry(err) => write!(f, "telemetry error: {err}"),
             Self::Bind(err) => write!(f, "could not bind listener: {err}"),
             Self::Run(err) => write!(f, "{err}"),
         }

@@ -9,9 +9,13 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use db::{DatabaseUrl, PoolConfig};
+use sentry::types::Dsn;
+use tracing_subscriber::EnvFilter;
+
+use crate::telemetry::{DEFAULT_LOG_FILTER, LogFormat, TelemetryConfig};
 
 /// Server configuration.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     /// Address the HTTP server listens on (`APP_HOST`, `APP_PORT`).
     pub bind_addr: SocketAddr,
@@ -22,6 +26,8 @@ pub struct Config {
     pub database: PoolConfig,
     /// Apply pending migrations before serving (`DB_MIGRATE_ON_START`, default `true`).
     pub migrate_on_start: bool,
+    /// Logging and error tracking (`LOG_FORMAT`, `RUST_LOG`, `SENTRY_DSN`, `APP_ENV`).
+    pub telemetry: TelemetryConfig,
 }
 
 impl Config {
@@ -67,11 +73,41 @@ impl Config {
         }
         let migrate_on_start: bool = parse(&lookup, "DB_MIGRATE_ON_START", true)?;
 
+        let log_filter = lookup("RUST_LOG")
+            .map(|f| f.trim().to_owned())
+            .filter(|f| !f.is_empty())
+            .unwrap_or_else(|| DEFAULT_LOG_FILTER.to_owned());
+        if let Err(err) = EnvFilter::try_new(&log_filter) {
+            return Err(ConfigError::Invalid {
+                key: "RUST_LOG",
+                reason: err.to_string(),
+            });
+        }
+        let sentry_dsn: Option<Dsn> = match lookup("SENTRY_DSN") {
+            Some(raw) if !raw.trim().is_empty() => {
+                Some(raw.trim().parse().map_err(|_| ConfigError::Invalid {
+                    key: "SENTRY_DSN",
+                    reason: "not a valid Sentry DSN".into(),
+                })?)
+            }
+            _ => None,
+        };
+        let telemetry = TelemetryConfig {
+            log_format: parse(&lookup, "LOG_FORMAT", LogFormat::Json)?,
+            log_filter,
+            sentry_dsn,
+            environment: lookup("APP_ENV")
+                .map(|e| e.trim().to_owned())
+                .filter(|e| !e.is_empty())
+                .unwrap_or_else(|| "local".to_owned()),
+        };
+
         Ok(Self {
             bind_addr: SocketAddr::new(host, port),
             shutdown_timeout: Duration::from_secs(shutdown_secs),
             database,
             migrate_on_start,
+            telemetry,
         })
     }
 }
@@ -156,6 +192,46 @@ mod tests {
             PoolConfig::DEFAULT_MAX_CONNECTIONS
         );
         assert!(config.migrate_on_start);
+    }
+
+    #[test]
+    fn telemetry_defaults_to_json_without_sentry() {
+        let telemetry = config(&[]).unwrap().telemetry;
+        assert_eq!(telemetry.log_format, LogFormat::Json);
+        assert_eq!(telemetry.log_filter, DEFAULT_LOG_FILTER);
+        assert!(telemetry.sentry_dsn.is_none());
+        assert_eq!(telemetry.environment, "local");
+    }
+
+    #[test]
+    fn reads_telemetry_settings() {
+        let telemetry = config(&[
+            ("LOG_FORMAT", "Pretty"),
+            ("RUST_LOG", "debug,hyper=warn"),
+            ("SENTRY_DSN", "https://public@o0.ingest.sentry.io/42"),
+            ("APP_ENV", "staging"),
+        ])
+        .unwrap()
+        .telemetry;
+        assert_eq!(telemetry.log_format, LogFormat::Pretty);
+        assert_eq!(telemetry.log_filter, "debug,hyper=warn");
+        assert!(telemetry.sentry_dsn.is_some());
+        assert_eq!(telemetry.environment, "staging");
+    }
+
+    #[test]
+    fn rejects_invalid_telemetry_settings() {
+        for (key, value) in [
+            ("LOG_FORMAT", "xml"),
+            ("RUST_LOG", "info,[unclosed"),
+            ("SENTRY_DSN", "not a dsn"),
+        ] {
+            let err = config(&[(key, value)]).unwrap_err();
+            assert!(
+                matches!(err, ConfigError::Invalid { key: k, .. } if k == key),
+                "{key}: {err:?}"
+            );
+        }
     }
 
     #[test]

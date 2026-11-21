@@ -112,8 +112,30 @@ pub struct ErrorPayload<'a> {
     pub fields: Option<&'a ValidationErrors>,
 }
 
+/// `err: cause: cause...` for logging.
+fn error_chain(err: &(dyn StdError + 'static)) -> String {
+    let mut text = err.to_string();
+    let mut source = err.source();
+    while let Some(cause) = source {
+        text.push_str(": ");
+        text.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    text
+}
+
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        if let Self::Internal(cause) = &self {
+            // Logged inside the request span (request id, route); the client only sees a generic
+            // message. Library error text can contain personal data (e.g. Postgres constraint
+            // details), so it is redacted first.
+            tracing::error!(
+                error = %crate::redact::redact(&error_chain(cause.as_ref())),
+                "internal error"
+            );
+        }
+
         let fields = match &self {
             Self::Validation(errors) => Some(errors),
             _ => None,

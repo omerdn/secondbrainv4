@@ -14,13 +14,20 @@ workspace = true
 axum.workspace = true
 db = { path = "../db" }
 dotenvy.workspace = true
+kernel = { path = "../kernel" }
+sentry.workspace = true
 serde.workspace = true
 tokio.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 db = { path = "../db", features = ["testing"] }
 http-body-util.workspace = true
+sentry = { workspace = true, features = ["test"] }
 serde_json.workspace = true
 sqlx.workspace = true
 tokio = { workspace = true, features = ["io-util"] }
-tower.workspace = true
