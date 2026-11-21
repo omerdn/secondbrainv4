@@ -1,4 +1,4 @@
-import { TeamScope, ThemeProvider, themeVars, useScheme } from "@secondbrain/ui";
+import { TeamScope, ThemeProvider, ThemeScope, themeVars, useScheme } from "@secondbrain/ui";
 import { render, screen } from "@testing-library/react-native";
 import { Text } from "react-native";
 
@@ -47,5 +47,20 @@ describe("ThemeProvider", () => {
     );
     expect(JSON.stringify(rootVars())).toContain("253 224 71");
     expect(screen.getByText("inside")).toBeOnTheScreen();
+  });
+});
+
+describe("ThemeScope", () => {
+  it("re-applies the provider's variables (for portals such as Modal on web)", async () => {
+    await render(
+      <ThemeProvider scheme="dark" teamColor="#fde047">
+        <ThemeScope>
+          <Text>portal</Text>
+        </ThemeScope>
+      </ThemeProvider>,
+    );
+    const style: unknown = screen.getByTestId("theme-scope").props.style;
+    expect(JSON.stringify(style)).toContain(themeVars({ scheme: "dark" })["--color-background"]);
+    expect(JSON.stringify(style)).toContain("253 224 71");
   });
 });

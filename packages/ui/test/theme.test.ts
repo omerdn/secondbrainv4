@@ -1,5 +1,3 @@
-import { describe, expect, it } from "vitest";
-
 import preset, { presetTheme } from "../src/tailwind-preset";
 import {
   contrastRatio,
@@ -7,6 +5,7 @@ import {
   readableForeground,
   relativeLuminance,
   rgbChannels,
+  teamVars,
   themeVars,
 } from "../src/theme";
 import { DEFAULT_TEAM_COLOR, semanticColorNames, spacing, themes } from "../src/tokens";
@@ -22,7 +21,7 @@ describe("parseHex", () => {
 
   it("rejects anything else", () => {
     for (const bad of ["", "fff", "#ffff", "#gggggg", "rgb(0,0,0)", "#12345", "red"]) {
-      expect(parseHex(bad), bad).toBeNull();
+      expect([bad, parseHex(bad)]).toEqual([bad, null]);
     }
   });
 });
@@ -49,10 +48,8 @@ describe("themes", () => {
     expect(contrastRatio(lum(t.foreground), lum(t.background))).toBeGreaterThanOrEqual(7);
     expect(contrastRatio(lum(t.muted), lum(t.background))).toBeGreaterThanOrEqual(4.5);
     for (const role of ["primary", "danger", "success", "warning"] as const) {
-      expect(
-        contrastRatio(lum(t[`${role}-foreground`]), lum(t[role])),
-        `${scheme} ${role}`,
-      ).toBeGreaterThanOrEqual(4.5);
+      const ratio = contrastRatio(lum(t[`${role}-foreground`]), lum(t[role]));
+      expect({ role, pass: ratio >= 4.5 }).toEqual({ role, pass: true });
     }
   });
 
@@ -111,8 +108,7 @@ describe("tailwind preset", () => {
 });
 
 describe("teamVars", () => {
-  it("contains only the team pair", async () => {
-    const { teamVars } = await import("../src/theme");
+  it("contains only the team pair", () => {
     expect(Object.keys(teamVars("#1e3a8a")).sort()).toEqual([
       "--color-team",
       "--color-team-foreground",
