@@ -13,6 +13,16 @@ Crate listesi ARCHITECTURE §3 ile `crates/app/tests/workspace_layout.rs` testiy
 - Lint ayarları `Cargo.toml` → `[workspace.lints]` içindedir. Her crate `[lints] workspace = true` ile devralır (testle zorlanır). `unsafe_code` yasaktır.
 - Crate'ler arası bağımlılıklar, ilgili görev implemente edilirken ARCHITECTURE §4.3'teki tek yönlü sıraya göre eklenir.
 
+- Bağımlılık sürümleri `Cargo.toml` → `[workspace.dependencies]` içinde tek yerde tutulur; crate'ler `<ad>.workspace = true` ile kullanır.
+- Entegrasyon testi dosyaları (`tests/*.rs`) en üstte `#![allow(clippy::unwrap_used, clippy::expect_used)]` taşır. Clippy'nin testlerdeki istisnası yardımcı fonksiyonları kapsamıyor.
+
+## Sunucuyu çalıştırma
+```bash
+cargo run -p app        # .env okunur; varsayılan http://127.0.0.1:8080
+curl localhost:8080/health
+```
+Yapılandırma ortam değişkenleriyle yapılır: `APP_HOST`, `APP_PORT`, `SHUTDOWN_TIMEOUT_SECS` (bkz. `.env.example`). SIGTERM veya Ctrl-C gelince sunucu yeni bağlantı almayı bırakır, devam eden istekleri en fazla `SHUTDOWN_TIMEOUT_SECS` saniye bekler ve çıkar.
+
 ## Komutlar
 ```bash
 cargo fmt --all --check
