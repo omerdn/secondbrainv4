@@ -1,18 +1,20 @@
 import { renderRouter, screen } from "expo-router/testing-library";
 
 import { platformLabel } from "@/lib/app-info";
-import Home from "../app/index";
 import NotFound from "../app/+not-found";
+import { fakeServer, json, memoryTokenStore, user } from "./support/api";
+import { renderApp } from "./support/router";
 
 describe("routes", () => {
-  it("renders the home screen at /", async () => {
-    await renderRouter({ index: Home, "+not-found": NotFound }, { initialUrl: "/" });
+  it("renders the home screen at / when signed in", async () => {
+    const { api } = fakeServer({ "GET /me": () => json(200, user) });
+    await renderApp(api, "/", { tokenStore: memoryTokenStore("t") });
     expect(await screen.findByRole("header")).toHaveTextContent("Second Brain");
     expect(screen).toHavePathname("/");
   });
 
   it("renders the not-found screen for unknown paths", async () => {
-    await renderRouter({ index: Home, "+not-found": NotFound }, { initialUrl: "/nope" });
+    await renderRouter({ "+not-found": NotFound }, { initialUrl: "/nope" });
     expect(await screen.findByText("Page not found")).toBeOnTheScreen();
   });
 });

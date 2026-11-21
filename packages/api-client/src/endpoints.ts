@@ -5,10 +5,12 @@
  */
 
 import type {
+  AppleNativeRequest,
   AuthResponse,
   CsrfResponse,
   CurrentUser,
   ForgotPasswordRequest,
+  GoogleNativeRequest,
   Health,
   LoginRequest,
   RegisterRequest,
@@ -41,6 +43,11 @@ export function endpoints(api: ApiClient) {
       forgotPassword: (body: ForgotPasswordRequest) =>
         api.post<void>("/auth/password/forgot", body),
       resetPassword: (body: ResetPasswordRequest) => api.post<void>("/auth/password/reset", body),
+      /** Native apps only: exchanges a Google authorization code (PKCE) for a bearer session. */
+      googleNative: (body: GoogleNativeRequest) =>
+        api.post<AuthResponse>("/auth/google/native", body),
+      /** iOS only: exchanges a Sign in with Apple credential for a bearer session. */
+      appleNative: (body: AppleNativeRequest) => api.post<AuthResponse>("/auth/apple/native", body),
     },
     me: {
       get: () => api.get<CurrentUser>("/me"),

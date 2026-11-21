@@ -206,10 +206,19 @@ describe("endpoints", () => {
     await api.me.get();
     await api.me.update({ timezone: "Europe/Istanbul" }, { idempotencyKey: "k" });
     await api.auth.revokeSession("a/b");
+    await api.auth.googleNative({
+      code: "c",
+      code_verifier: "v",
+      redirect_uri: "app:/cb",
+      client_id: "ios",
+    });
+    await api.auth.appleNative({ code: "c", client_id: "app.bundle" });
     expect(calls.map((c) => `${c.init.method} ${c.url}`)).toEqual([
       "GET http://api.test/me",
       "PATCH http://api.test/me",
       "DELETE http://api.test/auth/sessions/a%2Fb",
+      "POST http://api.test/auth/google/native",
+      "POST http://api.test/auth/apple/native",
     ]);
     expect(header(calls[1], "Idempotency-Key")).toBe("k");
   });
