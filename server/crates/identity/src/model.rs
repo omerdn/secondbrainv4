@@ -71,6 +71,62 @@ pub struct LoginRequest {
     pub device: Option<String>,
 }
 
+/// `POST /auth/email/verify`.
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+pub struct VerifyEmailRequest {
+    /// Token from the verification link.
+    pub token: String,
+}
+
+/// `POST /auth/password/forgot`.
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+pub struct ForgotPasswordRequest {
+    /// Address of the account.
+    pub email: String,
+}
+
+/// `POST /auth/password/reset`.
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+pub struct ResetPasswordRequest {
+    /// Token from the reset link.
+    pub token: String,
+    /// New password (same rules as at registration).
+    pub password: String,
+}
+
+impl ForgotPasswordRequest {
+    /// Trims and length-checks the address. The shape is not checked: an unknown address is
+    /// answered exactly like a known one.
+    pub fn validate(self) -> Result<String, ValidationErrors> {
+        let email = self.email.trim().to_owned();
+        let mut errors = ValidationErrors::new();
+        errors
+            .check(non_blank("email", &email))
+            .check(max_chars("email", &email, MAX_EMAIL_CHARS));
+        if errors.is_empty() {
+            Ok(email)
+        } else {
+            Err(errors)
+        }
+    }
+}
+
+impl ResetPasswordRequest {
+    /// Checks the new password.
+    pub fn validate(self) -> Result<(String, String), ValidationErrors> {
+        let mut errors = ValidationErrors::new();
+        errors.check(check_password("password", &self.password));
+        if errors.is_empty() {
+            Ok((self.token, self.password))
+        } else {
+            Err(errors)
+        }
+    }
+}
+
 /// The signed-in user's own account.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[ts(export)]
@@ -89,6 +145,8 @@ pub struct CurrentUser {
     pub locale: String,
     /// When the account was created.
     pub created_at: DateTime<Utc>,
+    /// Whether the current address has been verified (T0.3.3).
+    pub email_verified: bool,
 }
 
 /// Body of a successful register or login.

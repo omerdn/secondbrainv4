@@ -30,7 +30,8 @@ impl App {
     async fn new() -> Self {
         let db = TestDb::new().await;
         let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 11, 21, 12, 0, 0).unwrap());
-        let service = IdentityService::new(db.pool().clone(), Arc::new(clock.clone()));
+        let service =
+            IdentityService::new(db.pool().clone(), Arc::new(clock.clone()), email_settings());
         let router = identity::http::router(service);
         Self { db, clock, router }
     }
@@ -422,5 +423,12 @@ impl App {
     fn clock_now(&self) -> chrono::DateTime<Utc> {
         use kernel::Clock;
         self.clock.now()
+    }
+}
+
+fn email_settings() -> identity::EmailSettings {
+    identity::EmailSettings {
+        sender: Arc::new(kernel::email::RecordingEmailSender::default()),
+        web_url: "https://app.test".into(),
     }
 }

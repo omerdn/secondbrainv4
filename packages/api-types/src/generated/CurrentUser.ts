@@ -31,4 +31,8 @@ locale: string,
 /**
  * When the account was created.
  */
-created_at: string, };
+created_at: string, 
+/**
+ * Whether the current address has been verified (T0.3.3).
+ */
+email_verified: boolean, };

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
 use db::PgPool;
-use kernel::{AppError, SharedClock};
+use kernel::{AppError, SharedClock, SharedEmailSender};
 use uuid::Uuid;
 
 use crate::model::{Credentials, CurrentUser, NewAccount, SessionId, SessionInfo, UserId};
@@ -65,9 +65,19 @@ pub struct IdentityService {
     inner: Arc<Inner>,
 }
 
-struct Inner {
-    pool: PgPool,
-    clock: SharedClock,
+pub(crate) struct Inner {
+    pub(crate) pool: PgPool,
+    pub(crate) clock: SharedClock,
+    pub(crate) email: EmailSettings,
+}
+
+/// How identity e-mails are delivered.
+#[derive(Clone)]
+pub struct EmailSettings {
+    /// Delivery driver.
+    pub sender: SharedEmailSender,
+    /// Public URL of the web app, used in e-mail links (e.g. `https://app.example.com`).
+    pub web_url: String,
 }
 
 impl std::fmt::Debug for IdentityService {
@@ -76,32 +86,42 @@ impl std::fmt::Debug for IdentityService {
     }
 }
 
-type UserRow = (
-    Uuid,
-    String,
-    String,
-    Option<String>,
-    String,
-    String,
-    DateTime<Utc>,
-);
+#[derive(sqlx::FromRow)]
+pub(crate) struct UserRow {
+    id: Uuid,
+    email: String,
+    display_name: String,
+    avatar_url: Option<String>,
+    timezone: String,
+    locale: String,
+    created_at: DateTime<Utc>,
+    email_verified_at: Option<DateTime<Utc>>,
+}
 
-fn to_user(row: UserRow) -> CurrentUser {
-    let (id, email, display_name, avatar_url, timezone, locale, created_at) = row;
+pub(crate) fn to_user(row: UserRow) -> CurrentUser {
     CurrentUser {
-        id: UserId::from_uuid(id),
-        email,
-        display_name,
-        avatar_url,
-        timezone,
-        locale,
-        created_at,
+        id: UserId::from_uuid(row.id),
+        email: row.email,
+        display_name: row.display_name,
+        avatar_url: row.avatar_url,
+        timezone: row.timezone,
+        locale: row.locale,
+        created_at: row.created_at,
+        email_verified: row.email_verified_at.is_some(),
     }
 }
 
-const USER_COLUMNS: &str = "id, email, display_name, avatar_url, timezone, locale, created_at";
+#[derive(sqlx::FromRow)]
+struct LoginRow {
+    #[sqlx(flatten)]
+    user: UserRow,
+    password_hash: Option<String>,
+}
 
-async fn blocking<T: Send + 'static>(
+pub(crate) const USER_COLUMNS: &str =
+    "id, email, display_name, avatar_url, timezone, locale, created_at, email_verified_at";
+
+pub(crate) async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, AppError> {
     tokio::task::spawn_blocking(f)
@@ -111,21 +131,26 @@ async fn blocking<T: Send + 'static>(
 
 impl IdentityService {
     /// Creates the service.
-    pub fn new(pool: PgPool, clock: SharedClock) -> Self {
+    pub fn new(pool: PgPool, clock: SharedClock, email: EmailSettings) -> Self {
         Self {
-            inner: Arc::new(Inner { pool, clock }),
+            inner: Arc::new(Inner { pool, clock, email }),
         }
     }
 
-    fn pool(&self) -> &PgPool {
+    pub(crate) fn inner(&self) -> &Inner {
+        &self.inner
+    }
+
+    pub(crate) fn pool(&self) -> &PgPool {
         &self.inner.pool
     }
 
-    fn now(&self) -> DateTime<Utc> {
+    pub(crate) fn now(&self) -> DateTime<Utc> {
         self.inner.clock.now()
     }
 
-    /// Creates an account with a password identity and signs it in.
+    /// Creates an account with a password identity, signs it in and sends a verification
+    /// e-mail (a delivery failure is logged; the user can ask for another one).
     ///
     /// Errors: [`AppError::Conflict`] if the e-mail is already registered (any letter case).
     pub async fn register(
@@ -177,7 +202,16 @@ impl IdentityService {
         .map_err(AppError::internal)?;
 
         let session = insert_session(&mut tx, user.id, device.as_deref(), now).await?;
+        let verification = crate::email_flow::create_token(
+            &mut tx,
+            user.id,
+            crate::email_flow::Purpose::VerifyEmail,
+            &user.email,
+            now,
+        )
+        .await?;
         tx.commit().await.map_err(AppError::internal)?;
+        self.send_verification(&user.email, &verification).await;
         Ok((user, session))
     }
 
@@ -195,9 +229,9 @@ impl IdentityService {
             device,
         } = credentials;
 
-        let found = sqlx::query_as::<_, (Uuid, String, String, Option<String>, String, String, DateTime<Utc>, Option<String>)>(
+        let found = sqlx::query_as::<_, LoginRow>(
             "SELECT u.id, u.email, u.display_name, u.avatar_url, u.timezone, u.locale, u.created_at,
-                    i.password_hash
+                    u.email_verified_at, i.password_hash
              FROM users u
              LEFT JOIN auth_identities i ON i.user_id = u.id AND i.provider = 'password'
              WHERE lower(u.email) = lower($1)",
@@ -208,10 +242,7 @@ impl IdentityService {
         .map_err(AppError::internal)?;
 
         let (user, password_hash) = match found {
-            Some((id, email, name, avatar, tz, locale, created, hash)) => (
-                Some(to_user((id, email, name, avatar, tz, locale, created))),
-                hash,
-            ),
+            Some(row) => (Some(to_user(row.user)), row.password_hash),
             None => (None, None),
         };
         let matches = blocking(move || match password_hash {
@@ -346,7 +377,7 @@ impl IdentityService {
     }
 }
 
-async fn insert_session(
+pub(crate) async fn insert_session(
     tx: &mut sqlx::PgConnection,
     user_id: UserId,
     device: Option<&str>,

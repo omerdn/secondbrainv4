@@ -28,6 +28,28 @@ pub struct Config {
     pub migrate_on_start: bool,
     /// Logging and error tracking (`LOG_FORMAT`, `RUST_LOG`, `SENTRY_DSN`, `APP_ENV`).
     pub telemetry: TelemetryConfig,
+    /// Outgoing e-mail driver (`EMAIL_DRIVER`).
+    pub email_driver: EmailDriver,
+    /// Public URL of the web app for links in e-mails (`PUBLIC_WEB_URL`).
+    pub public_web_url: String,
+}
+
+/// Outgoing e-mail driver.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmailDriver {
+    /// Print to the log instead of sending (local development only).
+    Log,
+}
+
+impl FromStr for EmailDriver {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "log" => Ok(Self::Log),
+            other => Err(format!("unknown driver `{other}` (expected: log)")),
+        }
+    }
 }
 
 impl Config {
@@ -37,6 +59,8 @@ impl Config {
     pub const DEFAULT_PORT: u16 = 8080;
     /// Default `SHUTDOWN_TIMEOUT_SECS`.
     pub const DEFAULT_SHUTDOWN_TIMEOUT_SECS: u64 = 30;
+    /// Expo's web dev server.
+    pub const DEFAULT_PUBLIC_WEB_URL: &str = "http://localhost:8081";
 
     /// Reads the configuration from the process environment.
     pub fn from_env() -> Result<Self, ConfigError> {
@@ -102,7 +126,28 @@ impl Config {
                 .unwrap_or_else(|| "local".to_owned()),
         };
 
+        let email_driver: EmailDriver = parse(&lookup, "EMAIL_DRIVER", EmailDriver::Log)?;
+        if email_driver == EmailDriver::Log && telemetry.environment == "production" {
+            return Err(ConfigError::Invalid {
+                key: "EMAIL_DRIVER",
+                reason: "the log driver prints e-mail contents and is not allowed in production"
+                    .into(),
+            });
+        }
+        let public_web_url = lookup("PUBLIC_WEB_URL")
+            .map(|u| u.trim().trim_end_matches('/').to_owned())
+            .filter(|u| !u.is_empty())
+            .unwrap_or_else(|| Self::DEFAULT_PUBLIC_WEB_URL.to_owned());
+        if !(public_web_url.starts_with("https://") || public_web_url.starts_with("http://")) {
+            return Err(ConfigError::Invalid {
+                key: "PUBLIC_WEB_URL",
+                reason: "must start with http:// or https://".into(),
+            });
+        }
+
         Ok(Self {
+            email_driver,
+            public_web_url,
             bind_addr: SocketAddr::new(host, port),
             shutdown_timeout: Duration::from_secs(shutdown_secs),
             database,
@@ -340,5 +385,59 @@ mod tests {
         let message = err.to_string();
         assert!(message.contains("SHUTDOWN_TIMEOUT_SECS"));
         assert!(!message.contains("s3cr3t-value"));
+    }
+
+    #[test]
+    fn email_defaults_to_log_driver_and_local_web_url() {
+        let config = config(&[("DATABASE_URL", URL)]).unwrap();
+        assert_eq!(config.email_driver, EmailDriver::Log);
+        assert_eq!(config.public_web_url, "http://localhost:8081");
+    }
+
+    #[test]
+    fn log_email_driver_is_refused_in_production() {
+        let err = config(&[("DATABASE_URL", URL), ("APP_ENV", "production")]).unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                key: "EMAIL_DRIVER",
+                ..
+            }
+        ));
+        assert!(config(&[("DATABASE_URL", URL), ("APP_ENV", "staging")]).is_ok());
+    }
+
+    #[test]
+    fn unknown_email_driver_is_rejected() {
+        let err = config(&[("DATABASE_URL", URL), ("EMAIL_DRIVER", "smtp")]).unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                key: "EMAIL_DRIVER",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn public_web_url_is_normalized_and_checked() {
+        let config = config(&[
+            ("DATABASE_URL", URL),
+            ("PUBLIC_WEB_URL", " https://app.example.com/ "),
+        ])
+        .unwrap();
+        assert_eq!(config.public_web_url, "https://app.example.com");
+        let err = config_err(&[("DATABASE_URL", URL), ("PUBLIC_WEB_URL", "app.example.com")]);
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                key: "PUBLIC_WEB_URL",
+                ..
+            }
+        ));
+    }
+
+    fn config_err(vars: &[(&str, &str)]) -> ConfigError {
+        config(vars).unwrap_err()
     }
 }
