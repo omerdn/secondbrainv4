@@ -12,6 +12,7 @@ use tokio::net::TcpListener;
 pub mod config;
 pub mod http;
 pub mod server;
+pub mod telemetry;
 
 pub use config::{Config, ConfigError};
 
@@ -27,6 +28,11 @@ where
 
     if config.migrate_on_start {
         db::migrate(&pool).await.map_err(RunError::Migrate)?;
+        tracing::info!("database migrations applied");
+    }
+
+    if let Ok(addr) = listener.local_addr() {
+        tracing::info!(%addr, "listening");
     }
 
     // The pool becomes router state once modules expose endpoints that need it.
@@ -35,6 +41,7 @@ where
         .map_err(RunError::Serve);
 
     pool.close().await;
+    tracing::info!("shut down");
     result
 }
 

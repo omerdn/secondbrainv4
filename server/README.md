@@ -36,6 +36,15 @@ sqlx::query("...").execute(db.pool()).await?;
 - Docker gerekir. **OrbStack kullanıyorsanız** testcontainers Docker soketini kendiliğinden bulamaz, kabuğunuzda şunu tanımlayın: `export DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock`.
 - Konteyner yerine mevcut bir sunucu kullanmak için: `TEST_DATABASE_URL=postgres://...` (ör. compose veritabanı).
 
+## Loglama ve hata takibi
+- Loglar stdout'a satır başına bir JSON nesnesi olarak yazılır (`LOG_FORMAT=json`, varsayılan). Yerelde `LOG_FORMAT=pretty` daha okunaklıdır. Seviye `RUST_LOG` ile ayarlanır (varsayılan `info,sqlx=warn`).
+- Her isteğin bir kimliği vardır (`x-request-id`). İstemci geçerli bir kimlik gönderirse (`[A-Za-z0-9._-]`, en fazla 64 karakter) o kullanılır, yoksa UUIDv7 üretilir. Yanıtta döner ve o isteğin tüm log satırlarına eklenir.
+- **Kişisel veri loglanmaz** (ARCHITECTURE §15, KVKK):
+  - İstek logunda sadece method, **rota şablonu** (`/items/{id}`, ham yol değil), status, süre ve istek kimliği bulunur. Query string, header'lar (cookie, `Authorization`), istemci IP'si ve gövde **asla** loglanmaz.
+  - İç hatalarda (500) hata metni `kernel::redact` ile maskelenir (e-posta, IPv4, Postgres detay değerleri, Bearer token).
+  - Yeni log satırı eklerken: kullanıcı adı, e-posta, not içeriği, başlık gibi alanları log alanı olarak yazmayın. Gerekirse id kullanın.
+- **Sentry** isteğe bağlıdır (`SENTRY_DSN` boşsa kapalı). Sadece `error` seviyesindeki olaylar gönderilir ve sadece izin listesindeki veriler gider: olay mesajı, `error` alanı ve `method`/`route`/`request_id` etiketleri. `send_default_pii` kapalıdır.
+
 ## Sunucuyu çalıştırma
 ```bash
 cargo run -p app        # .env okunur; varsayılan http://127.0.0.1:8080

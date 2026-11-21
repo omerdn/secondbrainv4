@@ -5,6 +5,7 @@
 //! - [`Clock`]: injectable time source
 //! - [`pagination`]: cursor pagination
 //! - [`validation`]: input validation helpers
+//! - [`redact`]: masking personal data in free-form text before logging
 //!
 //! The domain event bus is added with the outbox (T0.2.5).
 
@@ -12,6 +13,7 @@ pub mod clock;
 pub mod error;
 pub mod id;
 pub mod pagination;
+pub mod redact;
 pub mod validation;
 
 pub use clock::{Clock, FixedClock, SharedClock, SystemClock};
