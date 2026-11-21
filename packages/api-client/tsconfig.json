@@ -1,0 +1,10 @@
+{
+  "extends": "@secondbrain/config/tsconfig/base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"],
+    "allowJs": true
+  },
+  "include": ["src", "test", "*.ts", "*.js"]
+}

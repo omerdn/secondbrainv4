@@ -1,0 +1,53 @@
+/**
+ * Typed wrappers for the endpoints that exist today (identity, T0.3.x). Types come from
+ * `@secondbrain/api-types` (generated from the Rust DTOs), so a server change that breaks the
+ * contract fails the client typecheck.
+ */
+
+import type {
+  AuthResponse,
+  CsrfResponse,
+  CurrentUser,
+  ForgotPasswordRequest,
+  Health,
+  LoginRequest,
+  RegisterRequest,
+  ResetPasswordRequest,
+  SessionInfo,
+  UpdateProfileRequest,
+  VerifyEmailRequest,
+} from "@secondbrain/api-types";
+
+import type { ApiClient } from "./client";
+
+export interface MutationOptions {
+  /** See {@link import("./client").RequestOptions.idempotencyKey}. */
+  idempotencyKey?: string;
+}
+
+/** `ApiClient` plus one function per endpoint. */
+export function endpoints(api: ApiClient) {
+  return {
+    health: () => api.get<Health>("/health"),
+    auth: {
+      register: (body: RegisterRequest) => api.post<AuthResponse>("/auth/register", body),
+      login: (body: LoginRequest) => api.post<AuthResponse>("/auth/login", body),
+      logout: () => api.post<void>("/auth/logout"),
+      csrf: () => api.get<CsrfResponse>("/auth/csrf"),
+      sessions: () => api.get<SessionInfo[]>("/auth/sessions"),
+      revokeSession: (id: string) => api.delete(`/auth/sessions/${encodeURIComponent(id)}`),
+      verifyEmail: (body: VerifyEmailRequest) => api.post<void>("/auth/email/verify", body),
+      resendVerification: () => api.post<void>("/auth/email/verification"),
+      forgotPassword: (body: ForgotPasswordRequest) =>
+        api.post<void>("/auth/password/forgot", body),
+      resetPassword: (body: ResetPasswordRequest) => api.post<void>("/auth/password/reset", body),
+    },
+    me: {
+      get: () => api.get<CurrentUser>("/me"),
+      update: (body: UpdateProfileRequest, options?: MutationOptions) =>
+        api.patch<CurrentUser>("/me", body, options),
+    },
+  };
+}
+
+export type Endpoints = ReturnType<typeof endpoints>;
