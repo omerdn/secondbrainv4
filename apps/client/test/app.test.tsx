@@ -9,7 +9,7 @@ describe("routes", () => {
   it("renders the home screen at / when signed in", async () => {
     const { api } = fakeServer({ "GET /me": () => json(200, user) });
     await renderApp(api, "/", { tokenStore: memoryTokenStore("t") });
-    expect(await screen.findByRole("header")).toHaveTextContent("Second Brain");
+    expect(await screen.findByRole("header", { name: "Bugün" })).toBeOnTheScreen();
     expect(screen).toHavePathname("/");
   });
 

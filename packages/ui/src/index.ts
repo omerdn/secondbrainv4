@@ -2,6 +2,7 @@ export * from "./tokens";
 export * from "./theme";
 export * from "./ThemeProvider";
 export { cx } from "./cx";
+export * from "./responsive";
 export * from "./components/Avatar";
 export * from "./components/Button";
 export * from "./components/Card";

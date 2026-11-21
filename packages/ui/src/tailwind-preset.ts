@@ -5,7 +5,15 @@
  */
 
 import { colorVar } from "./theme";
-import { fontFamily, fontSize, fontWeight, radius, semanticColorNames, spacing } from "./tokens";
+import {
+  breakpoints,
+  fontFamily,
+  fontSize,
+  fontWeight,
+  radius,
+  semanticColorNames,
+  spacing,
+} from "./tokens";
 
 const px = (n: number) => `${n}px`;
 
@@ -38,6 +46,7 @@ export const presetTheme = {
     ]),
   ),
   fontWeight: { ...fontWeight },
+  screens: Object.fromEntries(Object.entries(breakpoints).map(([k, v]) => [k, px(v)])),
 };
 
 const preset = {

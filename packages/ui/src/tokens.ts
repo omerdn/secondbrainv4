@@ -142,3 +142,23 @@ export const radius = {
   xl: 16,
   full: 9999,
 } as const;
+
+/**
+ * Responsive breakpoints in px (min widths), shared by `useBreakpoint` and Tailwind `md:` /
+ * `lg:` / `xl:` (T0.4.6). Below `md` is a phone layout (bottom tabs); from `md` on, a sidebar.
+ */
+export const breakpoints = {
+  md: 768,
+  lg: 1024,
+  xl: 1280,
+} as const;
+
+/** Fixed sizes of the app shell in px. */
+export const layout = {
+  /** Sidebar width from `md` on. */
+  sidebarWidth: 240,
+  /** Height of the bottom tab bar, without the safe-area inset. */
+  tabBarHeight: 56,
+  /** Readable content width on wide screens. */
+  contentMaxWidth: 960,
+} as const;

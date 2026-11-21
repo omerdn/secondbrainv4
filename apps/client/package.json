@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@expo/metro-runtime": "~58.0.17",
+    "@expo/vector-icons": "^15.1.1",
     "@secondbrain/api-client": "workspace:*",
     "@secondbrain/api-types": "workspace:*",
     "@secondbrain/ui": "workspace:*",
