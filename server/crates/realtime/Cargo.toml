@@ -9,3 +9,20 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+axum = { workspace = true, features = ["ws"] }
+chrono.workspace = true
+futures-util.workspace = true
+identity = { path = "../identity" }
+kernel = { path = "../kernel" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+ts-rs.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+db = { path = "../db", features = ["testing"] }
+tokio-tungstenite.workspace = true
