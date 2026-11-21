@@ -111,7 +111,7 @@
    Döngüsel bağımlılık Cargo tarafından zaten engellenir. Daha üst katmanlar arasındaki iletişim domain olaylarıyla yapılır.
 4. **Saf mantık ile yan etkiler ayrılır.** Erişim hesaplama, tekrar üretimi, ilerleme, streak ve tempo hesapları **saf fonksiyonlardır**. Veritabanı veya saate dokunmazlar; `Clock` dışarıdan enjekte edilir. Bu sayede `proptest` ile yoğun şekilde test edilirler.
 5. **Domain olayları:** `ItemCreated`, `LinkAdded`, `MemberAdded`, `EntryRecorded`, `SubtaskToggled`… gibi olaylar, aynı veritabanı işlemi (transaction) içinde `outbox` tablosuna yazılır. Bir dağıtıcı bu olayları abonelere ve WebSocket hub'ına iletir. Böylece olaylar kaybolmaz.
-6. **İstemcide de aynı kural:** `features/x` klasörü `features/y`'nin iç dosyalarını import edemez. Paylaşılan kod `packages/*` veya `src/lib` altında durur. Bu kural ESLint `no-restricted-imports` ile zorlanır.
+6. **İstemcide de aynı kural:** `features/x` klasörü `features/y`'nin iç dosyalarını import edemez; sadece public girişini (`@/features/y`, yani `index.ts`) kullanabilir. Paylaşılan kod `packages/*` veya `src/lib` altında durur ve hiçbir feature'ı import etmez. Bu kural `@secondbrain/config` içindeki ESLint kuralı `secondbrain/feature-boundaries` ile zorlanır (göreli yolları da çözer; `features/modules/<ad>` her biri ayrı feature sayılır).
 7. Ek modüller (§13) çekirdeğe sadece `ModuleManifest` ve `ProgressProvider` arayüzleri üzerinden bağlanır.
 
 ## 5. Veri modeli (çekirdek)
