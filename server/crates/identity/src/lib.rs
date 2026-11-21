@@ -9,8 +9,10 @@
 //! - [`email_flow`]: e-mail verification and password reset
 //! - [`oauth`]: Google / Apple sign-in and account linking
 //! - [`profile`]: the user's own profile (display name, avatar URL, time zone, language)
+//! - [`cleanup`]: daily deletion of expired sessions, e-mail tokens and OAuth states
 //! - [`http`]: `/auth/*` and `/me` endpoints
 
+pub mod cleanup;
 pub mod email_flow;
 pub mod http;
 pub mod model;

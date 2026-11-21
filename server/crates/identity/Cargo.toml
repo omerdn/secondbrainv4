@@ -18,6 +18,7 @@ chrono.workspace = true
 chrono-tz.workspace = true
 db = { path = "../db" }
 getrandom.workspace = true
+jobs = { path = "../jobs" }
 kernel = { path = "../kernel" }
 oauth2.workspace = true
 p256.workspace = true
@@ -33,6 +34,7 @@ ts-rs.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+cron.workspace = true
 db = { path = "../db", features = ["testing"] }
 http-body-util.workspace = true
 proptest.workspace = true
