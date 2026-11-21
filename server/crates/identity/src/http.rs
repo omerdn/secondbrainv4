@@ -90,8 +90,8 @@ fn routes(service: IdentityService, limits: Option<RateLimits>) -> Router {
         .route("/auth/email/verification", post(resend_verification));
     let (credentials, email) = match limits {
         Some(limits) => (
-            rate_limit::limit(credentials, rate_limit::CREDENTIALS, limits),
-            rate_limit::limit(email, rate_limit::EMAIL, limits),
+            rate_limit::limit(credentials, limits.credentials, limits),
+            rate_limit::limit(email, limits.email, limits),
         ),
         None => (credentials, email),
     };

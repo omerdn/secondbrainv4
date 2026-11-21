@@ -26,16 +26,30 @@ use tower_governor::GovernorLayer;
 use tower_governor::governor::GovernorConfigBuilder;
 use tower_governor::key_extractor::{KeyExtractor, SmartIpKeyExtractor};
 
-/// How to find the client IP.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Rate limit settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RateLimits {
     /// Trust `X-Forwarded-For` / `X-Real-IP` / `Forwarded` (only behind a reverse proxy that
     /// sets them; otherwise clients could pick their own key).
     pub trust_proxy_headers: bool,
+    /// Quota of the credential-checking endpoints.
+    pub credentials: Quota,
+    /// Quota of the e-mail sending endpoints.
+    pub email: Quota,
+}
+
+impl Default for RateLimits {
+    fn default() -> Self {
+        Self {
+            trust_proxy_headers: false,
+            credentials: CREDENTIALS,
+            email: EMAIL,
+        }
+    }
 }
 
 /// Token bucket: `burst` requests at once, then one more every `refill`.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Quota {
     pub burst: u32,
     pub refill: Duration,
@@ -115,4 +129,29 @@ pub fn limit<S: Clone + Send + Sync + 'static>(
         });
     }
     routes.layer(GovernorLayer::new(config).error_handler(to_response))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn production_quotas_match_the_documented_table() {
+        let limits = RateLimits::default();
+        assert!(!limits.trust_proxy_headers);
+        assert_eq!(
+            limits.credentials,
+            Quota {
+                burst: 10,
+                refill: Duration::from_secs(6)
+            }
+        );
+        assert_eq!(
+            limits.email,
+            Quota {
+                burst: 3,
+                refill: Duration::from_secs(60)
+            }
+        );
+    }
 }

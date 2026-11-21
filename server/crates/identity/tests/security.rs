@@ -15,12 +15,23 @@ use axum::response::Response;
 use chrono::{TimeZone, Utc};
 use db::testing::TestDb;
 use http_body_util::BodyExt;
-use identity::rate_limit::{CREDENTIALS, EMAIL, RateLimits};
+use std::time::Duration;
+
+use identity::rate_limit::{Quota, RateLimits};
 use identity::{EmailSettings, IdentityService};
 use kernel::FixedClock;
 use kernel::email::RecordingEmailSender;
 use serde_json::{Value, json};
 use tower::ServiceExt;
+
+const CREDENTIALS: Quota = Quota {
+    burst: 4,
+    refill: Duration::from_secs(3600),
+};
+const EMAIL: Quota = Quota {
+    burst: 2,
+    refill: Duration::from_secs(3600),
+};
 
 async fn app(trust_proxy_headers: bool) -> (TestDb, Router) {
     let db = TestDb::new().await;
@@ -33,12 +44,14 @@ async fn app(trust_proxy_headers: bool) -> (TestDb, Router) {
             web_url: "https://app.test".into(),
         },
     );
-    let router = identity::http::rate_limited_router(
-        service,
-        RateLimits {
-            trust_proxy_headers,
-        },
-    );
+    // Slow refill so a slow CI machine cannot refill a token mid-test (the production quotas
+    // are checked in the unit tests of `rate_limit`).
+    let limits = RateLimits {
+        trust_proxy_headers,
+        credentials: CREDENTIALS,
+        email: EMAIL,
+    };
+    let router = identity::http::rate_limited_router(service, limits);
     (db, router)
 }
 
@@ -121,7 +134,10 @@ async fn login_is_rate_limited_per_client_ip() {
         .unwrap()
         .parse()
         .unwrap();
-    assert!((1..=CREDENTIALS.refill.as_secs()).contains(&retry_after));
+    assert!(
+        (1..=CREDENTIALS.refill.as_secs()).contains(&retry_after),
+        "{retry_after}"
+    );
     assert_eq!(json_body(limited).await["error"]["code"], "rate_limited");
 
     // Another client is not affected; neither are unlimited endpoints for the first client.

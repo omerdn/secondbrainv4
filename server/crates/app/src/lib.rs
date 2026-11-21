@@ -141,6 +141,7 @@ where
     let idempotency = idempotency::Idempotency::new(pool.clone(), identity.clone(), clock);
     let limits = identity::rate_limit::RateLimits {
         trust_proxy_headers: config.trust_proxy_headers,
+        ..identity::rate_limit::RateLimits::default()
     };
     let modules = identity::http::rate_limited_router(identity, limits)
         .merge(idempotency::protect(axum::Router::new(), idempotency));
