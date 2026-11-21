@@ -44,59 +44,7 @@ where
             .await;
     });
 
-    // Background jobs: modules register handlers and schedules here as they are implemented.
     let clock: kernel::SharedClock = std::sync::Arc::new(kernel::SystemClock);
-    let mut worker = jobs::Worker::new(jobs::WorkerConfig::default());
-    let mut scheduler = jobs::Scheduler::new(jobs::SchedulerConfig::default());
-    {
-        let pool = pool.clone();
-        let clock = clock.clone();
-        worker.register(move |_: idempotency::CleanupIdempotencyKeys, _| {
-            let pool = pool.clone();
-            let before = clock.now() - idempotency::RETENTION;
-            async move {
-                idempotency::delete_expired(&pool, before).await?;
-                Ok(())
-            }
-        });
-    }
-    scheduler
-        .add(
-            "idempotency-cleanup",
-            idempotency::CLEANUP_CRON,
-            idempotency::CleanupIdempotencyKeys {},
-        )
-        .map_err(RunError::Schedule)?;
-    let (stop_jobs, jobs_stopped) = tokio::sync::watch::channel(false);
-    let jobs_task = {
-        let pool = pool.clone();
-        let mut stopped = jobs_stopped.clone();
-        tokio::spawn(async move {
-            worker
-                .run(&pool, async move {
-                    let _ = stopped.wait_for(|stop| *stop).await;
-                })
-                .await;
-        })
-    };
-    let scheduler_task = {
-        let pool = pool.clone();
-        let mut stopped = jobs_stopped;
-        tokio::spawn(async move {
-            scheduler
-                .run(&pool, &kernel::SystemClock, async move {
-                    let _ = stopped.wait_for(|stop| *stop).await;
-                })
-                .await;
-        })
-    };
-
-    if let Ok(addr) = listener.local_addr() {
-        tracing::info!(%addr, "listening");
-    }
-
-    // `/auth/*` is exempt from idempotency keys (see `idempotency` module docs). Domain modules
-    // add their routes inside `protect(..)` as they are implemented.
     let email_sender: kernel::SharedEmailSender = match config.email_driver {
         config::EmailDriver::Log => std::sync::Arc::new(kernel::email::LogEmailSender),
     };
@@ -138,6 +86,61 @@ where
         identity = identity.with_apple(apple);
         tracing::info!("sign in with apple enabled");
     }
+
+    // Background jobs: modules register handlers and schedules here as they are implemented.
+    let mut worker = jobs::Worker::new(jobs::WorkerConfig::default());
+    let mut scheduler = jobs::Scheduler::new(jobs::SchedulerConfig::default());
+    {
+        let pool = pool.clone();
+        let clock = clock.clone();
+        worker.register(move |_: idempotency::CleanupIdempotencyKeys, _| {
+            let pool = pool.clone();
+            let before = clock.now() - idempotency::RETENTION;
+            async move {
+                idempotency::delete_expired(&pool, before).await?;
+                Ok(())
+            }
+        });
+    }
+    scheduler
+        .add(
+            "idempotency-cleanup",
+            idempotency::CLEANUP_CRON,
+            idempotency::CleanupIdempotencyKeys {},
+        )
+        .map_err(RunError::Schedule)?;
+    identity::cleanup::register(identity.clone(), &mut worker, &mut scheduler)
+        .map_err(RunError::Schedule)?;
+    let (stop_jobs, jobs_stopped) = tokio::sync::watch::channel(false);
+    let jobs_task = {
+        let pool = pool.clone();
+        let mut stopped = jobs_stopped.clone();
+        tokio::spawn(async move {
+            worker
+                .run(&pool, async move {
+                    let _ = stopped.wait_for(|stop| *stop).await;
+                })
+                .await;
+        })
+    };
+    let scheduler_task = {
+        let pool = pool.clone();
+        let mut stopped = jobs_stopped;
+        tokio::spawn(async move {
+            scheduler
+                .run(&pool, &kernel::SystemClock, async move {
+                    let _ = stopped.wait_for(|stop| *stop).await;
+                })
+                .await;
+        })
+    };
+
+    if let Ok(addr) = listener.local_addr() {
+        tracing::info!(%addr, "listening");
+    }
+
+    // `/auth/*` is exempt from idempotency keys (see `idempotency` module docs). Domain modules
+    // add their routes inside `protect(..)` as they are implemented.
     let idempotency = idempotency::Idempotency::new(pool.clone(), identity.clone(), clock);
     let limits = identity::rate_limit::RateLimits {
         trust_proxy_headers: config.trust_proxy_headers,
