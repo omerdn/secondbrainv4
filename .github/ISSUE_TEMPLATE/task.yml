@@ -1,0 +1,46 @@
+name: Görev
+description: Roadmap'teki bir görev (ör. T0.3.2) veya çalışırken ortaya çıkan yeni bir iş
+title: "[T0.0.0] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Başlık roadmap ID'siyle başlamalı: `[T0.3.2] E-posta + şifre ile kayıt`. Yeni çıkan işler için roadmap'e uygun bir ID seçin ve issue'yu ilgili epic'in sub-issue'su yapın.
+  - type: textarea
+    id: context
+    attributes:
+      label: Bağlam
+      description: Epic, faz ve ilgili PRD / ARCHITECTURE / ADR maddeleri
+      placeholder: |
+        - **Epic:** E0.3 · Kimlik doğrulama · **Faz:** F0
+        - **PRD:** HS1
+        - **ARCHITECTURE:** §15
+        - **ADR:** ADR-0016
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Kapsam
+      description: Ne yapılacak? Kapsam kabul kriterleriyle sınırlıdır.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Kabul kriterleri
+      value: |
+        - [ ]
+        - [ ] Değişiklik doğrulandı ve gerekiyorsa README/dokümanlar güncellendi; CI yeşil
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Bağımlılıklar
+      description: Önce tamamlanması gereken issue'lar
+      placeholder: "- #13"
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notlar

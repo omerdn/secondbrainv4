@@ -12,6 +12,7 @@ Görevleri, rutinleri, hedefleri, sayısal takipleri ve defterleri **tek bir mer
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Mimari karar kayıtları (ADR) |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Fazlar, epic'ler, görevler |
 | [CLAUDE.md](CLAUDE.md) | Geliştirme iş akışı ve kurallar |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Dal adları, Conventional Commits, PR ve issue kuralları |
 
 ## Stack (özet)
 - **Arayüz:** Expo (React Native) + react-native-web. iOS, Android ve web tek kod tabanından çıkar.

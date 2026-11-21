@@ -1,0 +1,38 @@
+# Enforces Conventional Commits on PR titles (T0.1.5). PRs are squash-merged, so the title
+# becomes the commit message on main. See CONTRIBUTING.md.
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  conventional-commit:
+    name: PR title (Conventional Commits)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            chore
+            docs
+            test
+            refactor
+            perf
+            ci
+            build
+            revert
+          requireScope: false
+          # Subject must start with a lowercase letter (imperative, English).
+          subjectPattern: ^[a-z].*$
+          subjectPatternError: |
+            The subject "{subject}" in PR title "{title}" must start with a lowercase letter,
+            e.g. "feat(identity): add password login (T0.3.2)". See CONTRIBUTING.md.
