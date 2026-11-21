@@ -10,9 +10,26 @@ publish.workspace = true
 [lints]
 workspace = true
 
-[dev-dependencies]
+[dependencies]
+argon2.workspace = true
+axum.workspace = true
+base64.workspace = true
 chrono.workspace = true
-db = { path = "../db", features = ["testing"] }
+db = { path = "../db" }
+getrandom.workspace = true
+kernel = { path = "../kernel" }
+serde.workspace = true
+sha2.workspace = true
 sqlx.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
+tracing.workspace = true
+ts-rs.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+db = { path = "../db", features = ["testing"] }
+http-body-util.workspace = true
+proptest.workspace = true
+serde_json.workspace = true
+tower.workspace = true

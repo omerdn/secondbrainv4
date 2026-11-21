@@ -87,6 +87,12 @@ Migration akışının kendisini test etmek için boş bir şema: `TestDb::new_u
 - Docker gerekir. **OrbStack kullanıyorsanız** testcontainers Docker soketini kendiliğinden bulamaz, kabuğunuzda şunu tanımlayın: `export DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock`.
 - Konteyner yerine mevcut bir sunucu kullanmak için: `TEST_DATABASE_URL=postgres://...` (ör. compose veritabanı).
 
+## Kimlik doğrulama (`identity`)
+- Uç noktalar: `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/sessions`, `DELETE /auth/sessions/{id}` (ayrıntı: `crates/identity/src/http.rs`).
+- İstemci gövdede `client` gönderir: `"web"` → token `sb_session` cookie'sine yazılır (`HttpOnly; Secure; SameSite=Lax`), gövdede dönmez. `"native"` → token gövdede bir kez döner, sonra `Authorization: Bearer <token>` ile gönderilir.
+- Korumalı bir uç nokta yazarken handler'a `identity::http::Authenticated` extractor'ını ekleyin. Token eksik, bozuk, bilinmeyen veya süresi dolmuşsa 401 döner. Router state'i `IdentityService`'i `FromRef` ile sağlamalıdır.
+- Oturumlar 30 gün kullanılmayınca düşer; her kullanım süreyi uzatır (en fazla 5 dakikada bir yazılır).
+
 ## Loglama ve hata takibi
 - Loglar stdout'a satır başına bir JSON nesnesi olarak yazılır (`LOG_FORMAT=json`, varsayılan). Yerelde `LOG_FORMAT=pretty` daha okunaklıdır. Seviye `RUST_LOG` ile ayarlanır (varsayılan `info,sqlx=warn`).
 - Her isteğin bir kimliği vardır (`x-request-id`). İstemci geçerli bir kimlik gönderirse (`[A-Za-z0-9._-]`, en fazla 64 karakter) o kullanılır, yoksa UUIDv7 üretilir. Yanıtta döner ve o isteğin tüm log satırlarına eklenir.
