@@ -151,7 +151,7 @@ where
         .merge(idempotency::protect(profile, idempotency));
     let result = server::serve(
         listener,
-        http::router_with(modules),
+        http::router_with(modules, &config.cors_origins),
         shutdown,
         config.shutdown_timeout,
     )
