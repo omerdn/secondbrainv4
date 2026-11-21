@@ -29,7 +29,7 @@ describe("session gate", () => {
   it("sends signed-in users from /login home", async () => {
     const { api } = fakeServer({ "GET /me": () => json(200, user) });
     await renderApp(api, "/login", { tokenStore: memoryTokenStore("t") });
-    expect(await screen.findByText("Ali")).toBeOnTheScreen();
+    expect(await screen.findByRole("header", { name: "Bugün" })).toBeOnTheScreen();
     expect(screen).toHavePathname("/");
   });
 
@@ -65,7 +65,7 @@ describe("login", () => {
     await type(t.email, " ali@example.com ");
     await type(t.password, "correct horse");
     await press(t.login.submit);
-    expect(await screen.findByText("Ali")).toBeOnTheScreen();
+    expect(await screen.findByRole("header", { name: "Bugün" })).toBeOnTheScreen();
     expect(screen).toHavePathname("/");
     expect(logins[0]?.body).toEqual({
       email: "ali@example.com",
@@ -123,7 +123,7 @@ describe("register", () => {
     await type(t.email, "ali@example.com");
     await type(t.password, "correct horse");
     await press(t.register.submit);
-    expect(await screen.findByText("Ali")).toBeOnTheScreen();
+    expect(await screen.findByRole("header", { name: "Bugün" })).toBeOnTheScreen();
     expect(calls[0]?.body).toMatchObject({ display_name: "Ali", client: "native" });
   });
 
@@ -209,14 +209,15 @@ describe("reset password", () => {
   });
 });
 
-describe("home", () => {
-  it("signs out back to the login screen", async () => {
+describe("settings", () => {
+  it("shows the account and signs out back to the login screen", async () => {
     const { api } = fakeServer({
       "GET /me": () => json(200, user),
       "POST /auth/logout": () => new Response(null, { status: 204 }),
     });
-    await renderApp(api, "/", { tokenStore: memoryTokenStore("t") });
+    await renderApp(api, "/settings", { tokenStore: memoryTokenStore("t") });
     await screen.findByText("Ali");
+    expect(screen.getByText("ali@example.com")).toBeOnTheScreen();
     await press(t.session.signOut);
     expect(await screen.findByRole("header", { name: t.login.title })).toBeOnTheScreen();
   });

@@ -3,7 +3,16 @@ import { renderRouter } from "expo-router/testing-library";
 
 import type { TokenStore, Transport } from "@/features/auth/session";
 
-import Home from "../../app/index";
+import AppLayout from "../../app/(app)/_layout";
+import Calendar from "../../app/(app)/calendar";
+import Goals from "../../app/(app)/goals";
+import Today from "../../app/(app)/index";
+import More from "../../app/(app)/more";
+import Notebooks from "../../app/(app)/notebooks";
+import Routines from "../../app/(app)/routines";
+import Settings from "../../app/(app)/settings";
+import Tasks from "../../app/(app)/tasks";
+import Trackers from "../../app/(app)/trackers";
 import AuthLayout from "../../app/(auth)/_layout";
 import ForgotPassword from "../../app/(auth)/forgot-password";
 import Login from "../../app/(auth)/login";
@@ -30,7 +39,16 @@ export function renderApp(
   return renderRouter(
     {
       _layout: Root,
-      index: Home,
+      "(app)/_layout": AppLayout,
+      "(app)/index": Today,
+      "(app)/tasks": Tasks,
+      "(app)/routines": Routines,
+      "(app)/goals": Goals,
+      "(app)/trackers": Trackers,
+      "(app)/notebooks": Notebooks,
+      "(app)/calendar": Calendar,
+      "(app)/settings": Settings,
+      "(app)/more": More,
       "(auth)/_layout": AuthLayout,
       "(auth)/login": Login,
       "(auth)/register": Register,
