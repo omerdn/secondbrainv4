@@ -9,3 +9,18 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[features]
+# Test helper (`db::testing`): Postgres via testcontainers, one isolated schema per test.
+# Enable from other crates' dev-dependencies: `db = { path = "../db", features = ["testing"] }`.
+testing = ["dep:testcontainers", "dep:tokio", "dep:uuid"]
+
+[dependencies]
+sqlx.workspace = true
+testcontainers = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
+
+[dev-dependencies]
+db = { path = ".", features = ["testing"] }
+tokio.workspace = true
