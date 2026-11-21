@@ -12,6 +12,7 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::AppError;
 use crate::validation::{FieldError, FieldErrorCode, ValidationErrors};
@@ -70,8 +71,9 @@ impl PageRequest {
 }
 
 /// Opaque continuation token. Clients must treat it as a black box.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(transparent)]
+#[ts(export)]
 pub struct Cursor(String);
 
 impl Cursor {
@@ -118,7 +120,8 @@ fn invalid_cursor() -> AppError {
 }
 
 /// One page of results.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
 pub struct Page<T> {
     /// Items on this page, at most `limit`.
     pub items: Vec<T>,

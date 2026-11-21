@@ -3,4 +3,4 @@ docs/
 CLAUDE.md
 README.md
 **/README.md
-packages/api-types/
+packages/api-types/src/
