@@ -62,6 +62,9 @@ Repo yapısı ([ARCHITECTURE §3](docs/ARCHITECTURE.md#3-repo-yapısı)):
 | `packages/config` | Paylaşılan ESLint, Prettier ve tsconfig ayarları (`@secondbrain/config`) |
 | `server/` | Rust Cargo workspace (pnpm workspace'inin parçası değil). Komutlar: [server/README.md](server/README.md) |
 
+### CI
+Her PR'da ve `main`'e her push'ta [`.github/workflows/ci.yml`](.github/workflows/ci.yml) çalışır. Üç iş vardır: **Rust** (fmt, clippy, test), **TypeScript** (format, lint, typecheck, test) ve **Dev environment** (Compose ile Postgres + `db-check`). pnpm deposu, Cargo derlemeleri ve Turborepo çıktıları önbelleğe alınır. Bir PR, üç iş de yeşil olmadan merge edilmez.
+
 Görevler Turborepo ile paketler arasında çalıştırılır. Yeni bir TS paketi eklerken `@secondbrain/config`'ten `eslint.config.js`, `tsconfig.json` (`extends: "@secondbrain/config/tsconfig/base.json"`) devralınır ve `lint`, `typecheck`, `test` script'leri tanımlanır.
 
 ## Görev takibi
