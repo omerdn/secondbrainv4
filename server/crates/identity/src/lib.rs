@@ -8,13 +8,15 @@
 //! - [`service`]: register, login, authenticate, session list and revocation
 //! - [`email_flow`]: e-mail verification and password reset
 //! - [`oauth`]: Google / Apple sign-in and account linking
-//! - [`http`]: `/auth/*` endpoints
+//! - [`profile`]: the user's own profile (display name, avatar URL, time zone, language)
+//! - [`http`]: `/auth/*` and `/me` endpoints
 
 pub mod email_flow;
 pub mod http;
 pub mod model;
 pub mod oauth;
 pub mod password;
+pub mod profile;
 pub mod rate_limit;
 pub mod service;
 pub mod token;
