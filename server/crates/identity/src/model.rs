@@ -127,6 +127,57 @@ impl ResetPasswordRequest {
     }
 }
 
+/// `POST /auth/google/native`: the app ran the authorization code flow with PKCE itself.
+#[derive(Debug, Deserialize, TS)]
+#[ts(export)]
+pub struct GoogleNativeRequest {
+    /// Authorization code returned to the app.
+    pub code: String,
+    /// PKCE verifier the app generated for this flow.
+    pub code_verifier: String,
+    /// Redirect URI used in the authorization request.
+    pub redirect_uri: String,
+    /// The platform client id (iOS or Android) used in the authorization request.
+    pub client_id: String,
+    /// Optional label for the session list.
+    #[serde(default)]
+    #[ts(optional)]
+    pub device: Option<String>,
+}
+
+impl GoogleNativeRequest {
+    /// Checks presence and length of each field.
+    pub fn validate(self) -> Result<crate::oauth::google::GoogleNativeSignIn, ValidationErrors> {
+        let device = clean_device(self.device);
+        let mut errors = ValidationErrors::new();
+        for (field, value, max) in [
+            ("code", &self.code, 2048),
+            ("code_verifier", &self.code_verifier, 128),
+            ("redirect_uri", &self.redirect_uri, 2048),
+            ("client_id", &self.client_id, 255),
+        ] {
+            errors
+                .check(non_blank(field, value))
+                .check(max_chars(field, value, max));
+        }
+        // RFC 7636: the verifier is 43–128 characters.
+        errors.check(min_chars("code_verifier", &self.code_verifier, 43));
+        if let Some(device) = &device {
+            errors.check(max_chars("device", device, MAX_DEVICE_CHARS));
+        }
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+        Ok(crate::oauth::google::GoogleNativeSignIn {
+            code: self.code,
+            code_verifier: self.code_verifier,
+            redirect_uri: self.redirect_uri,
+            client_id: self.client_id,
+            device,
+        })
+    }
+}
+
 /// The signed-in user's own account.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[ts(export)]

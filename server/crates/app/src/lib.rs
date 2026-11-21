@@ -100,7 +100,7 @@ where
     let email_sender: kernel::SharedEmailSender = match config.email_driver {
         config::EmailDriver::Log => std::sync::Arc::new(kernel::email::LogEmailSender),
     };
-    let identity = identity::IdentityService::new(
+    let mut identity = identity::IdentityService::new(
         pool.clone(),
         clock.clone(),
         identity::EmailSettings {
@@ -108,6 +108,20 @@ where
             web_url: config.public_web_url.clone(),
         },
     );
+    if let Some(google) = &config.google {
+        let google = identity::oauth::google::Google::new(identity::oauth::google::GoogleConfig {
+            web_client_id: google.web_client_id.clone(),
+            web_client_secret: google.web_client_secret.clone(),
+            native_client_ids: google.native_client_ids.clone(),
+            callback_url: format!("{}/auth/google/callback", config.public_api_url),
+            web_url: config.public_web_url.clone(),
+            auth_url: identity::oauth::google::AUTH_URL.to_owned(),
+            token_url: identity::oauth::google::TOKEN_URL.to_owned(),
+        })
+        .map_err(|err| RunError::Google(err.to_string()))?;
+        identity = identity.with_google(google);
+        tracing::info!("google sign-in enabled");
+    }
     let idempotency = idempotency::Idempotency::new(pool.clone(), identity.clone(), clock);
     let modules = identity::http::router(identity)
         .merge(idempotency::protect(axum::Router::new(), idempotency));
@@ -144,6 +158,8 @@ pub enum RunError {
     Database(db::DbError),
     /// A migration failed.
     Migrate(db::MigrateError),
+    /// The Google sign-in client could not be built.
+    Google(String),
     /// A built-in recurring job has an invalid schedule.
     Schedule(jobs::ScheduleError),
     /// The HTTP server failed or could not drain within the shutdown timeout.
@@ -155,6 +171,7 @@ impl fmt::Display for RunError {
         match self {
             Self::Database(err) => write!(f, "database connection failed: {err}"),
             Self::Migrate(err) => write!(f, "database migration failed: {err}"),
+            Self::Google(err) => write!(f, "google sign-in setup failed: {err}"),
             Self::Schedule(err) => write!(f, "invalid job schedule: {err}"),
             Self::Serve(err) => write!(f, "server error: {err}"),
         }
@@ -166,6 +183,7 @@ impl std::error::Error for RunError {
         match self {
             Self::Database(err) => Some(err),
             Self::Migrate(err) => Some(err),
+            Self::Google(_) => None,
             Self::Schedule(err) => Some(err),
             Self::Serve(err) => Some(err),
         }
