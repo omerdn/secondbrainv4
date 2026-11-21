@@ -74,10 +74,18 @@ where
         tracing::info!(%addr, "listening");
     }
 
-    // The pool becomes router state once modules expose endpoints that need it.
-    let result = server::serve(listener, http::router(), shutdown, config.shutdown_timeout)
-        .await
-        .map_err(RunError::Serve);
+    // Domain modules contribute their routes here as they are implemented.
+    let clock: kernel::SharedClock = std::sync::Arc::new(kernel::SystemClock);
+    let identity = identity::IdentityService::new(pool.clone(), clock);
+    let modules = identity::http::router(identity);
+    let result = server::serve(
+        listener,
+        http::router_with(modules),
+        shutdown,
+        config.shutdown_timeout,
+    )
+    .await
+    .map_err(RunError::Serve);
 
     // Let background tasks finish their current batch before closing the pool.
     let _ = stop_dispatcher.send(());

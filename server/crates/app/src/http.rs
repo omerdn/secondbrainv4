@@ -28,9 +28,15 @@ pub const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id"
 /// Longest client-supplied request id that is accepted as-is.
 const MAX_REQUEST_ID_LEN: usize = 64;
 
-/// Builds the application router.
+/// Builds the application router with only the infrastructure routes (`/health`).
 pub fn router() -> Router {
-    with_observability(Router::new().route("/health", get(health)))
+    router_with(Router::new())
+}
+
+/// Builds the application router: infrastructure routes plus the given module routes
+/// (each module applies its own state), wrapped in request observability.
+pub fn router_with(modules: Router) -> Router {
+    with_observability(Router::new().route("/health", get(health)).merge(modules))
 }
 
 /// Adds request ids and request logging to `router`. Apply after all routes are added.
