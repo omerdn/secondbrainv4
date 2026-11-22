@@ -8,6 +8,9 @@ import type { ConfigContext, ExpoConfig } from "expo/config";
  * - `EXPO_PUBLIC_APPLE_SIGN_IN=true`: adds the Sign in with Apple capability (iOS).
  * - `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`: registers the reversed client id as a URL scheme so
  *   Google can redirect back to the app.
+ * - `APP_VERSION` / `APP_BUILD_NUMBER` (release CI, T4.2.5): the version shown to users and the
+ *   increasing build number Android needs to install a new APK over the old one.
+ * - Release signing: `plugins/with-release-signing.js` (ROUTUNE_KEYSTORE_* variables).
  */
 export default ({ config }: ConfigContext): ExpoConfig => {
   const apple = process.env.EXPO_PUBLIC_APPLE_SIGN_IN === "true";
@@ -17,12 +20,25 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ...(Array.isArray(baseScheme) ? baseScheme : [baseScheme]),
     ...(googleIos ? [googleIos.split(".").reverse().join(".")] : []),
   ];
+  const version = process.env.APP_VERSION?.trim() || config.version;
+  const build = Number.parseInt(process.env.APP_BUILD_NUMBER ?? "", 10);
+  const buildNumber = Number.isInteger(build) && build > 0 ? build : undefined;
   return {
     ...config,
+    version,
     name: config.name ?? "Routune",
     slug: config.slug ?? "secondbrain",
     scheme: schemes,
-    ios: { ...config.ios, ...(apple ? { usesAppleSignIn: true } : {}) },
-    plugins: [...(config.plugins ?? []), ...(apple ? ["expo-apple-authentication"] : [])],
+    ios: {
+      ...config.ios,
+      ...(apple ? { usesAppleSignIn: true } : {}),
+      ...(buildNumber ? { buildNumber: String(buildNumber) } : {}),
+    },
+    android: { ...config.android, ...(buildNumber ? { versionCode: buildNumber } : {}) },
+    plugins: [
+      ...(config.plugins ?? []),
+      ...(apple ? ["expo-apple-authentication"] : []),
+      "./plugins/with-release-signing",
+    ],
   };
 };

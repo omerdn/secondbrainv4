@@ -28,6 +28,7 @@
     "jest.config.mjs",
     "babel.config.js",
     "metro.config.js",
+    "plugins/**/*.js",
     "editor-web/vite.config.mts",
     "nativewind-env.d.ts"
   ],
