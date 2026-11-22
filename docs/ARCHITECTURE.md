@@ -273,6 +273,9 @@ struct Progress { done: f64, total: f64, expected_to_date: f64 }
 - **Takip (artmalı):** `done = min(toplanmış değer, hedef)`, `total = hedef`. `expected_to_date` doğrusal hesaplanır.
 - **Takip (sınırın altında kalmalı):** Uyum oranı = sınır içinde kalan dönem sayısı / geçen dönem sayısı. Henüz bitmemiş dönem, sınır aşılmadıysa uyumlu sayılır.
 
+- **Takipte dönemler:** Günlük, haftalık ve aylık takipler aralık içinde dönem dönem ölçülür: `total = hedef × dönem sayısı`, `done = Σ min(dönem değeri, hedef)`. Rutinlerde olduğu gibi bir dönemin fazlası başka dönemin eksiğini kapatmaz. Aralığın kestiği dönem tam hedefini korur. Sınırlı takipte `done` uyumlu dönem, `total` ve `expected_to_date` başlamış dönem sayısıdır.
+- **Takipte başarı:** Artmalı takip tüm dönemlerde hedefe ulaşınca başarılıdır. Sınırlı takip ancak aralık bittiğinde ve hiçbir dönem sınırı aşmadıysa başarılıdır.
+
 ### 7.3 Hedef
 ```
 r_i = clamp(done_i / total_i, 0, 1)            # nesnenin gerçekleşen oranı
