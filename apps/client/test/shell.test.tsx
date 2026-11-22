@@ -110,6 +110,22 @@ describe("wide layout (≥ md)", () => {
     expect(screen.getByRole("link", { name: "Bugün" })).toBeSelected();
   });
 
+  it("describes what each placeholder section will hold (T0.7.5)", async () => {
+    setWidth(1280);
+    await signedIn("/routines");
+    await header("Rutinler");
+    expect(screen.getByText(i18n.t("common.comingSoon.title"))).toBeOnTheScreen();
+    expect(screen.getByText(i18n.t("common.comingSoon.sections.routines"))).toBeOnTheScreen();
+  });
+
+  it("keeps the sign-out action in the account card of the settings", async () => {
+    setWidth(1280);
+    await signedIn("/settings");
+    await header("Ayarlar");
+    expect(screen.getByText(i18n.t("settings.account"))).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: i18n.t("auth.session.signOut") })).toBeOnTheScreen();
+  });
+
   it("navigates from the sidebar", async () => {
     setWidth(800);
     await signedIn("/");

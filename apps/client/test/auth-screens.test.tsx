@@ -1,5 +1,6 @@
 import { act, fireEvent, screen } from "expo-router/testing-library";
 
+import { APP_NAME } from "@/lib/app-info";
 import { i18n } from "@/lib/i18n";
 
 import {
@@ -26,6 +27,9 @@ describe("session gate", () => {
     await renderApp(fakeServer({}).api, "/");
     expect(await screen.findByRole("header", { name: tr("auth.login.title") })).toBeOnTheScreen();
     expect(screen).toHavePathname("/login");
+    // T0.7.5: the brand and what the app is for sit above the form.
+    expect(screen.getByRole("header", { name: APP_NAME })).toBeOnTheScreen();
+    expect(screen.getByText(tr("common.tagline"))).toBeOnTheScreen();
   });
 
   it("sends signed-in users from /login home", async () => {
