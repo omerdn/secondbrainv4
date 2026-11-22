@@ -30,6 +30,8 @@ pub struct Config {
     pub telemetry: TelemetryConfig,
     /// Outgoing e-mail driver (`EMAIL_DRIVER`).
     pub email_driver: EmailDriver,
+    /// Resend settings (`RESEND_API_KEY`, `EMAIL_FROM`); set exactly when the driver is `resend`.
+    pub resend: Option<ResendSettings>,
     /// Public URL of the web app for links in e-mails (`PUBLIC_WEB_URL`).
     pub public_web_url: String,
     /// Public URL of this server for OAuth callbacks (`PUBLIC_API_URL`).
@@ -60,6 +62,24 @@ pub struct AppleSettings {
 }
 
 /// The private key is never printed.
+/// Resend e-mail driver (ADR-0022, T0.7.7).
+#[derive(Clone, PartialEq, Eq)]
+pub struct ResendSettings {
+    /// `RESEND_API_KEY` (secret).
+    pub api_key: String,
+    /// `EMAIL_FROM`, e.g. `Routune <noreply@routune.dev>`.
+    pub from: String,
+}
+
+/// The API key is a secret: never in debug output.
+impl fmt::Debug for ResendSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ResendSettings")
+            .field("from", &self.from)
+            .finish_non_exhaustive()
+    }
+}
+
 impl fmt::Debug for AppleSettings {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AppleSettings")
@@ -104,6 +124,8 @@ impl fmt::Debug for GoogleClients {
 pub enum EmailDriver {
     /// Print to the log instead of sending (local development only).
     Log,
+    /// Send through Resend (ADR-0022).
+    Resend,
 }
 
 impl FromStr for EmailDriver {
@@ -112,7 +134,8 @@ impl FromStr for EmailDriver {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "log" => Ok(Self::Log),
-            other => Err(format!("unknown driver `{other}` (expected: log)")),
+            "resend" => Ok(Self::Resend),
+            other => Err(format!("unknown driver `{other}` (expected: log, resend)")),
         }
     }
 }
@@ -209,6 +232,26 @@ impl Config {
                 .map(|v| v.trim().to_owned())
                 .filter(|v| !v.is_empty())
         };
+        let resend = match email_driver {
+            EmailDriver::Log => None,
+            EmailDriver::Resend => {
+                let missing = |key: &'static str| ConfigError::Invalid {
+                    key,
+                    reason: "required when EMAIL_DRIVER=resend".into(),
+                };
+                let api_key =
+                    non_empty("RESEND_API_KEY").ok_or_else(|| missing("RESEND_API_KEY"))?;
+                let from = non_empty("EMAIL_FROM").ok_or_else(|| missing("EMAIL_FROM"))?;
+                if !from.contains('@') {
+                    return Err(ConfigError::Invalid {
+                        key: "EMAIL_FROM",
+                        reason: "must be an address, e.g. `Routune <noreply@routune.dev>`".into(),
+                    });
+                }
+                Some(ResendSettings { api_key, from })
+            }
+        };
+
         let google = match (
             non_empty("GOOGLE_CLIENT_ID"),
             non_empty("GOOGLE_CLIENT_SECRET"),
@@ -299,6 +342,7 @@ impl Config {
             public_api_url,
             google,
             email_driver,
+            resend,
             public_web_url,
             bind_addr: SocketAddr::new(host, port),
             shutdown_timeout: Duration::from_secs(shutdown_secs),
@@ -606,6 +650,49 @@ mod tests {
             }
         ));
         assert!(config(&[("DATABASE_URL", URL), ("APP_ENV", "staging")]).is_ok());
+    }
+
+    #[test]
+    fn resend_driver_needs_a_key_and_a_sender_address() {
+        for (vars, key) in [
+            (vec![("EMAIL_DRIVER", "resend")], "RESEND_API_KEY"),
+            (
+                vec![("EMAIL_DRIVER", "resend"), ("RESEND_API_KEY", "re_x")],
+                "EMAIL_FROM",
+            ),
+            (
+                vec![
+                    ("EMAIL_DRIVER", "resend"),
+                    ("RESEND_API_KEY", "re_x"),
+                    ("EMAIL_FROM", "Routune"),
+                ],
+                "EMAIL_FROM",
+            ),
+        ] {
+            let mut all = vec![("DATABASE_URL", URL)];
+            all.extend(vars);
+            let err = config(&all).unwrap_err();
+            assert!(
+                matches!(&err, ConfigError::Invalid { key: k, .. } if *k == key),
+                "{err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn resend_driver_is_allowed_in_production_and_hides_the_key() {
+        let config = config(&[
+            ("DATABASE_URL", URL),
+            ("APP_ENV", "production"),
+            ("EMAIL_DRIVER", "resend"),
+            ("RESEND_API_KEY", "re_s3cret"),
+            ("EMAIL_FROM", "Routune <noreply@routune.dev>"),
+        ])
+        .unwrap();
+        assert_eq!(config.email_driver, EmailDriver::Resend);
+        let resend = config.resend.clone().unwrap();
+        assert_eq!(resend.from, "Routune <noreply@routune.dev>");
+        assert!(!format!("{config:?}").contains("re_s3cret"));
     }
 
     #[test]

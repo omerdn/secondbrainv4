@@ -111,7 +111,8 @@ Her mutasyon istemcide üretilen bir `Idempotency-Key` başlığı taşır (ARCH
 - **CORS (T0.4.9, T0.6.4):** API'yi tarayıcıdan (cookie ile) çağırabilen origin'ler `PUBLIC_WEB_URL`'in origin'i ve `CORS_EXTRA_ORIGINS` listesidir. Joker, yol ve kimlik bilgisi içeren girişler reddedilir. Aynı liste `/ws` cookie el sıkışmasındaki `Origin` kontrolünde de kullanılır. `CORS_EXTRA_ORIGINS` http/https dışında yalnız Tauri masaüstü kabuğunun (`apps/desktop`, ADR-0020) `tauri://` şemasını kabul eder. Masaüstü için ekleyin: macOS/Linux `tauri://localhost`, Windows `http://tauri.localhost` (yayın paketinde `https://tauri.localhost` olabilir).
 
 ## E-posta (`kernel::email`)
-- Modüller e-postayı `EmailSender` arayüzüyle gönderir; sağlayıcıyı bilmez. Sağlayıcı henüz seçilmedi (ARCHITECTURE §14).
+- Modüller e-postayı `EmailSender` arayüzüyle gönderir; sağlayıcıyı bilmez. Sağlayıcı Resend'dir (ADR-0022).
+- `EMAIL_DRIVER=resend`: `ResendEmailSender` Resend HTTP API'sine (`POST /emails`) düz metin e-posta gönderir. `RESEND_API_KEY` (sır) ve `EMAIL_FROM` (Resend'de doğrulanmış alan adında bir adres) zorunludur; eksikse sunucu açılmaz. Hata mesajlarında sadece HTTP durum kodu bulunur; anahtar, alıcı ve gövde loglanmaz. Gönderim başarılıysa `email` hedefinde sadece türü loglanır.
 - `EMAIL_DRIVER=log` (varsayılan): e-posta gönderilmez, konu ve gövde (bağlantı dahil) `email` hedefiyle loga yazılır. Alıcı adresi yazılmaz. Yerelde doğrulama bağlantısını logdan kopyalayabilirsiniz. **`APP_ENV=production` ise sunucu bu sürücüyle açılmaz.**
 - Testlerde `kernel::email::RecordingEmailSender` gönderilen mesajları toplar.
 - E-posta metinlerine ad gibi kişisel veri koymayın; `EmailMessage`'ın `Debug` çıktısı alıcıyı ve gövdeyi gizler.

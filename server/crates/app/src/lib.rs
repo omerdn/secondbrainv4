@@ -53,9 +53,15 @@ where
     });
 
     let clock: kernel::SharedClock = std::sync::Arc::new(kernel::SystemClock);
-    let email_sender: kernel::SharedEmailSender = match config.email_driver {
-        config::EmailDriver::Log => std::sync::Arc::new(kernel::email::LogEmailSender),
+    // `Config` guarantees `resend` is set exactly when `EMAIL_DRIVER=resend`.
+    let email_sender: kernel::SharedEmailSender = match &config.resend {
+        Some(resend) => std::sync::Arc::new(kernel::email::ResendEmailSender::new(
+            resend.api_key.clone(),
+            resend.from.clone(),
+        )),
+        None => std::sync::Arc::new(kernel::email::LogEmailSender),
     };
+
     let mut identity = identity::IdentityService::new(
         pool.clone(),
         clock.clone(),

@@ -336,3 +336,20 @@
   - Container registry (GHCR) ile pull: paket görünürlüğü ve sunucuya ek bir token gerekir. SSH ile imaj aktarımı tek sunucu için daha sade.
   - Cloudflare proxy'si (turuncu bulut): DDoS koruması sağlar, ama TLS modu, WebSocket ve gerçek istemci IP'si için ek ayar gerekir. Gerekirse ileride açılır.
   - Hetzner gibi AB merkezli sağlayıcılar: daha ucuz, ama KVKK yurt dışı aktarım yükü getiriyor.
+
+## ADR-0022 · İşlemsel e-posta: Resend
+**Durum:** Kabul · 2026-11-22 (sahibin seçimi; ARCHITECTURE §14'teki açık kararı kapatır)
+
+- **Bağlam:** Doğrulama ve şifre sıfırlama e-postaları şimdiye kadar sadece loga yazılıyordu (`EMAIL_DRIVER=log`). Canlı ortamda (ADR-0021) gerçek gönderim gerekiyor. Sahip Resend'i seçti; kendi mail sunucusunu kurmak da ileride düşünülebilir.
+- **Karar:**
+  - `kernel::email::ResendEmailSender`, Resend HTTP API'sine (`POST https://api.resend.com/emails`, Bearer anahtar) düz metin e-posta gönderir. Modüller sağlayıcıyı bilmez; `EmailSender` arayüzü değişmez.
+  - Yapılandırma: `EMAIL_DRIVER=resend`, `RESEND_API_KEY` (sır, sunucudaki `.env`), `EMAIL_FROM` (ör. `Routune <noreply@routune.dev>`). Eksikse sunucu açılmaz. `resend` sürücüsü `production`'da izinlidir.
+  - Gönderici alan adı `routune.dev`, Resend'de doğrulanır (Cloudflare'de SPF/DKIM kayıtları).
+  - Kişisel veri: anahtar, alıcı ve gövde loglara ve hata mesajlarına girmez. Hata sadece HTTP durum kodunu ya da bağlantı hatasının türünü taşır.
+  - HTTP istemcisi `reqwest` 0.13 (rustls); sentry zaten aynı sürümü kullandığı için ek bir TLS yığını gelmez.
+- **Sonuçlar:**
+  - Resend kayıtları KVKK açısından yurt dışına aktarım sayılır (alıcı adresi ve e-posta içeriği ABD'deki sağlayıcıya gider). Gerçek kullanıcılar gelmeden önce aydınlatma metninde belirtilmeli; gerekirse AB bölgesi ya da Türkiye'de bir sağlayıcı seçilebilir. Sürücü arayüzü sayesinde sağlayıcı değişikliği tek bir dosyada kalır.
+  - Gönderim şimdilik istek içinde, senkron yapılır (mevcut davranış). Sağlayıcı yavaşlarsa veya hata verirse, ileride gönderim `jobs` kuyruğuna taşınıp yeniden denenebilir.
+- **Alternatifler:**
+  - SMTP (`lettre`) ile kendi sunucumuz ya da başka bir sağlayıcı: alan adı itibarı, IP ısındırma ve spam yönetimi gerektirir. Erken aşamada gereksiz yük.
+  - Postmark, SES, Mailgun: benzer yetenekler; sahip Resend'i tercih etti.

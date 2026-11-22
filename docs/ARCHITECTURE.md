@@ -356,7 +356,7 @@ struct ModuleManifest {
   - sayfa sıkıştırma,
   - hesap silme (30 gün sonra),
   - pomodoro bitişi.
-- Push bildirimleri: mobilde Expo Push, masaüstünde Tauri bildirim eklentisi, web'de Web Push. E-posta için bir işlemsel e-posta sağlayıcısı kullanılır (sağlayıcı daha sonra seçilecek).
+- Push bildirimleri: mobilde Expo Push, masaüstünde Tauri bildirim eklentisi, web'de Web Push. E-posta için işlemsel e-posta sağlayıcısı **Resend** kullanılır (ADR-0022, `kernel::email::ResendEmailSender`).
 
 ## 15. Kimlik doğrulama ve güvenlik
 - Şifreler argon2id ile hash'lenir. E-posta doğrulaması ve şifre sıfırlama vardır.
