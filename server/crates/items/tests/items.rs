@@ -166,6 +166,208 @@ fn ids(items: &[items::Item]) -> Vec<Uuid> {
     items.iter().map(|i| i.id).collect()
 }
 
+// --- activity (T1.2.5, A1, A2) ------------------------------------------------------------------
+
+fn first_page() -> kernel::PageRequest {
+    kernel::PageRequest::from_params(kernel::PageParams::default()).unwrap()
+}
+
+async fn kinds(w: &World, actor: Uuid, item: Uuid) -> Vec<items::ActivityKind> {
+    let page = w
+        .items
+        .item_activity(actor, item, &first_page())
+        .await
+        .unwrap();
+    page.items.iter().rev().map(|event| event.kind).collect()
+}
+
+#[tokio::test]
+async fn a1_meaningful_changes_are_recorded_with_who_and_when() {
+    use items::ActivityKind as K;
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    w.sharing.befriend(ali, ayse);
+    let task = w.items.create(ali, World::task("Plan")).await.unwrap();
+
+    // A pending or declined invitation and a personal tag leave no trace (G5, E2).
+    let declined = w.items.invite(ali, task.id, assignee(ayse)).await.unwrap();
+    w.items.decline_invitation(ayse, declined.id).await.unwrap();
+    let label = w.items.create_tag(ali, tag("Private")).await.unwrap();
+    w.items.attach_tag(ali, task.id, label.id).await.unwrap();
+    assert_eq!(kinds(&w, ali, task.id).await, [K::Created]);
+
+    w.clock.set(start() + Duration::minutes(1));
+    let invitation = w.items.invite(ali, task.id, assignee(ayse)).await.unwrap();
+    w.items
+        .accept_invitation(ayse, invitation.id)
+        .await
+        .unwrap();
+    let page = w
+        .items
+        .item_activity(ayse, task.id, &first_page())
+        .await
+        .unwrap();
+    let assigned = &page.items[0];
+    assert_eq!(assigned.kind, K::Assigned);
+    assert_eq!(assigned.actor_id, Some(ali));
+    assert_eq!(assigned.member_user_id, Some(ayse));
+    assert_eq!(assigned.member_role, Some(items::InvitationRole::Assignee));
+    assert_eq!(assigned.created_at, start() + Duration::minutes(1));
+
+    w.clock.set(start() + Duration::minutes(2));
+    let mut tx = w.db.pool().begin().await.unwrap();
+    w.items
+        .record_completed(&mut tx, ayse, task.id)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    w.clock.set(start() + Duration::minutes(3));
+    let page_item = w.items.create(ali, of_kind("page", "Notes")).await.unwrap();
+    w.clock.set(start() + Duration::minutes(4));
+    w.items.link(ali, page_item.id, task.id).await.unwrap();
+    // Linking again records nothing.
+    w.items.link(ali, page_item.id, task.id).await.unwrap();
+    w.clock.set(start() + Duration::minutes(5));
+    w.items.unlink(ali, page_item.id, task.id).await.unwrap();
+    assert_eq!(
+        kinds(&w, ali, task.id).await,
+        [
+            K::Created,
+            K::Assigned,
+            K::Completed,
+            K::Linked,
+            K::Unlinked
+        ]
+    );
+    assert_eq!(
+        kinds(&w, ali, page_item.id).await,
+        [K::Created, K::Linked, K::Unlinked]
+    );
+}
+
+#[tokio::test]
+async fn a2_activity_is_limited_to_visible_items_and_link_ends() {
+    use items::ActivityKind as K;
+    let w = World::new().await;
+    let (ali, can) = (Uuid::now_v7(), Uuid::now_v7());
+    let page = w.items.create(ali, of_kind("page", "Notes")).await.unwrap();
+    let hidden = w.items.create(ali, World::task("Secret")).await.unwrap();
+    let own = w.items.create(can, World::task("Own")).await.unwrap();
+    w.items.link(ali, page.id, hidden.id).await.unwrap();
+    w.grant(RelationTuple::new(page.id, R::Watcher, can)).await;
+
+    // V9: the link to an item Can cannot see does not appear, not even as an event.
+    assert_eq!(kinds(&w, can, page.id).await, [K::Created]);
+    assert_eq!(
+        kinds(&w, ali, page.id).await,
+        [K::Created, K::Linked],
+        "the owner sees both ends"
+    );
+    assert!(matches!(
+        w.items.item_activity(can, hidden.id, &first_page()).await,
+        Err(AppError::NotFound)
+    ));
+    let feed = w.items.activity_feed(can, &first_page()).await.unwrap();
+    let items: HashSet<Uuid> = feed.items.iter().map(|event| event.item_id).collect();
+    assert_eq!(items, HashSet::from([page.id, own.id]));
+    assert!(feed.items.iter().all(|e| e.related_item_id.is_none()));
+
+    // Losing access removes the history from the feed too.
+    revoke(&w, RelationTuple::new(page.id, R::Watcher, can)).await;
+    let feed = w.items.activity_feed(can, &first_page()).await.unwrap();
+    assert!(feed.items.iter().all(|event| event.item_id == own.id));
+
+    // The trash leaves the feed.
+    w.items.set_trashed(can, own.id, true).await.unwrap();
+    let feed = w.items.activity_feed(can, &first_page()).await.unwrap();
+    assert!(feed.items.is_empty());
+}
+
+#[tokio::test]
+async fn activity_of_a_system_unlink_has_no_actor_and_purge_removes_history() {
+    use items::ActivityKind as K;
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    let page = w.items.create(ali, of_kind("page", "Notes")).await.unwrap();
+    let task = w.items.create(ayse, World::task("Task")).await.unwrap();
+    let membership = RelationTuple::new(task.id, R::Watcher, ali);
+    w.grant(membership).await;
+    w.clock.set(start() + Duration::minutes(1));
+    w.items.link(ali, page.id, task.id).await.unwrap();
+    w.clock.set(start() + Duration::minutes(2));
+    revoke(&w, membership).await;
+    deliver(&w).await;
+
+    let history = w
+        .items
+        .item_activity(ayse, task.id, &first_page())
+        .await
+        .unwrap();
+    // Ayse can no longer see the page, so neither link event is shown to them.
+    assert_eq!(history.items.len(), 1);
+    assert_eq!(history.items[0].kind, K::Created);
+    let stored: Option<Uuid> = sqlx::query_scalar(
+        "SELECT actor_id FROM activity_events WHERE type = 'unlinked' AND item_id = $1",
+    )
+    .bind(page.id)
+    .fetch_one(w.db.pool())
+    .await
+    .unwrap();
+    assert_eq!(stored, None);
+
+    w.items.set_trashed(ali, page.id, true).await.unwrap();
+    let later = start() + TRASH_RETENTION + Duration::hours(1);
+    w.items.purge_expired(later).await.unwrap();
+    let left: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM activity_events WHERE item_id = $1 OR related_item_id = $1",
+    )
+    .bind(page.id)
+    .fetch_one(w.db.pool())
+    .await
+    .unwrap();
+    assert_eq!(left, 0);
+}
+
+#[tokio::test]
+async fn activity_endpoints_page_through_results() {
+    let w = World::new().await;
+    let (_, token) = w.user("activity@example.com").await;
+    let (_, other) = w.user("activity2@example.com").await;
+    let mut last = String::new();
+    for minute in 0..3 {
+        w.clock.set(start() + Duration::minutes(minute));
+        let response = w
+            .call(
+                Method::POST,
+                "/items",
+                &token,
+                Some(json!({"kind": "task", "title": "T"})),
+            )
+            .await;
+        last = json_body(response).await["id"].as_str().unwrap().to_owned();
+    }
+    let body = json_body(w.call(Method::GET, "/activity?limit=2", &token, None).await).await;
+    assert_eq!(body["items"].as_array().unwrap().len(), 2);
+    assert_eq!(body["items"][0]["item_id"], last.as_str());
+    assert_eq!(body["items"][0]["kind"], "created");
+    let cursor = body["next_cursor"].as_str().unwrap();
+    let uri = format!("/activity?limit=2&cursor={cursor}");
+    let body = json_body(w.call(Method::GET, &uri, &token, None).await).await;
+    assert_eq!(body["items"].as_array().unwrap().len(), 1);
+    assert!(body["next_cursor"].is_null());
+
+    let uri = format!("/items/{last}/activity");
+    let response = w.call(Method::GET, &uri, &token, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = w.call(Method::GET, &uri, &other, None).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let response = w
+        .call(Method::GET, "/activity?cursor=%21bad", &token, None)
+        .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
 // --- invitations (T1.2.4, G5, V1, V5) -----------------------------------------------------------
 
 fn invite_as(to_user: Uuid, role: items::InvitationRole) -> items::CreateInvitationRequest {

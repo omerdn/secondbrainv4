@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use access::{AccessEngine, Perms, Relation, RelationTuple};
 
+use crate::activity::{self, ActivityKind, NewActivity};
 use crate::context::ItemsAccessContext;
 use crate::invitations::{NoSharing, SharingPolicy};
 use crate::model::{Item, ItemChanges, ListState, NewItem, Owner};
@@ -125,6 +126,10 @@ impl ItemsService {
         .map_err(internal)?;
         self.access
             .grant(&mut tx, RelationTuple::new(id, Relation::Owner, actor))
+            .await
+            .map_err(internal)?;
+        let event = NewActivity::new(Some(actor), id, ActivityKind::Created);
+        activity::record(&mut tx, now, event)
             .await
             .map_err(internal)?;
         tx.commit().await.map_err(internal)?;

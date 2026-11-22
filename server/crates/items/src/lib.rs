@@ -1,6 +1,7 @@
 //! `items`: the shared base of every object (ARCHITECTURE §5.3, PRD N1–N4): ownership, archive,
 //! trash and the access facts `compute_access` needs about items.
 
+mod activity;
 mod context;
 pub mod http;
 mod invitations;
@@ -10,6 +11,7 @@ pub mod purge;
 mod service;
 mod tags;
 
+pub use activity::{Activity, ActivityKind};
 pub use context::ItemsAccessContext;
 pub use invitations::{
     CreateInvitationRequest, Invitation, InvitationCreated, InvitationRole, InvitationStatus,

@@ -13,6 +13,7 @@ use sqlx::FromRow;
 use ts_rs::TS;
 use uuid::Uuid;
 
+use crate::activity::{self, ActivityKind};
 use crate::model::Item;
 use crate::service::{COLUMNS, ItemRow, ItemsService, LIST_LIMIT};
 
@@ -115,12 +116,12 @@ impl ItemsService {
         let now = self.clock.now();
         let new_id = kernel::Id::<()>::new_at(now).as_uuid();
         let mut tx = self.pool.begin().await.map_err(internal)?;
-        let (id, created_at): (Uuid, DateTime<Utc>) = sqlx::query_as(
+        let (id, created_at, inserted): (Uuid, DateTime<Utc>, bool) = sqlx::query_as(
             "INSERT INTO item_links (id, source_item_id, target_item_id, created_by, created_at)
              VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (source_item_id, target_item_id)
              DO UPDATE SET source_item_id = EXCLUDED.source_item_id
-             RETURNING id, created_at",
+             RETURNING id, created_at, (xmax = 0) AS inserted",
         )
         .bind(new_id)
         .bind(source_id)
@@ -139,6 +140,17 @@ impl ItemsService {
                 )
                 .await
                 .map_err(internal)?;
+        }
+        if inserted {
+            activity::record_link(
+                &mut tx,
+                now,
+                Some(actor),
+                ActivityKind::Linked,
+                (source_id, target_id),
+            )
+            .await
+            .map_err(internal)?;
         }
         tx.commit().await.map_err(internal)?;
         Ok(ItemLink {
@@ -181,6 +193,15 @@ impl ItemsService {
                 )
                 .await
                 .map_err(internal)?;
+            activity::record_link(
+                &mut tx,
+                self.clock.now(),
+                Some(actor),
+                ActivityKind::Unlinked,
+                (source_id, target_id),
+            )
+            .await
+            .map_err(internal)?;
         }
         tx.commit().await.map_err(internal)?;
         Ok(())
@@ -266,6 +287,15 @@ impl ItemsService {
                             RelationTuple::new(page, Relation::LinkedTo, target),
                         )
                         .await?;
+                    // The system made this change, so there is no actor.
+                    activity::record_link(
+                        &mut tx,
+                        self.clock.now(),
+                        None,
+                        ActivityKind::Unlinked,
+                        (page, target),
+                    )
+                    .await?;
                     dropped += 1;
                 }
             }
