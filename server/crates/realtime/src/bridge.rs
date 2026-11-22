@@ -23,6 +23,8 @@ use sqlx::{Error as SqlxError, PgExecutor};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
+use identity::{SessionId, UserId};
+
 use crate::hub::Hub;
 use crate::protocol::{Channel, Event};
 
@@ -38,9 +40,15 @@ const RETRY_DELAY: Duration = Duration::from_secs(1);
 
 /// What travels in a notification payload.
 #[derive(Debug, Serialize, Deserialize)]
-struct Envelope {
-    channel: String,
-    event: Event,
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum Envelope {
+    /// An event for a channel's subscribers.
+    Event { channel: String, event: Event },
+    /// Close the connections of ended sessions (`session: None`: all of the user's).
+    SessionsEnded {
+        user: UserId,
+        session: Option<SessionId>,
+    },
 }
 
 /// Why an event could not be published.
@@ -114,7 +122,36 @@ impl Notifier {
     where
         E: PgExecutor<'e>,
     {
-        let payload = encode(channel, event)?;
+        self.send(
+            executor,
+            &Envelope::Event {
+                channel: channel.to_string(),
+                event: event.clone(),
+            },
+        )
+        .await
+    }
+
+    /// Closes, on every instance, the connections of `user` authenticated by `session`
+    /// (`None`: all of the user's sessions) with [`crate::ws::CLOSE_SESSION_ENDED`].
+    pub async fn end_sessions<'e, E>(
+        &self,
+        executor: E,
+        user: UserId,
+        session: Option<SessionId>,
+    ) -> Result<(), PublishError>
+    where
+        E: PgExecutor<'e>,
+    {
+        self.send(executor, &Envelope::SessionsEnded { user, session })
+            .await
+    }
+
+    async fn send<'e, E>(&self, executor: E, envelope: &Envelope) -> Result<(), PublishError>
+    where
+        E: PgExecutor<'e>,
+    {
+        let payload = encode(envelope)?;
         sqlx::query("SELECT pg_notify($1, $2)")
             .bind(&*self.notify_channel)
             .bind(payload)
@@ -125,25 +162,14 @@ impl Notifier {
     }
 }
 
-fn encode(channel: &Channel, event: &Event) -> Result<String, PublishError> {
-    let payload = serde_json::to_string(&Envelope {
-        channel: channel.to_string(),
-        event: event.clone(),
-    })
-    .map_err(PublishError::Serialize)?;
+fn encode(envelope: &Envelope) -> Result<String, PublishError> {
+    let payload = serde_json::to_string(envelope).map_err(PublishError::Serialize)?;
     if payload.len() > MAX_PAYLOAD_BYTES {
         return Err(PublishError::TooLarge {
             bytes: payload.len(),
         });
     }
     Ok(payload)
-}
-
-/// Parses a notification payload; `None` for anything that is not a valid envelope.
-fn decode(payload: &str) -> Option<(Channel, Event)> {
-    let envelope: Envelope = serde_json::from_str(payload).ok()?;
-    let channel = envelope.channel.parse().ok()?;
-    Some((channel, envelope.event))
 }
 
 /// A running listener that feeds one instance's [`Hub`].
@@ -195,54 +221,88 @@ async fn run(mut listener: PgListener, hub: Hub, mut stopped: oneshot::Receiver<
 }
 
 fn deliver(hub: &Hub, payload: &str) {
-    match decode(payload) {
-        Some((channel, event)) => {
-            hub.publish(&channel, &event);
+    match serde_json::from_str::<Envelope>(payload) {
+        Ok(Envelope::Event { channel, event }) => match channel.parse::<Channel>() {
+            Ok(channel) => {
+                hub.publish(&channel, &event);
+            }
+            Err(_) => tracing::warn!("realtime bridge ignored an event for an unknown channel"),
+        },
+        Ok(Envelope::SessionsEnded { user, session }) => {
+            hub.end_sessions(user, session);
         }
         // The payload is not logged: it is not ours to trust and may be arbitrary.
-        None => tracing::warn!("realtime bridge ignored a malformed notification"),
+        Err(_) => tracing::warn!("realtime bridge ignored a malformed notification"),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use identity::UserId;
     use serde_json::json;
 
     #[test]
-    fn payloads_round_trip() {
-        let channel = Channel::User(UserId::new());
-        let event = Event {
-            name: "item.changed".into(),
-            data: json!({"id": "0193", "kind": "task"}),
-        };
-        let payload = encode(&channel, &event).unwrap_or_default();
-        assert_eq!(decode(&payload), Some((channel, event)));
+    fn payloads_are_tagged_and_round_trip() {
+        let user = UserId::new();
+        let payload = encode(&Envelope::Event {
+            channel: Channel::User(user).to_string(),
+            event: Event {
+                name: "item.changed".into(),
+                data: json!({"id": "0193", "kind": "task"}),
+            },
+        })
+        .unwrap_or_default();
+        let value: serde_json::Value = serde_json::from_str(&payload).unwrap_or_default();
+        assert_eq!(value["kind"], "event");
+        assert!(matches!(
+            serde_json::from_str::<Envelope>(&payload),
+            Ok(Envelope::Event { .. })
+        ));
+
+        let payload = encode(&Envelope::SessionsEnded {
+            user,
+            session: None,
+        })
+        .unwrap_or_default();
+        assert!(matches!(
+            serde_json::from_str::<Envelope>(&payload),
+            Ok(Envelope::SessionsEnded { session: None, .. })
+        ));
     }
 
     #[test]
     fn oversized_events_are_rejected() {
-        let event = Event {
-            name: "item.changed".into(),
-            data: json!({"ids": "x".repeat(MAX_PAYLOAD_BYTES)}),
+        let envelope = Envelope::Event {
+            channel: Channel::User(UserId::new()).to_string(),
+            event: Event {
+                name: "item.changed".into(),
+                data: json!({"ids": "x".repeat(MAX_PAYLOAD_BYTES)}),
+            },
         };
         assert!(matches!(
-            encode(&Channel::User(UserId::new()), &event),
+            encode(&envelope),
             Err(PublishError::TooLarge { .. })
         ));
     }
 
     #[test]
-    fn malformed_payloads_are_ignored() {
+    fn malformed_payloads_change_nothing() {
+        let hub = Hub::new();
+        let user = UserId::new();
+        let mut connection = hub.connect(user, SessionId::new());
+        hub.subscribe(connection.id, Channel::User(user));
         for payload in [
             "",
             "not json",
-            r#"{"channel":"team:1","event":{"name":"x","data":null}}"#,
-            r#"{"channel":"user:not-a-uuid","event":{"name":"x","data":null}}"#,
-            r#"{"event":{"name":"x","data":null}}"#,
+            r#"{"kind":"event","channel":"team:1","event":{"name":"x","data":null}}"#,
+            r#"{"kind":"event","channel":"user:not-a-uuid","event":{"name":"x","data":null}}"#,
+            r#"{"kind":"sessions_ended","user":"nope","session":null}"#,
+            r#"{"channel":"x","event":{"name":"x","data":null}}"#,
         ] {
-            assert_eq!(decode(payload), None, "{payload}");
+            deliver(&hub, payload);
         }
+        assert!(connection.outbox.try_recv().is_err());
+        assert!(connection.session_ended.try_recv().is_err());
+        assert_eq!(hub.connection_count(), 1);
     }
 }

@@ -15,6 +15,7 @@ use chrono::{DateTime, Duration, Utc};
 use kernel::{AppError, EmailKind, EmailMessage, FieldError, FieldErrorCode, ValidationErrors};
 use uuid::Uuid;
 
+use crate::events::SessionsEnded;
 use crate::model::UserId;
 use crate::password;
 use crate::service::{AuthContext, IdentityService, blocking};
@@ -300,6 +301,15 @@ impl IdentityService {
             .execute(&mut *tx)
             .await
             .map_err(AppError::internal)?;
+        db::outbox::publish(
+            &mut tx,
+            &SessionsEnded {
+                user_id: token.user_id,
+                session_id: None,
+            },
+        )
+        .await
+        .map_err(AppError::internal)?;
         mark_verified(&mut tx, token.user_id, now).await?;
         tx.commit().await.map_err(AppError::internal)?;
         tracing::info!(token_id = %token.id, "password reset");

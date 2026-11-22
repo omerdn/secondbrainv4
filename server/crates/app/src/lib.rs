@@ -40,7 +40,8 @@ where
         .map_err(RunError::Realtime)?;
 
     // Domain modules register their subscribers here as they are implemented.
-    let dispatcher = db::outbox::Dispatcher::new(db::outbox::DispatchConfig::default());
+    let mut dispatcher = db::outbox::Dispatcher::new(db::outbox::DispatchConfig::default());
+    realtime::sessions::register(&mut dispatcher, pool.clone(), realtime::Notifier::default());
     let (stop_dispatcher, dispatcher_stopped) = tokio::sync::oneshot::channel::<()>();
     let dispatcher_pool = pool.clone();
     let dispatcher_task = tokio::spawn(async move {
