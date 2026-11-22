@@ -3,5 +3,11 @@
   "identifier": "default",
   "description": "Main window: core APIs, the WebSocket plugin (authenticated /ws from Rust, ADR-0020) and self-update (ADR-0023).",
   "windows": ["main"],
-  "permissions": ["core:default", "websocket:default", "updater:default", "process:allow-restart"]
+  "permissions": [
+    "core:default",
+    "websocket:default",
+    "updater:default",
+    "process:allow-restart",
+    "deep-link:default"
+  ]
 }

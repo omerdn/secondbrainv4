@@ -4,6 +4,9 @@
 //! `session_token_*` commands (macOS Keychain, Windows Credential Manager, Linux Secret
 //! Service) and opens `/ws` through the WebSocket plugin, which can send the bearer header.
 //! On launch it checks GitHub Releases for a signed update and installs it (ADR-0023).
+//! `routune://` links open the running app and route inside it (T4.1.5).
+
+use tauri::Manager;
 
 /// Keychain service and account of the session token.
 const SERVICE: &str = "app.secondbrain.desktop";
@@ -41,6 +44,24 @@ fn session_token_clear() -> Result<(), String> {
 /// Builds and runs the desktop app.
 pub fn run() {
     tauri::Builder::default()
+        // First: a second launch (e.g. a clicked routune:// link on Windows/Linux) hands its
+        // arguments to the running app instead of opening another window.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_deep_link::init())
+        .setup(|_app| {
+            // macOS registers the scheme from the bundle; Windows and Linux at runtime.
+            #[cfg(any(windows, target_os = "linux"))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                _app.deep_link().register_all()?;
+            }
+            Ok(())
+        })
         .plugin(tauri_plugin_websocket::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
