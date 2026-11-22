@@ -34,6 +34,7 @@ const EXPECTED_CRATES: &[&str] = &[
     "tasks",
     "teams",
     "tracking",
+    "updates",
 ];
 
 fn crates_dir() -> PathBuf {

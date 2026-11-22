@@ -42,6 +42,10 @@ services:
       PUBLIC_API_URL: https://${API_DOMAIN:?set API_DOMAIN in .env}
       # Only the edge proxy reaches the server, and it sets the client address headers.
       TRUST_PROXY_HEADERS: "true"
+      # Mobile OTA updates written by the deploy (T4.2.6, ADR-0023).
+      UPDATES_DIR: /srv/updates
+    volumes:
+      - ./updates:/srv/updates:ro
     networks:
       internal:
       edge:

@@ -170,6 +170,13 @@ where
     let mut modules = identity::http::rate_limited_router(identity.clone(), limits)
         .merge(idempotency::protect(profile, idempotency))
         .merge(ws);
+    if let Some(dir) = &config.updates_dir {
+        // Mobile OTA updates (T4.2.6, ADR-0023): files only, no auth (public JS bundles).
+        modules = modules.merge(updates::router(updates::UpdatesConfig {
+            dir: dir.clone(),
+            public_url: config.public_api_url.clone(),
+        }));
+    }
     if config.collab_spike_enabled {
         // Spike T0.6.2: no page permissions or persistence yet (E2.5).
         tracing::warn!("collab spike enabled: /collab/{{page_id}} has no page permissions");

@@ -68,6 +68,7 @@ Migration'lar geri alınmaz. Bu yüzden migration'lar **geriye uyumlu** yazılı
 - `POSTGRES_PASSWORD` `DATABASE_URL`'in içine girer. Bu yüzden sadece harf ve rakam kullanın.
 - Gerçek bir e-posta sağlayıcısı gelene kadar `APP_ENV=staging` kullanılır. `EMAIL_DRIVER=log` `production`'da reddedilir. Bu sürede doğrulama ve sıfırlama bağlantıları sadece sunucu logunda görünür.
 - Loglar container başına 10 MB × 5 dosyayla sınırlıdır. Caddy sertifikaları `caddy_data` volume'undadır; bu volume'u silmeyin.
+- Mobil OTA güncellemeleri `/opt/routune/updates` klasöründe durur (sunucuda `UPDATES_DIR=/srv/updates`, salt okunur). Deploy her merge'de yeni paketleri buraya yükler ve her runtime için son 3 güncellemeyi bırakır (T4.2.6).
 - Yedekleme: T0.7.3 (#45).
 
 ## Yerelde deneme

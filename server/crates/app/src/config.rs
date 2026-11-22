@@ -32,6 +32,8 @@ pub struct Config {
     pub email_driver: EmailDriver,
     /// Resend settings (`RESEND_API_KEY`, `EMAIL_FROM`); set exactly when the driver is `resend`.
     pub resend: Option<ResendSettings>,
+    /// Directory of the mobile OTA updates (`UPDATES_DIR`, T4.2.6); `None` = `/updates` is off.
+    pub updates_dir: Option<std::path::PathBuf>,
     /// Public URL of the web app for links in e-mails (`PUBLIC_WEB_URL`).
     pub public_web_url: String,
     /// Public URL of this server for OAuth callbacks (`PUBLIC_API_URL`).
@@ -232,6 +234,7 @@ impl Config {
                 .map(|v| v.trim().to_owned())
                 .filter(|v| !v.is_empty())
         };
+        let updates_dir = non_empty("UPDATES_DIR").map(std::path::PathBuf::from);
         let resend = match email_driver {
             EmailDriver::Log => None,
             EmailDriver::Resend => {
@@ -343,6 +346,7 @@ impl Config {
             google,
             email_driver,
             resend,
+            updates_dir,
             public_web_url,
             bind_addr: SocketAddr::new(host, port),
             shutdown_timeout: Duration::from_secs(shutdown_secs),
@@ -693,6 +697,16 @@ mod tests {
         let resend = config.resend.clone().unwrap();
         assert_eq!(resend.from, "Routune <noreply@routune.dev>");
         assert!(!format!("{config:?}").contains("re_s3cret"));
+    }
+
+    #[test]
+    fn ota_updates_are_off_unless_a_directory_is_set() {
+        assert_eq!(config(&[("DATABASE_URL", URL)]).unwrap().updates_dir, None);
+        let config = config(&[("DATABASE_URL", URL), ("UPDATES_DIR", "/srv/updates")]).unwrap();
+        assert_eq!(
+            config.updates_dir.as_deref(),
+            Some(std::path::Path::new("/srv/updates"))
+        );
     }
 
     #[test]

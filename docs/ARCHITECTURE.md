@@ -90,6 +90,7 @@
 │  │  ├─ notifications/  # bildirim merkezi, push, e-posta, tercihler
 │  │  ├─ search/         # global arama
 │  │  ├─ realtime/       # WS hub, kanal abonelikleri, LISTEN/NOTIFY köprüsü
+│  │  ├─ updates/        # mobil OTA güncellemeleri (Expo Updates protokolü, ADR-0023)
 │  │  └─ jobs/           # iş kuyruğu çalıştırıcısı, zamanlanmış işler
 │  └─ migrations/
 ├─ docs/                 # PRD, ARCHITECTURE, DECISIONS, ROADMAP
