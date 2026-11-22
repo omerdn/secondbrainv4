@@ -228,6 +228,8 @@ Her spike'ın sonucu bir ADR olarak yazılır.
   - H4 için gerekli
 - **T1.2.7** · Filtre motoru ve kayıtlı görünümler API · backend · M
   - F1, F2
+- **T1.2.8** · Sahibin erişimi düşen sayfa bağlantılarının kaldırılması · backend · S
+  - V13
 
 ### E1.3 · Takip motoru (`tracking`) · bağımlılık: E1.2
 - **T1.3.1** · `trackers` ve `tracker_entries` şeması · backend · S

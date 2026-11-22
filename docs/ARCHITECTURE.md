@@ -241,6 +241,7 @@ perms: VIEW | EDIT | SHARE(üye ekle) | LINK(sayfa bağla) | MANAGE(ayarlar, üy
 2. Küçük kümeler (yaklaşık 500 nesneye kadar) **aynı transaction içinde** yeniden hesaplanır.
 3. Büyük kümeler (ör. takım rol değişikliği) için önce kısıtlayıcı yönde anında güncelleme yapılır (erişim kaldırma her zaman senkron), sonra genişleme bir iş kuyruğu görevi olarak tamamlanır.
 4. Erişimi düşen kullanıcılar için `AccessRevoked` olayı yayınlanır. Realtime ve collab katmanları bu olayla açık bağlantıları keser (V10).
+5. `items` aynı olaya abonedir: erişimi düşen kişi bağlı bir sayfanın sahibiyse ve hedefi hâlâ göremiyorsa bağlantıyı kaldırır (V13). Olay tabanlı olduğu için kısa bir gecikmeyle çalışır ve tekrar teslimde güvenlidir.
 
 ### 6.5 Önizleme (V7)
 `POST /access/preview` uç noktası, bir eylemin (bağla, üye ekle) **sonucunda erişim kazanacak** kullanıcıların listesini döndürür. Bu hesap, aynı saf fonksiyonun bir "ya şöyle olursa" (what-if) çağrısıdır. İstemci, onay diyaloğunu bu listeyle gösterir.

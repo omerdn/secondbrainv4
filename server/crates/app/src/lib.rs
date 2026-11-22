@@ -40,10 +40,17 @@ where
         .await
         .map_err(RunError::Realtime)?;
 
+    let clock: kernel::SharedClock = std::sync::Arc::new(kernel::SystemClock);
+    // Access engine (T1.1.3, T1.1.4) with item facts from `items`; team policies are defaults
+    // until `teams` provides them (T5.1.2).
+    let access_engine = access::AccessEngine::new(items::ItemsAccessContext, config.access);
+    let items = items::ItemsService::new(pool.clone(), clock.clone(), access_engine.clone());
+
     // Domain modules register their subscribers here as they are implemented.
     let mut dispatcher = db::outbox::Dispatcher::new(db::outbox::DispatchConfig::default());
     realtime::sessions::register(&mut dispatcher, pool.clone(), realtime::Notifier::default());
     realtime::access::register(&mut dispatcher, pool.clone(), realtime::Notifier::default());
+    items::register_link_cleanup(&mut dispatcher, items.clone());
     let (stop_dispatcher, dispatcher_stopped) = tokio::sync::oneshot::channel::<()>();
     let dispatcher_pool = pool.clone();
     let dispatcher_task = tokio::spawn(async move {
@@ -54,7 +61,6 @@ where
             .await;
     });
 
-    let clock: kernel::SharedClock = std::sync::Arc::new(kernel::SystemClock);
     // `Config` guarantees `resend` is set exactly when `EMAIL_DRIVER=resend`.
     let email_sender: kernel::SharedEmailSender = match &config.resend {
         Some(resend) => std::sync::Arc::new(kernel::email::ResendEmailSender::new(
@@ -127,11 +133,7 @@ where
         .map_err(RunError::Schedule)?;
     identity::cleanup::register(identity.clone(), &mut worker, &mut scheduler)
         .map_err(RunError::Schedule)?;
-    // Access engine (T1.1.3, T1.1.4) with item facts from `items`; team policies are defaults
-    // until `teams` provides them (T5.1.2).
-    let access_engine = access::AccessEngine::new(items::ItemsAccessContext, config.access);
     access_engine.register(&mut worker, pool.clone());
-    let items = items::ItemsService::new(pool.clone(), clock.clone(), access_engine.clone());
     items::purge::register(items.clone(), clock.clone(), &mut worker, &mut scheduler)
         .map_err(RunError::Schedule)?;
     let (stop_jobs, jobs_stopped) = tokio::sync::watch::channel(false);
