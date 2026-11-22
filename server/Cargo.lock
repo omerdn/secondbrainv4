@@ -4608,9 +4608,12 @@ version = "0.0.0"
 dependencies = [
  "access",
  "chrono",
+ "chrono-tz",
  "db",
  "items",
  "kernel",
+ "proptest",
+ "recurrence",
  "rust_decimal",
  "sqlx",
  "tokio",
