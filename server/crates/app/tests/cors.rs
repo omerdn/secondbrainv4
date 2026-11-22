@@ -194,7 +194,10 @@ async fn running_server_allows_configured_origins() {
         ("DB_MIGRATE_ON_START", "false"),
         ("SHUTDOWN_TIMEOUT_SECS", "5"),
         ("PUBLIC_WEB_URL", WEB),
-        ("CORS_EXTRA_ORIGINS", "http://localhost:19006"),
+        (
+            "CORS_EXTRA_ORIGINS",
+            "http://localhost:19006,tauri://localhost",
+        ),
     ];
     let config = app::Config::from_lookup(|key| {
         vars.iter()
@@ -209,7 +212,14 @@ async fn running_server_allows_configured_origins() {
         let _ = stopped.await;
     }));
 
-    for (origin, allowed) in [(WEB, true), ("http://localhost:19006", true), (EVIL, false)] {
+    for (origin, allowed) in [
+        (WEB, true),
+        ("http://localhost:19006", true),
+        // Tauri desktop shell on macOS/Linux (T0.6.4).
+        ("tauri://localhost", true),
+        ("tauri://evil", false),
+        (EVIL, false),
+    ] {
         let response = timeout(Duration::from_secs(10), raw_preflight(addr, origin))
             .await
             .unwrap();

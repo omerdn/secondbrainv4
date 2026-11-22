@@ -272,10 +272,14 @@ impl Config {
         let trust_proxy_headers: bool = parse(&lookup, "TRUST_PROXY_HEADERS", false)?;
         let collab_spike_enabled: bool = parse(&lookup, "COLLAB_SPIKE_ENABLED", false)?;
 
-        let mut cors_origins = vec![origin_of(&public_web_url, "PUBLIC_WEB_URL")?];
+        let mut cors_origins = vec![origin_of(&public_web_url, "PUBLIC_WEB_URL", WEB_SCHEMES)?];
         for extra in comma_list(non_empty("CORS_EXTRA_ORIGINS")) {
-            let origin = origin_of(extra.trim_end_matches('/'), "CORS_EXTRA_ORIGINS")?;
-            if origin != extra.trim_end_matches('/') {
+            let origin = origin_of(
+                extra.trim_end_matches('/'),
+                "CORS_EXTRA_ORIGINS",
+                CORS_EXTRA_SCHEMES,
+            )?;
+            if !origin.eq_ignore_ascii_case(extra.trim_end_matches('/')) {
                 return Err(ConfigError::Invalid {
                     key: "CORS_EXTRA_ORIGINS",
                     reason: "each entry must be an origin (scheme://host[:port]) without a path"
@@ -327,22 +331,29 @@ fn http_url(
 
 /// The origin (`scheme://host[:port]`, lower-cased) of an `http(s)://` URL. Rejects wildcards
 /// and anything that is not a plain host.
-fn origin_of(url: &str, key: &'static str) -> Result<String, ConfigError> {
-    let invalid = |reason: &str| ConfigError::Invalid {
-        key,
-        reason: reason.into(),
-    };
+/// Schemes of a web app origin.
+const WEB_SCHEMES: &[&str] = &["http", "https"];
+
+/// Extra CORS origins may also be the Tauri desktop shell's custom-protocol origin
+/// (`tauri://localhost` on macOS/Linux; Windows uses `http(s)://tauri.localhost`). ADR-0020,
+/// T0.6.4.
+const CORS_EXTRA_SCHEMES: &[&str] = &["http", "https", "tauri"];
+
+fn origin_of(url: &str, key: &'static str, schemes: &[&str]) -> Result<String, ConfigError> {
+    let invalid = |reason: String| ConfigError::Invalid { key, reason };
     let (scheme, rest) = url
         .split_once("://")
-        .filter(|(scheme, _)| matches!(*scheme, "http" | "https"))
-        .ok_or_else(|| invalid("must start with http:// or https://"))?;
+        .filter(|(scheme, _)| schemes.contains(scheme))
+        .ok_or_else(|| invalid(format!("scheme must be one of: {}", schemes.join(", "))))?;
     let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
     let valid_host = !authority.is_empty()
         && authority
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b':' | b'[' | b']'));
     if !valid_host {
-        return Err(invalid("must name a host (no wildcards or credentials)"));
+        return Err(invalid(
+            "must name a host (no wildcards or credentials)".into(),
+        ));
     }
     Ok(format!("{scheme}://{}", authority.to_ascii_lowercase()))
 }
@@ -719,9 +730,9 @@ mod tests {
     fn cors_extra_origins_are_added_once() {
         let config = config(&[(
             "CORS_EXTRA_ORIGINS",
-            " http://localhost:19006 , http://localhost:8081/, tauri://localhost",
+            " http://localhost:19006 , http://localhost:8081/, file://localhost",
         )]);
-        // `tauri://` is not http(s): rejected rather than silently dropped.
+        // An unsupported scheme is rejected rather than silently dropped.
         assert!(matches!(
             config.unwrap_err(),
             ConfigError::Invalid {
@@ -740,12 +751,44 @@ mod tests {
     }
 
     #[test]
+    fn cors_extra_origins_accept_tauri_desktop_origins() {
+        let config = config_ok(&[(
+            "CORS_EXTRA_ORIGINS",
+            "tauri://localhost, http://tauri.localhost, https://Tauri.localhost/",
+        )]);
+        assert_eq!(
+            config.cors_origins,
+            [
+                "http://localhost:8081",
+                "tauri://localhost",
+                "http://tauri.localhost",
+                "https://tauri.localhost",
+            ]
+        );
+    }
+
+    #[test]
+    fn the_web_url_must_stay_http() {
+        let err = config_err(&[("PUBLIC_WEB_URL", "tauri://localhost")]);
+        assert!(matches!(
+            err,
+            ConfigError::Invalid {
+                key: "PUBLIC_WEB_URL",
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn cors_rejects_wildcards_and_paths() {
         for value in [
             "*",
             "https://*.example.com",
             "https://example.com/app",
             "https://u:p@x.com",
+            "tauri://*",
+            "tauri://localhost/index.html",
+            "tauri://",
         ] {
             let err = config_err(&[("CORS_EXTRA_ORIGINS", value)]);
             assert!(
