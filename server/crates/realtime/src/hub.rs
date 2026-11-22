@@ -1,7 +1,7 @@
 //! In-process registry of open connections and their channel subscriptions.
 //!
-//! One [`Hub`] per server instance. Events from other instances arrive through the
-//! LISTEN/NOTIFY bridge (T0.5.2) and are published here like local ones.
+//! One [`Hub`] per server instance. It only reaches this instance's connections; modules
+//! publish through [`crate::Notifier`] and the [`crate::Bridge`] calls [`Hub::publish`].
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, PoisonError, RwLock};

@@ -2944,6 +2944,7 @@ dependencies = [
  "kernel",
  "serde",
  "serde_json",
+ "sqlx",
  "tokio",
  "tokio-tungstenite 0.30.0",
  "tracing",

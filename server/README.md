@@ -124,10 +124,21 @@ Her mutasyon istemcide üretilen bir `Idempotency-Key` başlığı taşır (ARCH
   - Yeni log satırı eklerken: kullanıcı adı, e-posta, not içeriği, başlık gibi alanları log alanı olarak yazmayın. Gerekirse id kullanın.
 - **Sentry** isteğe bağlıdır (`SENTRY_DSN` boşsa kapalı). Sadece `error` seviyesindeki olaylar gönderilir ve sadece izin listesindeki veriler gider: olay mesajı, `error` alanı ve `method`/`route`/`request_id` etiketleri. `send_default_pii` kapalıdır.
 
-## Gerçek zamanlı kanal (`/ws`, T0.5.1)
+## Gerçek zamanlı kanal (`/ws`, T0.5.1–T0.5.2)
 - `realtime` crate'i: `GET /ws` el sıkışması diğer istekler gibi doğrulanır (`Authorization: Bearer` ya da web'de oturum cookie'si). Cookie ile gelen el sıkışmada `Origin` izinli web origin'lerinden (CORS listesi) biri olmalıdır; aksi 403 (cross-site WebSocket hijacking).
 - Mesajlar JSON, `type` alanıyla etiketli; tipler `packages/api-types` içinde (`ClientMessage`, `ServerMessage`). Sunucu ilk olarak `hello` ile kendi saatini gönderir. İstemci `subscribe`/`unsubscribe` ile kanallara abone olur (şimdilik yalnız `user:<kendi id>`), 25 sn'de bir `ping` gönderir; 60 sn sessiz kalan bağlantı 4000 koduyla kapanır.
-- WS veri taşımaz, sadece "değişti" der (`event {channel, event: {name, data}}`). Modüller `realtime::Hub::publish` ile yayınlar. Yavaş tüketici (64 mesajlık tampon dolarsa) düşürülür ve 4001 koduyla kapanır; istemci yeniden bağlanıp tazeler.
+- WS veri taşımaz, sadece "değişti" der (`event {channel, event: {name, data}}`). Yavaş tüketici (64 mesajlık tampon dolarsa) düşürülür ve 4001 koduyla kapanır; istemci yeniden bağlanıp tazeler.
+- **Olay yayınlama (T0.5.2, ADR-0009):** Modüller `Hub::publish`'i doğrudan çağırmaz, `realtime::Notifier` kullanır. Notifier Postgres `NOTIFY` gönderir; her sunucu örneği (gönderen dahil) `app::run` içinde başlatılan `realtime::Bridge` ile `LISTEN` eder ve olayı kendi hub'ına verir. Böylece bağlantı hangi örnekteyse olay oraya ulaşır.
+
+```rust
+let mut tx = pool.begin().await?;
+/* UPDATE ... */
+notifier.publish(&mut *tx, &Channel::User(owner), &Event { name: "item.changed".into(), data: json!({"id": id, "kind": "task"}) }).await?;
+tx.commit().await?; // NOTIFY commit'te gider; rollback'te hiç gitmez
+```
+
+- Payload en fazla 7900 bayt (Postgres sınırı 8000); olaylar sadece id taşır. Teslim "en iyi çaba"dır: dinleyici bağlantısı koptuğu sırada gönderilen olaylar kaybolur (köprü kendiliğinden yeniden bağlanır ve uyarı loglar). İstemci zaten yeniden bağlanınca her şeyi tazeler.
+- Testlerde bildirim kanalları veritabanı geneli olduğundan her test kendi şema adını kanal adı olarak kullanır (`Bridge::start(pool, db.schema(), hub)`).
 - Nesne ve takım kanalları eklendiğinde yetki `PermissionService` üzerinden verilecek.
 
 ## Sunucuyu çalıştırma

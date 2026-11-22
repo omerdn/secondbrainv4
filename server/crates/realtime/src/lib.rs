@@ -1,5 +1,5 @@
 //! `realtime`: WebSocket hub, channel subscriptions and the LISTEN/NOTIFY bridge
-//! (T0.5.1, ARCHITECTURE §10.1).
+//! (T0.5.1, T0.5.2, ARCHITECTURE §10.1).
 //!
 //! # Protocol (`GET /ws`, JSON text frames tagged by `type`)
 //! 1. The handshake is authenticated like any request: `Authorization: Bearer` (native apps)
@@ -11,13 +11,16 @@
 //! 4. Events arrive as `event {channel, event: {name, data}}`. They only say *what changed*;
 //!    data is refetched over HTTP.
 //!
-//! Other modules publish through [`Hub::publish`]; across instances the LISTEN/NOTIFY bridge
-//! (T0.5.2) feeds the same hub.
+//! Other modules publish through a [`Notifier`] (Postgres `NOTIFY`, optionally inside their
+//! transaction); every instance runs a [`Bridge`] that `LISTEN`s and feeds its local [`Hub`]
+//! (T0.5.2, ADR-0009).
 
+pub mod bridge;
 pub mod hub;
 pub mod protocol;
 pub mod ws;
 
+pub use bridge::{Bridge, DEFAULT_NOTIFY_CHANNEL, Notifier, PublishError};
 pub use hub::Hub;
 pub use protocol::{Channel, ClientMessage, Event, ServerMessage};
 pub use ws::{RealtimeConfig, RealtimeState, router};
