@@ -31,6 +31,10 @@ Paketler imzasızdır (ücretli Apple/Windows sertifikası yok). Bu yüzden ilk 
 - **Windows:** `.exe`'yi çalıştırın. "Windows bilgisayarınızı korudu" (SmartScreen) uyarısında **Ek bilgi → Yine de çalıştır** deyin.
 - **Linux:** AppImage dosyasına çalıştırma izni verin (`chmod +x Routune_*.AppImage`) ve çalıştırın.
 
+## Deep link (T4.1.5)
+
+`routune://<yol>?<sorgu>` bağlantıları uygulamayı açar (açıksa öne getirir) ve ilgili ekrana gider. Örneğin `routune://verify-email?token=…` doğrulama ekranını açar. Bağlantılar sadece uygulama içinde gezinmeyi tetikler; başka şemalar ve `..` yol parçaları yok sayılır (`src/lib/desktop-links`). macOS şemayı uygulama paketinden kaydeder; Windows ve Linux açılışta kaydeder. İkinci bir pencere açılmaz (single-instance).
+
 ## Otomatik güncelleme (T4.1.4)
 
 - Uygulama her açılışta `https://github.com/omerdn/secondbrainv4/releases/latest/download/latest.json` adresine bakar. Daha yeni bir sürüm varsa indirir, kurar ve yeniden başlar; bu sırada "Routune güncelleniyor" ekranı görünür. Kontrol ya da indirme başarısız olursa mevcut sürüm çalışmaya devam eder.
