@@ -2,10 +2,14 @@
 
 use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use uuid::Uuid;
 
 /// Which stretch of time a target applies to (T1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+#[ts(export, rename = "TrackerPeriod")]
 pub enum Period {
     Day,
     Week,
@@ -14,7 +18,9 @@ pub enum Period {
     Total,
     /// A target range; both dates are included.
     Range {
+        #[ts(type = "string")]
         start: NaiveDate,
+        #[ts(type = "string")]
         end: NaiveDate,
     },
 }
@@ -62,8 +68,9 @@ impl Period {
 
 macro_rules! text_enum {
     ($(#[$meta:meta])* $name:ident { $($(#[$vmeta:meta])* $variant:ident => $text:literal),+ $(,)? }) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+        #[serde(rename_all = "snake_case")]
         $(#[$meta])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub enum $name {
             $($(#[$vmeta])* $variant),+
         }
@@ -90,6 +97,7 @@ macro_rules! text_enum {
 
 text_enum! {
     /// How a period's entries combine into one value (T1).
+    #[ts(export, rename = "TrackerAggregation")]
     Aggregation {
         Sum => "sum",
         Count => "count",
@@ -101,6 +109,7 @@ text_enum! {
 
 text_enum! {
     /// Which way is good (T1).
+    #[ts(export, rename = "TrackerDirection")]
     Direction {
         /// Should rise to the target (pages of a book).
         Increase => "increase",
@@ -111,6 +120,7 @@ text_enum! {
 
 text_enum! {
     /// What the tracker belongs to (ARCHITECTURE §5.5).
+    #[ts(export, rename = "TrackerOwnerKind")]
     OwnerKind {
         Standalone => "standalone",
         Routine => "routine",

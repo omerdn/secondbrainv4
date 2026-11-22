@@ -446,3 +446,189 @@ async fn entries_are_listed_newest_first_by_page_and_day() {
     assert_eq!(ranged["items"].as_array().unwrap().len(), 1);
     assert_eq!(ranged["items"][0]["value"], "2");
 }
+
+// --- definitions (T1.3.5, T1, K1) ----------------------------------------------------------------
+
+fn definition() -> Value {
+    json!({
+        "title": "  Kitap ",
+        "unit": " sayfa ",
+        "target_value": "300.50",
+        "period": {"type": "range", "start": "2026-05-01", "end": "2026-05-31"},
+        "aggregation": "sum",
+        "direction": "increase",
+    })
+}
+
+async fn send(w: &World, method: Method, uri: &str, token: &str, body: Value) -> Response {
+    let key = Uuid::now_v7().to_string();
+    w.call(method, uri, token, Some(&key), Some(body)).await
+}
+
+#[tokio::test]
+async fn a_tracker_is_created_with_its_item_and_takes_entries() {
+    let w = World::new().await;
+    let (user, token) = w.user("define@example.com").await;
+    let response = send(&w, Method::POST, "/trackers", &token, definition()).await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let created = json_body(response).await;
+    assert_eq!(created["item"]["kind"], "tracker");
+    assert_eq!(created["item"]["title"], "Kitap");
+    assert_eq!(created["unit"], "sayfa");
+    assert_eq!(created["target_value"], "300.5");
+    assert_eq!(created["period"]["type"], "range");
+    assert_eq!(created["period"]["end"], "2026-05-31");
+    assert_eq!(created["aggregation"], "sum");
+    assert_eq!(created["direction"], "increase");
+    assert_eq!(created["owner_kind"], "standalone");
+    let id: Uuid = created["item"]["id"].as_str().unwrap().parse().unwrap();
+    assert_eq!(w.items.get(user, id).await.unwrap().id, id);
+
+    let uri = format!("/trackers/{id}");
+    let read = json_body(w.call(Method::GET, &uri, &token, None, None).await).await;
+    assert_eq!(read, created);
+    let response = w.post_entry(id, &token, json!({"value": "10"})).await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+}
+
+#[tokio::test]
+async fn a_failed_definition_leaves_no_item_behind() {
+    let w = World::new().await;
+    let (_, token) = w.user("atomic@example.com").await;
+    let count = || async {
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM items")
+            .fetch_one(w.db.pool())
+            .await
+            .unwrap()
+    };
+    for (field, value) in [
+        ("unit", json!("  ")),
+        ("target_value", json!("0")),
+        ("target_value", json!("1.23456")),
+        ("title", json!("  ")),
+        (
+            "period",
+            json!({"type": "range", "start": "2026-05-02", "end": "2026-05-01"}),
+        ),
+    ] {
+        let mut body = definition();
+        body[field] = value;
+        let response = send(&w, Method::POST, "/trackers", &token, body).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{field}"
+        );
+    }
+    assert_eq!(count().await, 0);
+
+    // The database refuses the definition after the item was written: both roll back.
+    sqlx::query("ALTER TABLE trackers ADD CONSTRAINT test_refuse CHECK (unit <> 'boom')")
+        .execute(w.db.pool())
+        .await
+        .unwrap();
+    let mut body = definition();
+    body["unit"] = json!("boom");
+    let response = send(&w, Method::POST, "/trackers", &token, body).await;
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(count().await, 0);
+}
+
+#[tokio::test]
+async fn reading_needs_view_and_changing_needs_edit() {
+    let w = World::new().await;
+    let (owner, _) = w.user("perm-owner@example.com").await;
+    let (watcher, watcher_token) = w.user("perm-watcher@example.com").await;
+    let (editor, editor_token) = w.user("perm-editor@example.com").await;
+    let (_, stranger_token) = w.user("perm-stranger@example.com").await;
+    let id = w.tracker(owner).await;
+    w.grant(RelationTuple::new(id, R::Watcher, watcher)).await;
+    w.grant(RelationTuple::new(id, R::Assignee, editor)).await;
+    let uri = format!("/trackers/{id}");
+    let change = json!({"unit": "dakika"});
+
+    let response = w.call(Method::GET, &uri, &stranger_token, None, None).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let response = send(&w, Method::PATCH, &uri, &stranger_token, change.clone()).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let response = w.call(Method::GET, &uri, &watcher_token, None, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = send(&w, Method::PATCH, &uri, &watcher_token, change.clone()).await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let response = send(&w, Method::PATCH, &uri, &editor_token, change).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["unit"], "dakika");
+}
+
+#[tokio::test]
+async fn changing_a_definition_keeps_other_fields_and_touches_the_item() {
+    let w = World::new().await;
+    let (user, token) = w.user("change@example.com").await;
+    let response = send(&w, Method::POST, "/trackers", &token, definition()).await;
+    let id: Uuid = json_body(response).await["item"]["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let uri = format!("/trackers/{id}");
+    let later = start() + Duration::hours(3);
+    w.clock.set(later);
+
+    let response = send(
+        &w,
+        Method::PATCH,
+        &uri,
+        &token,
+        json!({"target_value": "2000", "direction": "limit"}),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let changed = json_body(response).await;
+    assert_eq!(changed["target_value"], "2000");
+    assert_eq!(changed["direction"], "limit");
+    assert_eq!(changed["unit"], "sayfa");
+    assert_eq!(changed["period"]["type"], "range");
+    assert_eq!(w.items.get(user, id).await.unwrap().last_touched_at, later);
+
+    // Leaving a range clears its dates.
+    let response = send(
+        &w,
+        Method::PATCH,
+        &uri,
+        &token,
+        json!({"period": {"type": "week"}}),
+    )
+    .await;
+    assert_eq!(json_body(response).await["period"], json!({"type": "week"}));
+    let stored = repo::get_tracker(w.db.pool(), id).await.unwrap().unwrap();
+    assert_eq!(stored.period, Period::Week);
+
+    let response = send(&w, Method::PATCH, &uri, &token, json!({})).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    w.items.set_trashed(user, id, true).await.unwrap();
+    let response = send(&w, Method::PATCH, &uri, &token, json!({"unit": "x"})).await;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn an_item_without_a_definition_is_not_a_tracker() {
+    let w = World::new().await;
+    let (user, token) = w.user("plain@example.com").await;
+    let task = w
+        .items
+        .create(
+            user,
+            NewItem {
+                kind: "task".into(),
+                title: "Task".into(),
+                description: None,
+            },
+        )
+        .await
+        .unwrap();
+    let uri = format!("/trackers/{}", task.id);
+    let response = w.call(Method::GET, &uri, &token, None, None).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let response = send(&w, Method::PATCH, &uri, &token, json!({"unit": "x"})).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}

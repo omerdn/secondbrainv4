@@ -4620,6 +4620,7 @@ dependencies = [
  "recurrence",
  "rust_decimal",
  "serde",
+ "serde_json",
  "sqlx",
  "tokio",
  "ts-rs",

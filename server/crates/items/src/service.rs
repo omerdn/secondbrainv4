@@ -119,9 +119,25 @@ impl ItemsService {
     /// # Errors
     /// [`AppError::Internal`] on database errors.
     pub async fn create(&self, actor: Uuid, new: NewItem) -> Result<Item, AppError> {
+        let mut tx = self.pool.begin().await.map_err(internal)?;
+        let item = self.create_in(&mut tx, actor, new).await?;
+        tx.commit().await.map_err(internal)?;
+        Ok(item)
+    }
+
+    /// [`Self::create`] inside the caller's transaction, for modules whose detail row must exist
+    /// together with the item.
+    ///
+    /// # Errors
+    /// [`AppError::Internal`] on database errors.
+    pub async fn create_in(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        actor: Uuid,
+        new: NewItem,
+    ) -> Result<Item, AppError> {
         let now = self.clock.now();
         let id = kernel::Id::<()>::new_at(now).as_uuid();
-        let mut tx = self.pool.begin().await.map_err(internal)?;
         let row = sqlx::query_as::<_, ItemRow>(sqlx::AssertSqlSafe(format!(
             "INSERT INTO items (id, kind, title, description, owner_user_id, created_by,
                                 created_at, updated_at, last_touched_at)
@@ -134,18 +150,15 @@ impl ItemsService {
         .bind(&new.description)
         .bind(actor)
         .bind(now)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut *conn)
         .await
         .map_err(internal)?;
         self.access
-            .grant(&mut tx, RelationTuple::new(id, Relation::Owner, actor))
+            .grant(&mut *conn, RelationTuple::new(id, Relation::Owner, actor))
             .await
             .map_err(internal)?;
         let event = NewActivity::new(Some(actor), id, ActivityKind::Created);
-        activity::record(&mut tx, now, event)
-            .await
-            .map_err(internal)?;
-        tx.commit().await.map_err(internal)?;
+        activity::record(conn, now, event).await.map_err(internal)?;
         Ok(row.into())
     }
 
