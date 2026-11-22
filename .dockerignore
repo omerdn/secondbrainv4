@@ -1,0 +1,18 @@
+# Build context of server/Dockerfile and infra/staging/web.Dockerfile is the repository root
+# (T0.7.1). Keep it small and free of secrets.
+.git
+**/node_modules
+**/target
+**/dist
+**/.expo
+**/.turbo
+apps/client/ios
+apps/client/android
+apps/client/editor-web/dist
+apps/client/src/lib/editor/native/editorHtml.js
+.env
+.env.*
+!.env.example
+infra/staging/.env
+.claude
+.mcp.json

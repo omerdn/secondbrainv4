@@ -1,5 +1,5 @@
 # Local development services (T0.1.3, ARCHITECTURE §17 "local").
-# Staging/beta compose (server + caddy) is a separate concern: T0.7.1.
+# Staging/beta stack (server + postgres + caddy): infra/staging/compose.yaml (T0.7.1).
 name: secondbrainv4
 
 services:
