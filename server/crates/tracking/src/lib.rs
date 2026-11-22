@@ -5,9 +5,14 @@
 
 mod aggregate;
 mod model;
+mod progress;
 pub mod repo;
 
 pub use aggregate::{DateWindow, aggregate, aggregate_period, start_of_day, window_for};
 pub use model::{
     Aggregation, Direction, NewEntry, NewTracker, OwnerKind, Period, Tracker, TrackerEntry,
+};
+pub use progress::{
+    DateRange, MAX_RANGE_DAYS, Progress, ProgressFuture, ProgressProvider, TrackerProgress,
+    TrackerStatus, tracker_status,
 };
