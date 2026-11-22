@@ -17,7 +17,7 @@ function Probe() {
   );
 }
 
-async function setup(userId: string | null = "u1") {
+async function setup(userId: string | null = "u1", onSessionEnded?: () => void) {
   const links = fakeLinks();
   const network = fakeNetwork();
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -28,6 +28,7 @@ async function setup(userId: string | null = "u1") {
         openLink={links.open}
         network={network.source}
         random={() => 0}
+        onSessionEnded={onSessionEnded}
       >
         <Probe />
       </ConnectivityProvider>
@@ -141,6 +142,21 @@ describe("ConnectivityProvider", () => {
     expect(links[0]?.closed).toBe(true);
     expect(last().userId).toBe("u1");
     expect(shown()).toBe("online");
+  });
+
+  it("T0.5.7: a session ended by the server signs out without reconnecting", async () => {
+    const onSessionEnded = jest.fn();
+    const { last, links, rerender } = await setup("u1", onSessionEnded);
+    await signal(() => last().handlers.up());
+    await signal(() => last().handlers.sessionEnded?.());
+    expect(onSessionEnded).toHaveBeenCalledTimes(1);
+    expect(shown()).toBe("online");
+    expect(last().closed).toBe(true);
+    expect(links).toHaveLength(1);
+    // Signed out: the signed-out link replaces it.
+    await rerender(null);
+    expect(links).toHaveLength(2);
+    expect(last().userId).toBeNull();
   });
 
   it("closes the link and stops retrying on unmount", async () => {

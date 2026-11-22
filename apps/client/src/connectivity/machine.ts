@@ -35,7 +35,13 @@ export type ConnectivityEvent =
   /** An HTTP request got no response at all (`ApiError` code `network`). */
   | { type: "request_failed" }
   /** The user pressed retry, or the retry timer fired. */
-  | { type: "retry" };
+  | { type: "retry" }
+  /**
+   * The server ended the socket because the session ended (close code 4003). Not a network
+   * problem: no lock, no reconnect; the provider signs the user out, which opens the
+   * signed-out link.
+   */
+  | { type: "session_ended" };
 
 export type ConnectivityEffect =
   /** Open a new link (closing any previous one). */
@@ -109,6 +115,8 @@ export function transition(
 
     case "online":
       switch (event.type) {
+        case "session_ended":
+          return { state, effects: [{ type: "close" }] };
         case "link_lost":
         case "os_offline":
           // First attempt right away; growing delays only after it fails.
@@ -125,6 +133,11 @@ export function transition(
 
     case "reconnecting":
       switch (event.type) {
+        case "session_ended":
+          return {
+            state: { kind: "online" },
+            effects: [{ type: "cancel_retry" }, { type: "close" }],
+          };
         case "link_up":
           return {
             state: { kind: "online" },

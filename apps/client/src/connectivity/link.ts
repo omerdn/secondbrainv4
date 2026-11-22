@@ -20,9 +20,17 @@ export interface LinkHandlers {
   up(): void;
   failed(): void;
   lost(reason: LostReason): void;
+  /**
+   * The server closed the link because the session ended (sign-out elsewhere, revocation,
+   * password reset, expiry). Reconnecting will not help; the user must sign in again.
+   */
+  sessionEnded?(): void;
   /** Server messages other than `hello`/`pong` (events, subscription answers). */
   message?(message: ServerMessage): void;
 }
+
+/** Close code the server uses when the connection's session ended (T0.5.6). */
+export const CLOSE_SESSION_ENDED = 4003;
 
 /** How long a connection attempt, a ping or a probe may take (ARCHITECTURE §10.2: 10 s). */
 export const RESPONSE_TIMEOUT_MS = 10_000;
@@ -31,7 +39,7 @@ export const RESPONSE_TIMEOUT_MS = 10_000;
 export interface SocketLike {
   onopen: (() => void) | null;
   onmessage: ((event: { data: unknown }) => void) | null;
-  onclose: (() => void) | null;
+  onclose: ((event: { code?: number }) => void) | null;
   onerror: (() => void) | null;
   send(data: string): void;
   close(code?: number, reason?: string): void;
@@ -121,7 +129,14 @@ export function openSocketLink(
       handlers.message?.(message);
     }
   };
-  socket.onclose = () => fail("socket_closed");
+  socket.onclose = (event) => {
+    if (event.code === CLOSE_SESSION_ENDED && handlers.sessionEnded !== undefined) {
+      const ended = handlers.sessionEnded.bind(handlers);
+      finish(ended);
+    } else {
+      fail("socket_closed");
+    }
+  };
   // An error is always followed by `close`; nothing to do until then.
   socket.onerror = null;
 
