@@ -14,4 +14,6 @@ pub use compute::{
     Access, AccessGraph, ItemAttrs, Reason, RolePolicy, TeamRole, TeamVisibility, compute_access,
 };
 pub use model::{ObjectType, Perms, Relation, RelationTuple, SubjectType};
-pub use recompute::{AccessContext, DefaultAccessContext, grant, recompute, revoke};
+pub use recompute::{
+    AccessConfig, AccessContext, AccessEngine, DefaultAccessContext, ExpandAccess, Recomputed,
+};
