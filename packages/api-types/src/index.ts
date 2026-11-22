@@ -7,6 +7,8 @@ export type * from "./generated/AccessPreview";
 export type * from "./generated/AccessPreviewItem";
 export type * from "./generated/AccessPreviewRequest";
 export type * from "./generated/AccessReason";
+export type * from "./generated/Activity";
+export type * from "./generated/ActivityKind";
 export type * from "./generated/AppleNativeRequest";
 export type * from "./generated/AuthResponse";
 export type * from "./generated/ClientKind";

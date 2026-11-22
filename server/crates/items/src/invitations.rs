@@ -14,6 +14,7 @@ use sqlx::FromRow;
 use ts_rs::TS;
 use uuid::Uuid;
 
+use crate::activity::{self, ActivityKind, NewActivity};
 use crate::service::{ItemsService, LIST_LIMIT};
 
 /// Result of a [`SharingPolicy`] check.
@@ -346,6 +347,13 @@ impl ItemsService {
         if valid {
             self.access
                 .grant(&mut tx, RelationTuple::new(item_id, role.relation(), actor))
+                .await
+                .map_err(internal)?;
+            let event = NewActivity {
+                member: Some((actor, role)),
+                ..NewActivity::new(Some(from_user), item_id, ActivityKind::for_role(role))
+            };
+            activity::record(&mut tx, now, event)
                 .await
                 .map_err(internal)?;
         }

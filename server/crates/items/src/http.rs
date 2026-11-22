@@ -25,6 +25,8 @@
 //! | POST   | `/items/{id}/invitations` | 201 [`Invitation`]; SHARE + V1 |
 //! | GET    | `/invitations` | 200 `Invitation[]`: the caller's pending invitations |
 //! | POST   | `/invitations/{id}/accept`, `/invitations/{id}/decline` | 200 [`Invitation`] |
+//! | GET    | `/items/{id}/activity?limit=&cursor=` | 200 `Page<Activity>`; VIEW (A2) |
+//! | GET    | `/activity?limit=&cursor=` | 200 `Page<Activity>` across visible items (A2) |
 
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::StatusCode;
@@ -32,9 +34,10 @@ use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
 use identity::IdentityService;
 use identity::http::Authenticated;
-use kernel::AppError;
+use kernel::{AppError, Page, PageParams, PageRequest};
 use uuid::Uuid;
 
+use crate::activity::Activity;
 use crate::invitations::{CreateInvitationRequest, Invitation};
 use crate::links::ItemLink;
 use crate::model::{CreateItemRequest, Item, ListQuery, UpdateItemRequest};
@@ -79,7 +82,36 @@ pub fn router(state: ItemsHttpState) -> Router {
         .route("/invitations", get(pending_invitations))
         .route("/invitations/{id}/accept", post(accept_invitation))
         .route("/invitations/{id}/decline", post(decline_invitation))
+        .route("/items/{id}/activity", get(item_activity))
+        .route("/activity", get(activity_feed))
         .with_state(state)
+}
+
+async fn item_activity(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+    Query(params): Query<PageParams>,
+) -> Result<Json<Page<Activity>>, AppError> {
+    let page = PageRequest::from_params(params)?;
+    state
+        .items
+        .item_activity(auth.user_id.as_uuid(), id, &page)
+        .await
+        .map(Json)
+}
+
+async fn activity_feed(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Query(params): Query<PageParams>,
+) -> Result<Json<Page<Activity>>, AppError> {
+    let page = PageRequest::from_params(params)?;
+    state
+        .items
+        .activity_feed(auth.user_id.as_uuid(), &page)
+        .await
+        .map(Json)
 }
 
 async fn invite(
