@@ -7,7 +7,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use access::{Perms, Reason, Relation, RelationTuple};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use kernel::{AppError, DomainEvent, FieldError, FieldErrorCode, ValidationErrors};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -17,6 +17,19 @@ use uuid::Uuid;
 use crate::activity::{self, ActivityKind, NewActivity};
 use crate::service::{ItemsService, LIST_LIMIT};
 use crate::touch::{self, TouchAction};
+
+/// Most invitations one person can send per [`INVITE_WINDOW`] (ARCHITECTURE §15). Answered ones
+/// count too, so declining does not give the sender another try.
+pub const INVITE_LIMIT: i64 = 30;
+/// The sliding window of [`INVITE_LIMIT`].
+pub const INVITE_WINDOW: Duration = Duration::hours(1);
+
+/// Seconds until the oldest invitation in the window leaves it; at least 1.
+fn retry_after_secs(oldest: DateTime<Utc>, now: DateTime<Utc>) -> u64 {
+    u64::try_from((oldest + INVITE_WINDOW - now).num_seconds())
+        .unwrap_or(0)
+        .max(1)
+}
 
 /// Result of a [`SharingPolicy`] check.
 pub type SharingFuture<'a> = Pin<Box<dyn Future<Output = Result<bool, AppError>> + Send + 'a>>;
@@ -252,6 +265,26 @@ impl ItemsService {
         let now = self.clock.now();
         let id = kernel::Id::<()>::new_at(now).as_uuid();
         let mut tx = self.pool.begin().await.map_err(internal)?;
+        // Serializes one sender's invitations, so parallel requests cannot pass the limit.
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text, 0))")
+            .bind(actor)
+            .execute(&mut *tx)
+            .await
+            .map_err(internal)?;
+        let (recent, oldest): (i64, Option<DateTime<Utc>>) = sqlx::query_as(
+            "SELECT count(*), min(created_at) FROM invitations
+             WHERE from_user = $1 AND created_at > $2",
+        )
+        .bind(actor)
+        .bind(now - INVITE_WINDOW)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(internal)?;
+        if recent >= INVITE_LIMIT {
+            return Err(AppError::RateLimited {
+                retry_after_secs: oldest.map(|oldest| retry_after_secs(oldest, now)),
+            });
+        }
         sqlx::query(
             "INSERT INTO invitations (id, kind, object_id, from_user, to_user, role, created_at)
              VALUES ($1, 'item_member', $2, $3, $4, $5, $6)",
@@ -464,6 +497,15 @@ mod tests {
         for role in [Assignee, Watcher, Editor, Viewer] {
             assert!(!role_allowed("page", role), "pages have no direct members");
         }
+    }
+
+    #[test]
+    fn retry_after_counts_down_to_at_least_one() {
+        let oldest = DateTime::<Utc>::UNIX_EPOCH;
+        assert_eq!(retry_after_secs(oldest, oldest), 3600);
+        assert_eq!(retry_after_secs(oldest, oldest + Duration::minutes(59)), 60);
+        assert_eq!(retry_after_secs(oldest, oldest + INVITE_WINDOW), 1);
+        assert_eq!(retry_after_secs(oldest, oldest + Duration::hours(2)), 1);
     }
 
     #[test]
