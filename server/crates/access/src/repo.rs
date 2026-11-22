@@ -31,6 +31,10 @@ fn tuple_from_row(
     Ok(RelationTuple::new(object_id, relation, subject_id))
 }
 
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used by PermissionService (T1.1.5)")
+)]
 fn perms_from_db(bits: i32) -> sqlx::Result<Perms> {
     u8::try_from(bits)
         .ok()
@@ -79,6 +83,10 @@ pub(crate) async fn delete_relation(
 }
 
 /// All tuples whose object is `object_type:object_id`.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used by PermissionService (T1.1.5)")
+)]
 pub(crate) async fn relations_of_object(
     conn: impl PgExecutor<'_>,
     object_type: ObjectType,
@@ -100,6 +108,10 @@ pub(crate) async fn relations_of_object(
 
 /// All tuples whose subject is `subject_type:subject_id`, optionally limited to one relation
 /// (reverse lookups, e.g. pages linked to an item).
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used by PermissionService (T1.1.5)")
+)]
 pub(crate) async fn relations_of_subject(
     conn: impl PgExecutor<'_>,
     subject_type: SubjectType,
@@ -119,6 +131,48 @@ pub(crate) async fn relations_of_subject(
     rows.iter()
         .map(|(o, r, s)| tuple_from_row(*o, r, *s))
         .collect()
+}
+
+fn tuples_from_rows(rows: Vec<(Uuid, String, Uuid)>) -> sqlx::Result<Vec<RelationTuple>> {
+    rows.iter()
+        .map(|(o, r, s)| tuple_from_row(*o, r, *s))
+        .collect()
+}
+
+/// All tuples whose object is one of `objects` (forward edges, for `compute_access`).
+pub(crate) async fn relations_of_objects(
+    conn: impl PgExecutor<'_>,
+    objects: &[(ObjectType, Uuid)],
+) -> sqlx::Result<Vec<RelationTuple>> {
+    let types: Vec<&str> = objects.iter().map(|(t, _)| t.as_str()).collect();
+    let ids: Vec<Uuid> = objects.iter().map(|(_, id)| *id).collect();
+    let rows = sqlx::query_as::<_, (Uuid, String, Uuid)>(
+        "SELECT r.object_id, r.relation, r.subject_id
+         FROM access_relations r
+         JOIN unnest($1::text[], $2::uuid[]) AS o(object_type, object_id)
+           ON r.object_type = o.object_type AND r.object_id = o.object_id",
+    )
+    .bind(&types)
+    .bind(&ids)
+    .fetch_all(conn)
+    .await?;
+    tuples_from_rows(rows)
+}
+
+/// Tuples through which access flows from one of `subjects` (items or teams) to other items:
+/// `linked_to`, `in_notebook` and `owned_by` (reverse edges, for the affected set).
+pub(crate) async fn dependent_relations(
+    conn: impl PgExecutor<'_>,
+    subjects: &[Uuid],
+) -> sqlx::Result<Vec<RelationTuple>> {
+    let rows = sqlx::query_as::<_, (Uuid, String, Uuid)>(
+        "SELECT object_id, relation, subject_id FROM access_relations
+         WHERE subject_id = ANY($1) AND relation IN ('linked_to', 'in_notebook', 'owned_by')",
+    )
+    .bind(subjects)
+    .fetch_all(conn)
+    .await?;
+    tuples_from_rows(rows)
 }
 
 /// Replaces the cached access rows of `item_id` with `entries` (entries with no permissions are
@@ -153,6 +207,10 @@ pub(crate) async fn replace_item_access(
 }
 
 /// The cached access of `user_id` on `item_id`, if any.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used by PermissionService (T1.1.5)")
+)]
 pub(crate) async fn item_access(
     conn: impl PgExecutor<'_>,
     item_id: Uuid,
@@ -177,6 +235,10 @@ pub(crate) async fn item_access(
 }
 
 /// Ids of the items on which `user_id` has at least `required`.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used by PermissionService (T1.1.5)")
+)]
 pub(crate) async fn accessible_item_ids(
     conn: impl PgExecutor<'_>,
     user_id: Uuid,

@@ -3,18 +3,15 @@
 //! Owns the `access_relations` and `item_access` tables (ARCHITECTURE §5.11, §6). Other crates
 //! never touch them with SQL (ADR-0007).
 
+mod affected;
 mod compute;
 mod model;
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "used by the access engine and PermissionService (T1.1.3, T1.1.5)"
-    )
-)]
+mod recompute;
 mod repo;
 
+pub use affected::{Change, affected_items};
 pub use compute::{
     Access, AccessGraph, ItemAttrs, Reason, RolePolicy, TeamRole, TeamVisibility, compute_access,
 };
 pub use model::{ObjectType, Perms, Relation, RelationTuple, SubjectType};
+pub use recompute::{AccessContext, DefaultAccessContext, grant, recompute, revoke};
