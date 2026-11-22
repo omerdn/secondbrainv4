@@ -214,7 +214,7 @@ item:P3      linked_to  item:T1         (sayfa → nesne bağlantısı)
 ### 6.2 Türetilmiş erişim önbelleği
 ```
 item_access(item_id, user_id, perms bitmask, reasons jsonb)
-perms: VIEW | EDIT | MANAGE(paylaş/bağla/üye yönet) | DELETE
+perms: VIEW | EDIT | SHARE(üye ekle) | LINK(sayfa bağla) | MANAGE(ayarlar, üye yönetimi) | DELETE
 ```
 - Listeleme, filtreleme ve arama sorguları `JOIN item_access ON user_id = $me` ile yapılır. Bu sayede hızlıdır ve her yerde aynı kural uygulanır.
 - `reasons` alanı, "Bunu neden görüyorum?" (V11) sorusunun cevabını tutar.

@@ -216,6 +216,12 @@ impl Perms {
         }
     }
 
+    /// `self | other`, usable in constants.
+    #[must_use]
+    pub const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
     #[must_use]
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
