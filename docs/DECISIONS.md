@@ -215,3 +215,30 @@
   - Tasarım token'ları ve bileşenler `packages/ui` altında tutulur.
   - Takım renkleri tema değişkenleriyle verilir.
 - **Alternatifler:** Tamagui (daha karmaşık kurulum gerektirdiği için reddedildi), StyleSheet (tema yönetimi zahmetli olduğu için reddedildi).
+
+## ADR-0018 · Kanban sürükle-bırak: Gesture Handler + Reanimated üzerinde ince bir katman
+**Durum:** Kabul · 2026-11-22 (spike T0.6.1)
+
+- **Bağlam:** Kişisel kanban (PRD `G6`) hem sütun içinde sıralama hem de sütunlar arası taşıma gerektiriyor. Aynı kod web'de (react-native-web) ve iOS'ta çalışmalı; sadece DOM'da çalışan kütüphaneler yasak (ADR-0012). ARCHITECTURE §18 bunu bilinen risk olarak işaretlemişti.
+- **Karar:**
+  - Hazır bir kanban/sürükle-bırak kütüphanesi kullanılmaz. `react-native-gesture-handler` (3.x, hook API: `usePanGesture`) ve `react-native-reanimated` (4.x) üzerinde ince, kendi katmanımız yazılır.
+  - **Karar mantığı saf fonksiyonlardadır** (`apps/client/src/lib/dnd/board.ts`): bırakma hedefi (`dropTarget`), taşıma (`moveCard`), etkisiz bırakma (`isNoOp`), gösterge konumu (`indicatorPosition`). Birim testleriyle güvence altındadır; testler rastgele 500 taşımada kartların kaybolmadığını ve sıranın korunduğunu doğrular.
+  - **Etkileşim:**
+    - Dokunmatikte kart 250 ms basılı tutunca kalkar; böylece sütunlar normal kaydırmayla kayar.
+    - Web'de fareyle birkaç piksel sürükleyince kart kalkar.
+    - Kalkan kart, sütun kaydırma alanlarına kırpılmaması için panonun kökünde bir katmanda çizilir ve UI thread'de parmağı izler.
+    - Kartın konumu ve sütun dikdörtgenleri sürükleme başlarken `measureInWindow` ile ölçülür. Bırakma hedefi hem hareket sırasında hem de bırakılan son noktadan hesaplanır; ölçüm bitmeden biten hızlı sürüklemelerde bırakma işlemi ölçümü bekler.
+- **Sonuçlar:**
+  - Prototip (`app/dev/kanban.tsx`, sadece geliştirme modunda) web'de ve iOS simülatöründe çalıştı: sütun içi sıralama ve sütunlar arası taşıma doğru konuma düşüyor.
+  - Bağımlılık: `react-native-gesture-handler` eklendi ve kök layout `GestureHandlerRootView` ile sarıldı. Native modül olduğu için dev client yeniden derlenir.
+  - T2.1.5 (kanban görünümü) bu katmanı kullanır. Prototipte olmayan ve T2.1.5'te yapılacaklar:
+    - sürüklerken kenara gelince sütunun ve panonun otomatik kaydırılması,
+    - uzun sütunlar için sanallaştırma (virtualization) ve buna uygun ölçüm,
+    - erişilebilirlik alternatifi: ekran okuyucu ve klavye için "sütuna taşı" menüsü,
+    - mobilde dokunsal geri bildirim (haptics).
+  - Sunucuda kart sırası için kesirli sıralama anahtarı (fractional index) T2.1.5'te kararlaştırılır.
+- **Alternatifler:**
+  - `react-native-reanimated-dnd`: Draggable/Droppable ve tek liste sıralaması sunuyor ama sütunlar arası sıralı bırakma (ekleme konumu) yok; kanban için sütun başına ayrı bırakma alanları ve konum hesabını yine bizim yazmamız gerekirdi.
+  - `react-native-sortables`: tek konteyner içinde güçlü, ama sütunlar arası taşıma o sürümde birinci sınıf desteklenmiyordu.
+  - `react-native-draggable-flatlist`: yalnızca tek dikey liste.
+  - `@dnd-kit` ve benzerleri: yalnızca DOM (ADR-0012 gereği reddedildi).

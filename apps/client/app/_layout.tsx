@@ -6,6 +6,7 @@ import { Stack } from "expo-router";
 import type { ReactNode } from "react";
 import { StatusBar } from "expo-status-bar";
 import { I18nextProvider } from "react-i18next";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ConnectivityGate, ConnectivityProvider, useOnConnected } from "@/connectivity";
@@ -47,24 +48,26 @@ function ThemedStatusBar() {
 /** Root layout: API + query client, session (T0.4.5), connectivity (T0.5.3) and its screens (T0.5.4), i18n (T0.4.7), theme (ADR-0017), one stack for every platform (ADR-0012). */
 export default function RootLayout() {
   return (
-    <SafeAreaProvider>
-      <I18nextProvider i18n={i18n}>
-        <ApiProvider api={api} queryClient={queryClient} idempotencyKey={idempotencyKey}>
-          <SessionProvider>
-            <LanguageSync />
-            <Connectivity>
-              <ThemeProvider>
-                <ToastProvider>
-                  <ThemedStatusBar />
-                  <ConnectivityGate>
-                    <Stack screenOptions={{ headerShown: false }} />
-                  </ConnectivityGate>
-                </ToastProvider>
-              </ThemeProvider>
-            </Connectivity>
-          </SessionProvider>
-        </ApiProvider>
-      </I18nextProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <I18nextProvider i18n={i18n}>
+          <ApiProvider api={api} queryClient={queryClient} idempotencyKey={idempotencyKey}>
+            <SessionProvider>
+              <LanguageSync />
+              <Connectivity>
+                <ThemeProvider>
+                  <ToastProvider>
+                    <ThemedStatusBar />
+                    <ConnectivityGate>
+                      <Stack screenOptions={{ headerShown: false }} />
+                    </ConnectivityGate>
+                  </ToastProvider>
+                </ThemeProvider>
+              </Connectivity>
+            </SessionProvider>
+          </ApiProvider>
+        </I18nextProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
