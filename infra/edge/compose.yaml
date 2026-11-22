@@ -1,0 +1,29 @@
+# Shared edge proxy for every app on the host (ADR-0021). The only container that publishes
+# ports. Apps join the external `edge` network and drop a site file into sites/.
+# Lives at /opt/edge on the server.
+name: edge
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./sites:/etc/caddy/sites:ro
+      # Certificates and ACME account: must survive restarts (Let's Encrypt rate limits).
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - edge
+
+networks:
+  edge:
+    name: edge
+
+volumes:
+  caddy_data:
+  caddy_config:

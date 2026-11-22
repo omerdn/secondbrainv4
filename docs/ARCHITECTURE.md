@@ -379,7 +379,7 @@ Kapsam beklentisi: `access`, `tracking`, `recurrence` ve `goals` crate'lerinde d
 
 ## 17. Ortamlar ve dağıtım
 - **local:** `docker compose up` ile Postgres çalışır, `cargo run` ile sunucu ve `pnpm dev` ile istemci (web) başlar.
-- **staging/beta:** Tek VPS üzerinde Docker Compose: `server`, `postgres`, `caddy`. Web istemcisi Caddy tarafından statik olarak sunulur. Günlük `pg_dump` ve WAL arşivi S3 uyumlu depoya alınır.
+- **canlı (ADR-0021):** Tek ortam, Türkiye'de tek VDS (`routune.dev`). Ortak edge Caddy (`infra/edge`) TLS'i sağlar ve siteleri yönlendirir. Uygulama `infra/production` altındaki Compose'tur: `server`, `web` (statik istemci), `postgres`. `main`'e her merge GitHub Actions ile otomatik deploy edilir. Günlük `pg_dump` ve WAL arşivi S3 uyumlu depoya alınır (T0.7.3).
 - **CI (GitHub Actions):**
   - Rust: `fmt`, `clippy -D warnings`, `test`.
   - TS: `lint`, `typecheck`, `test`.

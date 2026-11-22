@@ -1,0 +1,7 @@
+# Example site for another app on the host (rename to <app>.caddy on the server).
+# The app's compose joins the external `edge` network and gives its container a unique alias.
+#
+# n8n.routune.dev {
+# 	import security_headers
+# 	reverse_proxy n8n:5678
+# }

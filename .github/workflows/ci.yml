@@ -115,10 +115,13 @@ jobs:
       - name: Verify database
         run: sh scripts/db-check.sh
 
-      - name: Validate staging compose (T0.7.1)
+      - name: Validate production compose files (ADR-0021)
         run: |
-          cp infra/staging/.env.example infra/staging/.env
-          docker compose -f infra/staging/compose.yaml config --quiet
+          cp infra/production/.env.example infra/production/.env
+          docker compose -f infra/edge/compose.yaml config --quiet
+          docker compose -f infra/production/compose.yaml config --quiet
+          sh -n infra/production/deploy.sh
+          sh -n infra/server/bootstrap.sh
 
       - name: Postgres logs on failure
         if: failure()

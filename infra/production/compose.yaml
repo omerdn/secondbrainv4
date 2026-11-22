@@ -1,0 +1,74 @@
+# The app on the host (ADR-0021, ARCHITECTURE §17): server, web, postgres. Lives at
+# /opt/routune on the server; TLS and routing come from the shared edge proxy (infra/edge).
+# Images are built by .github/workflows/deploy.yml (or locally, see README.md).
+name: routune
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-secondbrain}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-secondbrain}
+    # No published port and not on the edge network: only the server reaches the database.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ${POSTGRES_INIT_DIR:-./postgres-init}:/docker-entrypoint-initdb.d:ro
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  server:
+    image: ${SERVER_IMAGE:-routune-server:current}
+    restart: unless-stopped
+    # Everything else the server reads (sign-in providers, Sentry, CORS_EXTRA_ORIGINS, ...).
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-secondbrain}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-secondbrain}
+      APP_HOST: 0.0.0.0
+      APP_PORT: "8080"
+      LOG_FORMAT: json
+      PUBLIC_WEB_URL: https://${WEB_DOMAIN:?set WEB_DOMAIN in .env}
+      PUBLIC_API_URL: https://${API_DOMAIN:?set API_DOMAIN in .env}
+      # Only the edge proxy reaches the server, and it sets the client address headers.
+      TRUST_PROXY_HEADERS: "true"
+    networks:
+      internal:
+      edge:
+        aliases: [routune-server]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    stop_grace_period: 40s
+    logging: *logging
+
+  web:
+    image: ${WEB_IMAGE:-routune-web:current}
+    restart: unless-stopped
+    networks:
+      edge:
+        aliases: [routune-web]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging: *logging
+
+networks:
+  internal:
+  edge:
+    external: true
+
+volumes:
+  pgdata:

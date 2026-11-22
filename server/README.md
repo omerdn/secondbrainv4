@@ -151,7 +151,7 @@ curl localhost:8080/health
 ```
 Yapılandırma ortam değişkenleriyle yapılır: `DATABASE_URL` (zorunlu), `DB_MAX_CONNECTIONS`, `DB_MIGRATE_ON_START`, `APP_HOST`, `APP_PORT`, `SHUTDOWN_TIMEOUT_SECS` (bkz. `.env.example`). Önce `pnpm db:up` ile yerel veritabanını başlatın. SIGTERM veya Ctrl-C gelince sunucu yeni bağlantı almayı bırakır, devam eden istekleri en fazla `SHUTDOWN_TIMEOUT_SECS` saniye bekler ve çıkar.
 
-Staging/beta için sunucu imajı `server/Dockerfile` ile derlenir. Compose yığını (`server`, `postgres`, `caddy`) için bkz. [infra/staging/README.md](../infra/staging/README.md).
+Canlı ortam için sunucu imajı `server/Dockerfile` ile derlenir. Sunucu yapısı ve deploy için bkz. [infra/production/README.md](../infra/production/README.md) (ADR-0021).
 
 ## Komutlar
 ```bash
