@@ -167,6 +167,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+Kapsam (`access`, `tracking`, `recurrence`, `goals` için ≥ %90 beklenir): `cargo install cargo-llvm-cov --locked` ve `rustup component add llvm-tools-preview` bir kez, sonra `cargo llvm-cov -p <crate> --summary-only`. Stable toolchain bölge (region) ve satır kapsamını verir; gerçek dal sayacı (`--branch`) nightly ister. Bölge kapsamı her dal kolunu ayrı saydığı için ölçü olarak bölge kapsamı kullanılır.
+
 ## Ortak düzenleme spike'ı (`/collab/{page_id}`, T0.6.2)
 - `notebooks::collab`: yrs ile y-sync (ADR-0019). Sayfa başına bellekte bir belge; yetki ve kalıcılık **yok** (E2.5).
 - Sadece `COLLAB_SPIKE_ENABLED=true` iken bağlanır (varsayılan kapalı; açılınca açılışta uyarı loglanır). Staging ve üretimde açmayın.
