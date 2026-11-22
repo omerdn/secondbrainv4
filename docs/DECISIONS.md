@@ -353,3 +353,31 @@
 - **Alternatifler:**
   - SMTP (`lettre`) ile kendi sunucumuz ya da başka bir sağlayıcı: alan adı itibarı, IP ısındırma ve spam yönetimi gerektirir. Erken aşamada gereksiz yük.
   - Postmark, SES, Mailgun: benzer yetenekler; sahip Resend'i tercih etti.
+
+## ADR-0023 · Dağıtım ve güncellemeler: mağazasız beta, masaüstünde otomatik güncelleme, mobilde OTA
+**Durum:** Kabul · 2026-11-22 (sahibin onayıyla; ROADMAP F4'teki E4.1 ve E4.2'nin bir kısmını öne çeker, T4.2.5'teki EAS Build'in yerine geçer)
+
+- **Bağlam:**
+  - Sahip uygulamayı mağazalara yüklemeden, kurulum paketleriyle arkadaşlarına dağıtmak istiyor.
+  - Ücretli Apple Developer hesabı yok ve şimdilik alınmayacak.
+  - Güncellemelerin olabildiğince tek merkezden yönetilmesi isteniyor: web zaten her merge'de güncelleniyor (ADR-0021), masaüstü Discord gibi kendini güncellemeli.
+- **Karar:**
+  - **Masaüstü:**
+    - Tauri paketleri (`.dmg`, `.exe`, AppImage) GitHub Actions'ta üretilip GitHub Releases'a yüklenir (T4.1.3).
+    - Uygulama `tauri-plugin-updater` ile açılışta güncelleme kontrolü yapar, imzalı paketi indirir, kurar ve yeniden başlar (T4.1.4). Güncelleme imza anahtarı Tauri'nin kendi anahtarıdır (GitHub secret); Apple ya da Windows sertifikası gerekmez.
+    - Paketler imzasızdır; ilk kurulumdaki işletim sistemi uyarısı beta notlarında anlatılır.
+  - **Mobil paketler:** EAS Build yerine kendi CI'ımız kullanılır (T4.2.5).
+    - Android: kalıcı bir anahtarla imzalı APK. Yeni sürümler eskisinin üstüne kurulabilir.
+    - iOS: simülatör `.app` zip'i ve imzasız `.ipa`. Kullanıcı imzasız IPA'yı Sideloadly/AltStore ile kendi ücretsiz Apple ID'siyle imzalar; bu imza 7 günde bir yenilenir.
+  - **Mobil OTA:** JS ve arayüz güncellemeleri `expo-updates` ile kurulu uygulamaya uzaktan gelir. Güncellemeler kendi sunucumuzdan (Expo Updates protokolü) ve deploy hattından yayınlanır (T4.2.6). Native değişiklikler runtime sürümünü artırır ve yeni paket gerektirir.
+  - **Minimum sürüm:** Sunucu platform başına desteklenen en düşük istemci sürümünü bildirir; eski uygulamalar yeni sürümü indirme ekranı gösterir (T4.2.7).
+  - **Masaüstünde oturum:** ADR-0020'deki bearer token ve Rust WebSocket kararı T4.1.1'de uygulanır. Token işletim sisteminin güvenli deposunda tutulur (`keyring` crate'i).
+- **Sonuçlar:**
+  - Kullanıcılar çoğu güncellemeyi yeniden kurulum yapmadan alır. Yeni APK/IPA sadece native değişikliklerde gerekir.
+  - Kendi OTA sunucumuz bir uç nokta ve deploy adımı daha demek; karşılığında üçüncü taraf hesabı gerekmez ve veri bizde kalır.
+  - İmzasız iOS dağıtımı geniş kitleye uygun değildir; geniş bir beta ya da mağaza aşamasında Apple Developer Program (TestFlight) yeniden değerlendirilir.
+  - Mağazaya ilk yüklemeden önce bundle id'ler (`app.secondbrain.*`) gözden geçirilmeli; mağazaya çıktıktan sonra değiştirilemezler.
+- **Alternatifler:**
+  - EAS Build ve EAS Update: kurulumu hızlı, ama Expo hesabı ve üçüncü taraf hizmeti gerektirir. Kendi CI ve sunucumuz tercih edildi; gerekirse geçiş kolaydır.
+  - TestFlight ve notarization: ücretli Apple hesabı gerektirir; şimdilik reddedildi.
+  - Masaüstünde uzak web adresini yüklemek (her zaman güncel): ADR-0020'de güvenlik nedeniyle reddedildi.

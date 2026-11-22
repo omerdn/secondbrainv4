@@ -476,14 +476,20 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 - Hesap silme ve veri dışa aktarma hazır.
 - Beta kullanıcıları uygulamayı kullanıyor.
 
+> **Not (ADR-0023, 2026-11-22):** E4.1'in dağıtım ve güncelleme görevleri ile E4.2'deki T4.2.5–T4.2.7, sahibin kararıyla F1'den önce yapılır.
+
 ### E4.1 · Masaüstü · bağımlılık: T0.6.3
 - **T4.1.1** · Tauri 2 uygulaması · infra · M
   - Web build'inin paketlenmesi
   - Pencere yönetimi
-  - Deep link
+  - Bearer oturum (güvenli depo) ve Rust WebSocket (ADR-0020)
 - **T4.1.2** · Masaüstü bildirimleri · client · S
 - **T4.1.3** · Build matrisi · infra · M
-  - GitHub Actions ile `.dmg`, `.exe` ve AppImage
+  - GitHub Actions ile `.dmg`, `.exe` ve AppImage, GitHub Releases
+- **T4.1.4** · Masaüstü otomatik güncelleme · client · M
+  - `tauri-plugin-updater`, imzalı güncellemeler (ADR-0023)
+- **T4.1.5** · Masaüstü deep link · client · S
+  - T4.1.1'den ayrıldı
 
 ### E4.2 · Mobil
 - **T4.2.1** · iOS ve Android uyumluluk turu · client · L
@@ -493,8 +499,11 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 - **T4.2.3** · Push bildirimleri (Expo Push) · backend · M
   - Cihaz token yönetimi
 - **T4.2.4** · Web Push · backend · S
-- **T4.2.5** · EAS Build · infra · M
-  - `.apk` ve `.ipa` üretimi
+- **T4.2.5** · Mobil paketler (CI) · infra · M
+  - APK, iOS simülatör paketi ve imzasız `.ipa`; EAS Build yerine kendi CI'ımız (ADR-0023)
+- **T4.2.6** · Mobil OTA güncellemeleri · client · M
+  - `expo-updates`, kendi sunucumuzdan (ADR-0023)
+- **T4.2.7** · Minimum desteklenen istemci sürümü · backend · S
 
 ### E4.3 · Beta öncesi zorunlular
 - **T4.3.1** · Hesap silme akışı · backend · M

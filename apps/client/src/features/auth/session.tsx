@@ -14,6 +14,7 @@ import {
 import { Platform } from "react-native";
 
 import { credentials } from "@/lib/api";
+import { isTauri, sessionTransport, type Transport } from "@/lib/platform";
 
 import { tokenStore as defaultTokenStore } from "./token-store";
 
@@ -46,12 +47,11 @@ export interface Session {
 
 export type TokenStore = typeof defaultTokenStore;
 
-/** How the session travels (ARCHITECTURE §15): browser cookie or native bearer token. */
-export type Transport = "cookie" | "bearer";
+export type { Transport } from "@/lib/platform";
 
-/** Browsers use the cookie; every other platform a bearer token. */
-export function defaultTransport(os: string): Transport {
-  return os === "web" ? "cookie" : "bearer";
+/** Browsers use the cookie; native apps and the desktop shell a bearer token (ADR-0020). */
+export function defaultTransport(os: string, tauri = isTauri()): Transport {
+  return sessionTransport(os, tauri);
 }
 
 const SessionContext = createContext<Session | null>(null);

@@ -1,6 +1,7 @@
 import { ApiClient, createQueryClient, endpoints } from "@secondbrain/api-client";
 import { randomUUID } from "expo-crypto";
-import { Platform } from "react-native";
+
+import { sessionTransport } from "./platform";
 
 /** Local development API, used when `EXPO_PUBLIC_API_URL` is unset. */
 export const DEFAULT_API_URL = "http://localhost:8080";
@@ -36,13 +37,16 @@ export const credentials = {
  */
 export const idempotencyKey = (): string => randomUUID();
 
-/** Web uses the `HttpOnly` cookie + CSRF header; native apps send a bearer token (§15). */
+/**
+ * Web uses the `HttpOnly` cookie + CSRF header; native apps and the desktop shell send a
+ * bearer token (§15, ADR-0020).
+ */
 export const api = endpoints(
   new ApiClient({
     baseUrl: API_URL,
     idempotencyKey,
     auth:
-      Platform.OS === "web"
+      sessionTransport() === "cookie"
         ? { kind: "cookie", csrfToken: () => credentials.csrfToken }
         : { kind: "bearer", token: () => credentials.token },
   }),
