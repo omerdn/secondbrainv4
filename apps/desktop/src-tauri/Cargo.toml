@@ -20,3 +20,7 @@ tauri = { version = "2.12.7", features = [] }
 tauri-plugin-websocket = "2.5.0"
 # Session token in the OS secure storage (ADR-0020).
 keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
+tauri-plugin-updater = "2.14.1"
+tauri-plugin-process = "2.4.0"
+# Used by tauri::generate_context! for the plugin configuration.
+serde_json = "1"

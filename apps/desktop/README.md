@@ -30,3 +30,10 @@ Paketler imzasızdır (ücretli Apple/Windows sertifikası yok). Bu yüzden ilk 
 - **macOS:** `.dmg`'yi açın ve Routune'u Applications klasörüne sürükleyin. İlk açılışta "geliştirici doğrulanamadı" uyarısı çıkarsa uygulamaya **sağ tıklayıp → Aç → Aç** deyin. Bu sadece bir kez gerekir. Uyarıda "Aç" seçeneği yoksa Sistem Ayarları → Gizlilik ve Güvenlik bölümündeki **Yine de Aç** düğmesini kullanın.
 - **Windows:** `.exe`'yi çalıştırın. "Windows bilgisayarınızı korudu" (SmartScreen) uyarısında **Ek bilgi → Yine de çalıştır** deyin.
 - **Linux:** AppImage dosyasına çalıştırma izni verin (`chmod +x Routune_*.AppImage`) ve çalıştırın.
+
+## Otomatik güncelleme (T4.1.4)
+
+- Uygulama her açılışta `https://github.com/omerdn/secondbrainv4/releases/latest/download/latest.json` adresine bakar. Daha yeni bir sürüm varsa indirir, kurar ve yeniden başlar; bu sırada "Routune güncelleniyor" ekranı görünür. Kontrol ya da indirme başarısız olursa mevcut sürüm çalışmaya devam eder.
+- Güncellemeler Tauri'nin kendi anahtarıyla imzalanır; açık anahtar `tauri.conf.json` içinde (`plugins.updater.pubkey`). İmzası tutmayan paket kurulmaz. Bu imza Apple ya da Windows sertifikası değildir; ilk kurulumdaki işletim sistemi uyarısı yine çıkar.
+- Özel anahtar ve parolası GitHub secrets'ta durur: `TAURI_SIGNING_PRIVATE_KEY` ve `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Yedekleri sahibin Mac'inde, `~/.tauri/routune-updater.key` ve `~/.tauri/routune-updater.password` dosyalarında. **Anahtar kaybolursa** mevcut kurulumlar yeni sürümleri kabul etmez; kullanıcıların yeni sürümü bir kez elle kurması gerekir.
+- `releases/latest` GitHub'daki en yeni **ön sürüm olmayan** release'i gösterir. Bu yüzden masaüstü release'leri normal sürüm olarak, mobil release'ler ise ön sürüm olarak yayınlanır.
