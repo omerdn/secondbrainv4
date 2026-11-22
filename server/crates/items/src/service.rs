@@ -21,11 +21,11 @@ pub const LIST_LIMIT: i64 = 500;
 /// Items purged per batch of the daily job.
 const PURGE_BATCH: i64 = 200;
 
-const COLUMNS: &str = "id, kind, title, description, owner_user_id, owner_team_id, created_by, \
+pub(crate) const COLUMNS: &str = "id, kind, title, description, owner_user_id, owner_team_id, created_by, \
                        created_at, updated_at, last_touched_at, archived_at, deleted_at";
 
 #[derive(FromRow)]
-struct ItemRow {
+pub(crate) struct ItemRow {
     id: Uuid,
     kind: String,
     title: String,
@@ -75,7 +75,7 @@ fn internal(err: impl std::error::Error + Send + Sync + 'static) -> AppError {
 pub struct ItemsService {
     pub(crate) pool: PgPool,
     pub(crate) clock: SharedClock,
-    access: AccessEngine<ItemsAccessContext>,
+    pub(crate) access: AccessEngine<ItemsAccessContext>,
 }
 
 impl ItemsService {
