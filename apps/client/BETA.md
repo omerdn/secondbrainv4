@@ -1,0 +1,38 @@
+# Routune mobil beta: paketler ve kurulum (T4.2.5, ADR-0023)
+
+Mağaza yayını yok; paketler GitHub Releases'tan dağıtılır. Yeni bir sürüm `mobile-v<sürüm>` etiketiyle yayınlanır:
+
+```bash
+git tag mobile-v0.1.0 && git push origin mobile-v0.1.0
+```
+
+`.github/workflows/mobile-release.yml` canlı API adresiyle şunları üretip bir **ön sürüme** (pre-release) ekler:
+
+| Dosya                               | Ne için                                                                                     |
+| ----------------------------------- | ------------------------------------------------------------------------------------------- |
+| `routune-<sürüm>.apk`               | Android telefonlar. Kalıcı Routune anahtarıyla imzalı; yeni sürüm eskisinin üstüne kurulur. |
+| `routune-<sürüm>-unsigned.ipa`      | iPhone (Sideloadly/AltStore ile).                                                           |
+| `routune-<sürüm>-ios-simulator.zip` | Mac'te Xcode simülatörü.                                                                    |
+
+Release'ler ön sürüm olarak yayınlanır, çünkü `releases/latest` her zaman en yeni masaüstü sürümünü göstermeli: masaüstü güncelleyicisi oradan okuyor (T4.1.4).
+
+## Kurulum
+
+- **Android:** APK'yı telefona indirip açın ve "bilinmeyen kaynaklardan yükleme" iznini verin.
+  - 22 Kasım 2026'da elle gönderilen ilk APK debug anahtarıyla imzalanmıştı. O sürümü kuranların, kalıcı anahtarla imzalanan ilk sürümden önce eskisini bir kez silmesi gerekir.
+- **iPhone (ücretsiz Apple ID ile):**
+  1. Bilgisayara [Sideloadly](https://sideloadly.io) ya da [AltStore](https://altstore.io) kurun.
+  2. iPhone'u kabloyla bağlayın, `-unsigned.ipa` dosyasını seçin ve kendi Apple ID'nizle imzalayıp kurun.
+  3. iPhone'da Ayarlar → Genel → VPN ve Aygıt Yönetimi bölümünden geliştirici profilinize güvenin.
+  4. Ücretsiz hesapta imza 7 günde bir yenilenmeli (AltStore bunu otomatik yapabilir).
+- **iOS simülatörü (Mac + Xcode):** zip'i açın ve şu komutla kurun:
+
+  ```bash
+  xcrun simctl install booted Routune.app
+  ```
+
+## Anahtarlar
+
+- Android imza anahtarı GitHub secrets'ta durur: `ROUTUNE_KEYSTORE_BASE64`, `ROUTUNE_KEYSTORE_PASSWORD`, `ROUTUNE_KEY_ALIAS`, `ROUTUNE_KEY_PASSWORD`. Yedeği sahibin Mac'inde, `~/.routune-android/` klasöründe. **Anahtar kaybolursa** yeni APK eskisinin üstüne kurulamaz; herkesin eski uygulamayı silip yeniden kurması gerekir.
+- İmzalama `plugins/with-release-signing.js` ile yapılır. `ROUTUNE_KEYSTORE_FILE` tanımlı değilse (yerel derlemeler) şablonun debug imzası kullanılır.
+- Sürüm `APP_VERSION` (etiketten) ve derleme numarası `APP_BUILD_NUMBER` (CI çalışma numarası) ile `app.config.ts`'e girer. Android, yeni bir APK'yı eskinin üstüne ancak derleme numarası daha büyükse kurar.

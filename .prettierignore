@@ -11,3 +11,7 @@ apps/client/android/
 apps/client/.expo/
 apps/client/dist/
 apps/client/expo-env.d.ts
+
+# Tauri generated (apps/desktop/.gitignore)
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/target/

@@ -12,14 +12,16 @@ export default defineConfig(
   // (ARCHITECTURE §4.6). Tests are exempt: they exercise internals on purpose.
   featureBoundaries({ srcDir: join(import.meta.dirname, "src") }),
   {
-    // CommonJS config files read by Babel and Metro.
-    files: ["babel.config.js", "metro.config.js"],
+    // CommonJS config files read by Babel, Metro and Expo (config plugins).
+    files: ["babel.config.js", "metro.config.js", "plugins/**/*.js"],
     languageOptions: { sourceType: "commonjs", globals: { ...globals.node } },
     rules: {
       "@typescript-eslint/no-require-imports": "off",
       "@typescript-eslint/no-unsafe-assignment": "off",
       "@typescript-eslint/no-unsafe-call": "off",
       "@typescript-eslint/no-unsafe-member-access": "off",
+      "@typescript-eslint/no-unsafe-return": "off",
+      "@typescript-eslint/no-unsafe-argument": "off",
     },
   },
   {

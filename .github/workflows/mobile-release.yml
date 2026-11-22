@@ -1,0 +1,146 @@
+# Mobile packages (T4.2.5, ADR-0023): pushing a tag `mobile-v<version>` builds, against the
+# production API, an Android release APK signed with the persistent Routune key, an iOS
+# simulator app (zip) and an unsigned iOS .ipa (for Sideloadly/AltStore), and attaches them to
+# a GitHub pre-release. Pre-release on purpose: releases/latest must stay the newest desktop
+# release, which the desktop updater reads (T4.1.4).
+name: Mobile release
+
+on:
+  push:
+    tags: ["mobile-v*"]
+
+concurrency:
+  group: mobile-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  EXPO_PUBLIC_API_URL: https://api.routune.dev
+  APP_BUILD_NUMBER: ${{ github.run_number }}
+  LANG: en_US.UTF-8
+
+jobs:
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Version from the tag
+        run: echo "APP_VERSION=${GITHUB_REF_NAME#mobile-v}" >> "$GITHUB_ENV"
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Release key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ROUTUNE_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/routune-release.jks"
+          echo "ROUTUNE_KEYSTORE_FILE=$RUNNER_TEMP/routune-release.jks" >> "$GITHUB_ENV"
+
+      - name: Build APK
+        working-directory: apps/client
+        env:
+          ROUTUNE_KEYSTORE_PASSWORD: ${{ secrets.ROUTUNE_KEYSTORE_PASSWORD }}
+          ROUTUNE_KEY_ALIAS: ${{ secrets.ROUTUNE_KEY_ALIAS }}
+          ROUTUNE_KEY_PASSWORD: ${{ secrets.ROUTUNE_KEY_PASSWORD }}
+        run: |
+          npx expo prebuild --platform android --clean --no-install
+          cd android && ./gradlew assembleRelease --no-daemon
+          mkdir -p "$RUNNER_TEMP/out"
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/out/routune-$APP_VERSION.apk"
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: android
+          path: ${{ runner.temp }}/out/*
+
+  ios:
+    name: iOS (simulator + unsigned IPA)
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Version from the tag
+        run: echo "APP_VERSION=${GITHUB_REF_NAME#mobile-v}" >> "$GITHUB_ENV"
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prebuild
+        working-directory: apps/client
+        run: npx expo prebuild --platform ios --clean
+
+      # Simulator build: ad-hoc signed (an unsigned app has no keychain access, which breaks
+      # the secure session storage).
+      - name: Simulator app
+        working-directory: apps/client/ios
+        run: |
+          xcodebuild -workspace Routune.xcworkspace -scheme Routune -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= -quiet
+          mkdir -p "$RUNNER_TEMP/out"
+          (cd build/Build/Products/Release-iphonesimulator && \
+            zip -qry "$RUNNER_TEMP/out/routune-$APP_VERSION-ios-simulator.zip" Routune.app)
+
+      # Device build without signing: testers re-sign it with their own Apple ID.
+      - name: Unsigned IPA
+        working-directory: apps/client/ios
+        run: |
+          xcodebuild -workspace Routune.xcworkspace -scheme Routune -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build-device \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= -quiet
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R build-device/Build/Products/Release-iphoneos/Routune.app "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$RUNNER_TEMP/out/routune-$APP_VERSION-unsigned.ipa" Payload)
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ios
+          path: ${{ runner.temp }}/out/*
+
+  release:
+    name: GitHub pre-release
+    needs: [android, ios]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: out
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Routune Mobile ${{ github.ref_name }}
+          prerelease: true
+          files: out/*
+          body: |
+            Routune mobil beta sürümü (canlı sunucu: api.routune.dev).
+            - **Android:** `.apk` dosyasını telefona indirip açın; "bilinmeyen kaynaklardan yükleme" iznini verin.
+            - **iPhone:** `-unsigned.ipa` dosyasını Sideloadly ya da AltStore ile kendi Apple ID'nizle kurun (ücretsiz hesapta 7 günde bir yenilenir).
+            - **iOS simülatörü (Mac + Xcode):** zip'i açın, `xcrun simctl install booted Routune.app`.
+            Ayrıntılar: https://github.com/${{ github.repository }}/blob/main/apps/client/BETA.md
