@@ -27,10 +27,20 @@ Bu dosya her Claude oturumunda otomatik okunur ve tek başına yeterli olmalıd�
    - kökte: `pnpm format:check && pnpm lint && pnpm typecheck && pnpm test`
    - `server/` içinde: `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
    - Rust DTO değiştiyse `pnpm api-types:generate` çalıştırıp çıktıyı commit'leyin.
+   - `apps/desktop/src-tauri` değiştiyse orada da `cargo fmt --check && cargo clippy --all-targets -- -D warnings` çalıştırın (CI bu crate'i derlemez).
    - Davranış değiştiyse çalıştırarak doğrulayın: sunucuda `pnpm db:up` + `cargo run -p app`, UI'da web.
 5. **PR:** Başlık Conventional Commits ve sonunda görev ID'si: `feat(identity): add password login (T0.3.2)`. Gövde şablona uyar: `Closes #<no>`, ilgili PRD/ADR maddeleri, test notları. Status'ü "In review" yapın.
 6. **CI:** `main` korumalıdır; 4 check zorunludur ve dal `main` ile güncel olmalıdır. CI'ı sık yoklamayın: arka planda tek bir gecikmeli kontrol çalıştırın (`sleep 270; gh pr checks <no>`). Kırmızıysa düzeltip tekrar bekleyin.
 7. **Merge:** Sahibin onayıyla yapılır. Sahip oturum hedefinde (`/goal`) onay verdiyse CI yeşilken merge edin. Squash merge kullanın. Ardından Status'ü "Done" yapın, dalı silin, `main`'i çekin. Bir epic'in tüm görevleri bitince epic'i kapatın; epic UI içeriyorsa önce iOS simülatöründe kısa bir kontrol yapın.
+
+## Canlı ortam ve dağıtım (ADR-0021, ADR-0022, ADR-0023)
+- **Tek ortam:** staging yok. `main`'e her merge `deploy.yml` ile https://app.routune.dev ve https://api.routune.dev adreslerine çıkar. Bu yüzden migration'lar geriye uyumlu yazılır (genişlet → taşı → daralt). Sunucu Türkiye'de bir VDS (`81.17.192.93`, Debian 13). Ortak edge Caddy `/opt/edge`'de, uygulama `/opt/routune`'da. Ayrıntılar: [infra/production/README.md](infra/production/README.md).
+- **Sunucuya erişim:** deploy kullanıcısıyla `ssh -i ~/.ssh/routune_deploy deploy@81.17.192.93`. Root erişimi sahibin parolalı anahtarıyla, ancak sahip `ssh-add` çalıştırdıktan sonra. Sırlar sunucudaki `/opt/routune/.env`'de; repoya girmez.
+- **E-posta:** Resend canlıda (`EMAIL_DRIVER=resend`). Gerçek e-posta gider. Canlıda test hesabı açmadan önce sorun; arayüz denemeleri localhost'ta yerel test hesabıyla yapılır.
+- **Masaüstü:** `desktop-v<sürüm>` etiketi → GitHub Release; kurulu uygulamalar kendini günceller. Masaüstü release'leri **ön sürüm değildir** (güncelleyici `releases/latest`'i okur). Ayrıntılar: [apps/desktop/README.md](apps/desktop/README.md).
+- **Mobil:** `mobile-v<sürüm>` etiketi → APK, imzasız IPA ve simülatör zip'i, **ön sürüm** olarak. JS değişiklikleri her deploy'da OTA ile gider. Native değişiklik (paket, izin, ikon, SDK) yeni bir `mobile-v*` sürümü ister. Ayrıntılar: [apps/client/BETA.md](apps/client/BETA.md).
+- **Uyumsuzluk:** eski istemciler bozulacaksa sunucu `.env`'inde `MIN_VERSION_*` yükseltilir.
+- **İmza anahtarlarının yedekleri** sahibin Mac'inde: `~/.tauri/` (masaüstü güncelleme imzası) ve `~/.routune-android/` (APK). Kopyaları GitHub secrets'ta. Silinmez, yeniden üretilmez.
 
 ## Dur ve sor
 - Bir mimari kararın değişmesi gerekiyorsa: önce sahibin onayı, sonra DECISIONS.md'ye yeni ADR (eski kayıt "Geçersiz" olarak işaretlenir).
