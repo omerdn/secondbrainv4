@@ -837,6 +837,108 @@ fn assignee(to_user: Uuid) -> items::CreateInvitationRequest {
     invite_as(to_user, items::InvitationRole::Assignee)
 }
 
+/// Sends `count` invitations from `from` to new friends.
+async fn send_invitations(w: &World, from: Uuid, item: Uuid, count: i64) {
+    for _ in 0..count {
+        let to = Uuid::now_v7();
+        w.sharing.befriend(from, to);
+        w.items.invite(from, item, assignee(to)).await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn invitations_are_rate_limited_per_sender() {
+    let w = World::new().await;
+    let (ali, ayse, friend) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
+    w.sharing.befriend(ali, friend);
+    w.sharing.befriend(ayse, friend);
+    let alis = w.items.create(ali, World::task("A")).await.unwrap();
+    let ayses = w.items.create(ayse, World::task("B")).await.unwrap();
+    send_invitations(&w, ali, alis.id, items::INVITE_LIMIT).await;
+
+    w.clock.set(start() + Duration::minutes(10));
+    assert!(matches!(
+        w.items.invite(ali, alis.id, assignee(friend)).await,
+        Err(AppError::RateLimited {
+            retry_after_secs: Some(3000)
+        })
+    ));
+    // Another sender is not affected.
+    w.items
+        .invite(ayse, ayses.id, assignee(friend))
+        .await
+        .unwrap();
+
+    // The window slides: exactly one hour later the old invitations no longer count.
+    w.clock.set(start() + items::INVITE_WINDOW);
+    w.items
+        .invite(ali, alis.id, assignee(friend))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn answered_invitations_still_count_toward_the_limit() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    w.sharing.befriend(ali, ayse);
+    let task = w.items.create(ali, World::task("A")).await.unwrap();
+    send_invitations(&w, ali, task.id, items::INVITE_LIMIT - 1).await;
+    let last = w.items.invite(ali, task.id, assignee(ayse)).await.unwrap();
+    w.items.decline_invitation(ayse, last.id).await.unwrap();
+    assert!(matches!(
+        w.items.invite(ali, task.id, assignee(ayse)).await,
+        Err(AppError::RateLimited { .. })
+    ));
+}
+
+#[tokio::test]
+async fn parallel_invitations_cannot_pass_the_limit() {
+    let w = World::new().await;
+    let ali = Uuid::now_v7();
+    let task = w.items.create(ali, World::task("A")).await.unwrap();
+    send_invitations(&w, ali, task.id, items::INVITE_LIMIT - 2).await;
+    let mut calls = Vec::new();
+    for _ in 0..6 {
+        let to = Uuid::now_v7();
+        w.sharing.befriend(ali, to);
+        let service = w.items.clone();
+        let id = task.id;
+        calls.push(tokio::spawn(async move {
+            service.invite(ali, id, assignee(to)).await
+        }));
+    }
+    let mut created = 0;
+    for call in calls {
+        match call.await.unwrap() {
+            Ok(_) => created += 1,
+            Err(AppError::RateLimited { .. }) => {}
+            Err(other) => panic!("unexpected error: {other}"),
+        }
+    }
+    assert_eq!(created, 2);
+}
+
+#[tokio::test]
+async fn invitation_endpoint_answers_429_with_retry_after() {
+    let w = World::new().await;
+    let (ali, token) = w.user("limited@example.com").await;
+    let (ayse, _) = w.user("limited2@example.com").await;
+    w.sharing.befriend(ali, ayse);
+    let task = w.items.create(ali, World::task("A")).await.unwrap();
+    send_invitations(&w, ali, task.id, items::INVITE_LIMIT).await;
+    let response = w
+        .call(
+            Method::POST,
+            &format!("/items/{}/invitations", task.id),
+            &token,
+            Some(json!({"to_user": ayse, "role": "assignee"})),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(response.headers()[header::RETRY_AFTER], "3600");
+}
+
 #[tokio::test]
 async fn g5_accepting_adds_the_member_and_publishes_an_event() {
     let w = World::new().await;
