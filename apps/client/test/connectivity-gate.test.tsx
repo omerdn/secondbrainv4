@@ -41,7 +41,7 @@ async function setup(save: () => Promise<void> = () => Promise.resolve()) {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <ConnectivityProvider
-          authenticated
+          userId="u1"
           openLink={links.open}
           network={network.source}
           random={() => 0}

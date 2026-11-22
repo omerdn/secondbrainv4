@@ -29,7 +29,7 @@ function SessionRecovery() {
 function Connectivity({ children }: { children: ReactNode }) {
   const { state } = useSession();
   return (
-    <ConnectivityProvider authenticated={state.status === "signedIn"}>
+    <ConnectivityProvider userId={state.status === "signedIn" ? state.user.id : null}>
       <SessionRecovery />
       {children}
     </ConnectivityProvider>

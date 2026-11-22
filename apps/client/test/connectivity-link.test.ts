@@ -53,14 +53,20 @@ function handlers() {
   return { h, calls, messages };
 }
 
-function socketLink(token: string | null = "tok") {
+function socketLink(token: string | null = "tok", channels: string[] = []) {
   const sockets: FakeSocket[] = [];
   const { h, calls, messages } = handlers();
-  const link = openSocketLink("ws://api.test/ws", token, h, (url, t) => {
-    const socket = new FakeSocket(url, t);
-    sockets.push(socket);
-    return socket;
-  });
+  const link = openSocketLink(
+    "ws://api.test/ws",
+    token,
+    h,
+    (url, t) => {
+      const socket = new FakeSocket(url, t);
+      sockets.push(socket);
+      return socket;
+    },
+    channels,
+  );
   const socket = sockets[0];
   if (socket === undefined) throw new Error("no socket");
   return { link, socket, calls, messages };
@@ -79,6 +85,14 @@ describe("socket link", () => {
     const { socket, calls } = socketLink();
     expect(socket.token).toBe("tok");
     socket.receive(hello);
+    expect(calls).toEqual(["up"]);
+  });
+
+  it("subscribes to its channels on hello, before reporting up", () => {
+    const { socket, calls } = socketLink("tok", ["user:u1"]);
+    expect(socket.sent).toEqual([]);
+    socket.receive(hello);
+    expect(socket.sent).toEqual([{ type: "subscribe", channel: "user:u1" }]);
     expect(calls).toEqual(["up"]);
   });
 

@@ -16,6 +16,7 @@ import { Platform } from "react-native";
 
 import { API_URL, credentials } from "@/lib/api";
 
+import { defaultRules, eventOf, type InvalidationRules, invalidationsFor } from "./invalidation";
 import {
   type Link,
   type LinkHandlers,
@@ -48,8 +49,8 @@ const ConnectivityContext = createContext<Connectivity | null>(null);
 /** Reports OS network changes (`true` = connected); returns an unsubscribe function. */
 export type NetworkSource = (listener: (connected: boolean) => void) => () => void;
 
-/** Opens the link for the current session. */
-export type LinkOpener = (authenticated: boolean, handlers: LinkHandlers) => Link;
+/** Opens the link for the current session (`userId` null when signed out). */
+export type LinkOpener = (userId: string | null, handlers: LinkHandlers) => Link;
 
 /**
  * NetInfo on every platform (`navigator.onLine` events on web). Only changes of "connected"
@@ -83,12 +84,16 @@ function createSocket(url: string, token: string | null): SocketLike {
   return new NativeSocket(url, null, { headers: { Authorization: `Bearer ${token}` } });
 }
 
-/** Signed in: `/ws` (falling back to the probe); signed out: the `/health` probe. */
-export const defaultLinkOpener: LinkOpener = (authenticated, handlers) => {
+/**
+ * Signed in: `/ws`, subscribed to the user's own channel (falling back to the probe); signed
+ * out: the `/health` probe.
+ */
+export const defaultLinkOpener: LinkOpener = (userId, handlers) => {
   const probe = (h: LinkHandlers) => openProbeLink(API_URL, h, globalThis.fetch.bind(globalThis));
-  if (!authenticated) return probe(handlers);
+  if (userId === null) return probe(handlers);
   return openWithFallback(
-    (h) => openSocketLink(socketUrl(API_URL), credentials.token, h, createSocket),
+    (h) =>
+      openSocketLink(socketUrl(API_URL), credentials.token, h, createSocket, [`user:${userId}`]),
     probe,
     handlers,
   );
@@ -97,33 +102,36 @@ export const defaultLinkOpener: LinkOpener = (authenticated, handlers) => {
 const isNetworkError = (error: unknown) => error instanceof ApiError && error.code === "network";
 
 /**
- * Runs the connection state machine (ARCHITECTURE §10.2) and exposes its state. Screens for
- * the blocked and reconnecting states come with T0.5.4.
+ * Runs the connection state machine (ARCHITECTURE §10.2) and exposes its state; `/ws` events
+ * invalidate the queries they concern (T0.5.5), a reconnect refetches everything.
  */
 export function ConnectivityProvider({
-  authenticated,
+  userId,
   children,
   openLink = defaultLinkOpener,
   network = netInfoSource,
   random = Math.random,
+  invalidationRules = defaultRules,
 }: {
-  /** Whether a session exists (decides between the socket and the probe). */
-  authenticated: boolean;
+  /** The signed-in user, or null (decides between the socket and the probe). */
+  userId: string | null;
   children: ReactNode;
   openLink?: LinkOpener;
   network?: NetworkSource;
   random?: () => number;
+  /** Which queries each `/ws` event invalidates (T0.5.5). */
+  invalidationRules?: InvalidationRules;
 }) {
   const queryClient = useQueryClient();
   const [state, setState] = useState<ConnectivityState>(initial().state);
   const stateRef = useRef<ConnectivityState>(state);
   const linkRef = useRef<Link | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const authenticatedRef = useRef(authenticated);
+  const userIdRef = useRef(userId);
   const listenersRef = useRef(new Set<MessageListener>());
   // Effects run from callbacks; keep the latest dependencies in refs.
-  const depsRef = useRef({ openLink, random, queryClient });
-  depsRef.current = { openLink, random, queryClient };
+  const depsRef = useRef({ openLink, random, queryClient, invalidationRules });
+  depsRef.current = { openLink, random, queryClient, invalidationRules };
 
   const dispatchRef = useRef<(event: ConnectivityEvent) => void>(() => {});
 
@@ -132,11 +140,18 @@ export function ConnectivityProvider({
       case "open": {
         linkRef.current?.close();
         const dispatch = (event: ConnectivityEvent) => dispatchRef.current(event);
-        linkRef.current = depsRef.current.openLink(authenticatedRef.current, {
+        linkRef.current = depsRef.current.openLink(userIdRef.current, {
           up: () => dispatch({ type: "link_up" }),
           failed: () => dispatch({ type: "link_failed" }),
           lost: (reason) => dispatch({ type: "link_lost", reason }),
           message: (message) => {
+            const event = eventOf(message);
+            if (event !== null) {
+              const { queryClient: client, invalidationRules: rules } = depsRef.current;
+              for (const queryKey of invalidationsFor(event, rules)) {
+                void client.invalidateQueries({ queryKey });
+              }
+            }
             for (const listener of listenersRef.current) listener(message);
           },
         });
@@ -185,10 +200,10 @@ export function ConnectivityProvider({
 
   // Signing in or out swaps the link (socket ↔ probe) without leaving the current state.
   useEffect(() => {
-    if (authenticatedRef.current === authenticated) return;
-    authenticatedRef.current = authenticated;
+    if (userIdRef.current === userId) return;
+    userIdRef.current = userId;
     if (stateRef.current.kind !== "offline_blocked") run({ type: "open" });
-  }, [authenticated, run]);
+  }, [userId, run]);
 
   useEffect(
     () =>

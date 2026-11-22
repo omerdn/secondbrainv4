@@ -4,7 +4,7 @@ import type { LinkHandlers, LinkOpener } from "@/connectivity";
 
 /** Fake links and OS network events for driving `ConnectivityProvider` in tests. */
 export interface FakeLink {
-  authenticated: boolean;
+  userId: string | null;
   handlers: LinkHandlers;
   checks: number;
   closed: boolean;
@@ -12,8 +12,8 @@ export interface FakeLink {
 
 export function fakeLinks() {
   const links: FakeLink[] = [];
-  const open: LinkOpener = (authenticated, handlers) => {
-    const link: FakeLink = { authenticated, handlers, checks: 0, closed: false };
+  const open: LinkOpener = (userId, handlers) => {
+    const link: FakeLink = { userId, handlers, checks: 0, closed: false };
     links.push(link);
     return {
       check: () => {
