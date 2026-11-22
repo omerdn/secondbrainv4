@@ -22,6 +22,11 @@ export const en: Catalog = {
     },
     notFound: { title: "Page not found", home: "Go home" },
   },
+  desktopUpdate: {
+    downloading: "Updating Routune ({{version}})",
+    progress: "{{percent}}% downloaded",
+    restarting: "Restarting…",
+  },
   connectivity: {
     connecting: "Connecting",
     offline: {

@@ -3,6 +3,7 @@
 //! The web app keeps its session token in the OS secure storage through the
 //! `session_token_*` commands (macOS Keychain, Windows Credential Manager, Linux Secret
 //! Service) and opens `/ws` through the WebSocket plugin, which can send the bearer header.
+//! On launch it checks GitHub Releases for a signed update and installs it (ADR-0023).
 
 /// Keychain service and account of the session token.
 const SERVICE: &str = "app.secondbrain.desktop";
@@ -41,6 +42,8 @@ fn session_token_clear() -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_websocket::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             session_token_get,
             session_token_set,

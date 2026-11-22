@@ -12,6 +12,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ConnectivityGate, ConnectivityProvider, useOnConnected } from "@/connectivity";
 import { LanguageSync, SessionProvider, useSession } from "@/features/auth";
 import { api, idempotencyKey, queryClient } from "@/lib/api";
+import { DesktopUpdater } from "@/lib/desktop-update";
 import { i18n } from "@/lib/i18n";
 
 /**
@@ -45,7 +46,7 @@ function ThemedStatusBar() {
   return <StatusBar style={useScheme() === "dark" ? "light" : "dark"} />;
 }
 
-/** Root layout: API + query client, session (T0.4.5), connectivity (T0.5.3) and its screens (T0.5.4), i18n (T0.4.7), theme (ADR-0017), one stack for every platform (ADR-0012). */
+/** Root layout: API + query client, session (T0.4.5), connectivity (T0.5.3) and its screens (T0.5.4), i18n (T0.4.7), theme (ADR-0017), desktop self-update (T4.1.4), one stack for every platform (ADR-0012). */
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -61,6 +62,7 @@ export default function RootLayout() {
                     <ConnectivityGate>
                       <Stack screenOptions={{ headerShown: false }} />
                     </ConnectivityGate>
+                    <DesktopUpdater />
                   </ToastProvider>
                 </ThemeProvider>
               </Connectivity>

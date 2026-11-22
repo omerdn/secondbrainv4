@@ -24,6 +24,11 @@ export const tr = {
     },
     notFound: { title: "Sayfa bulunamadı", home: "Ana sayfaya dön" },
   },
+  desktopUpdate: {
+    downloading: "Routune güncelleniyor ({{version}})",
+    progress: "%{{percent}} indirildi",
+    restarting: "Yeniden başlatılıyor…",
+  },
   connectivity: {
     connecting: "Bağlanılıyor",
     offline: {
