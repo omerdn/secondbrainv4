@@ -158,6 +158,7 @@ mod tests {
             occurred_at: at,
             local_date: on,
             note_block_id: None,
+            note: None,
             created_at: at,
             deleted_at: None,
         }

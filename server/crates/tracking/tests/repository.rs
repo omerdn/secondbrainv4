@@ -68,6 +68,7 @@ impl World {
             occurred_at: now(),
             local_date,
             note_block_id: None,
+            note: None,
         }
     }
 }

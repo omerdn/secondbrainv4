@@ -194,6 +194,20 @@ fn internal(err: impl std::error::Error + Send + Sync + 'static) -> AppError {
 }
 
 impl ItemsService {
+    /// Applies a touch rule to an item, for modules that own the change (H4). Call it inside the
+    /// transaction of the change.
+    ///
+    /// # Errors
+    /// Database errors.
+    pub async fn touch(
+        &self,
+        conn: &mut PgConnection,
+        item: Uuid,
+        action: TouchAction,
+    ) -> sqlx::Result<()> {
+        touch::apply(conn, item, action, self.clock.now()).await
+    }
+
     /// Records that `actor` completed an item (A1), for the modules that own completion. Call it
     /// inside the transaction of the change.
     ///

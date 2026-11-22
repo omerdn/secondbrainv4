@@ -42,7 +42,7 @@ p256 = "0.14.0"
 http-body-util = "0.1.5"
 proptest = "1.12.0"
 # Exact decimals for `numeric` columns (money, calories); floats would drift.
-rust_decimal = { version = "1.43.0", default-features = false, features = ["std"] }
+rust_decimal = { version = "1.43.0", default-features = false, features = ["std", "serde-with-str"] }
 sentry = { version = "0.49.6", default-features = false, features = ["backtrace", "contexts", "panic", "reqwest", "rustls", "tracing"] }
 # HTTP client for outgoing provider calls (Resend). Same major as sentry's, rustls only.
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls"] }

@@ -243,6 +243,8 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 - **T1.3.4** · Kayıt API · backend · S
   - Ekle, sil, listele
   - Idempotent
+- **T1.3.5** · Takip tanımı API · backend · S
+  - Oluştur, oku, düzenle (T1, K1); T2.4.1 için gerekli
 
 ### E1.4 · Tekrar motoru (`recurrence`) · bağımlılık: T0.2.2
 - **T1.4.1** · Tekrar üretimi · backend · L

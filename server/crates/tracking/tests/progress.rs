@@ -58,6 +58,7 @@ async fn add(db: &TestDb, user: Uuid, tracker: Uuid, value: i64, on: NaiveDate) 
         occurred_at: now(),
         local_date: on,
         note_block_id: None,
+        note: None,
     };
     repo::insert_entry(db.pool(), &new, now()).await.unwrap().id
 }
