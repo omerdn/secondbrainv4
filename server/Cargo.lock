@@ -3012,6 +3012,12 @@ dependencies = [
 [[package]]
 name = "recurrence"
 version = "0.0.0"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "proptest",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "redox_syscall"
