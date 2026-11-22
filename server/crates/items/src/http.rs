@@ -27,6 +27,12 @@
 //! | POST   | `/invitations/{id}/accept`, `/invitations/{id}/decline` | 200 [`Invitation`] |
 //! | GET    | `/items/{id}/activity?limit=&cursor=` | 200 `Page<Activity>`; VIEW (A2) |
 //! | GET    | `/activity?limit=&cursor=` | 200 `Page<Activity>` across visible items (A2) |
+//! | GET    | `/items/filter?filter=<json>&limit=&cursor=` | 200 `Page<Item>` (F1) |
+//! | POST   | `/saved-views` | 201 [`SavedView`]; 409 for a taken name (F2) |
+//! | GET    | `/saved-views` | 200 `SavedView[]`: pinned first |
+//! | PATCH  | `/saved-views/{id}` | 200 [`SavedView`]; rename, refilter, pin, reorder |
+//! | DELETE | `/saved-views/{id}` | 204; 404 if not theirs |
+//! | GET    | `/saved-views/{id}/items?limit=&cursor=` | 200 `Page<Item>` |
 
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::StatusCode;
@@ -34,15 +40,27 @@ use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
 use identity::IdentityService;
 use identity::http::Authenticated;
-use kernel::{AppError, Page, PageParams, PageRequest};
+use kernel::ValidationErrors;
+use kernel::{AppError, FieldError, FieldErrorCode, Page, PageParams, PageRequest};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::activity::Activity;
+use crate::filters::ItemFilter;
 use crate::invitations::{CreateInvitationRequest, Invitation};
 use crate::links::ItemLink;
 use crate::model::{CreateItemRequest, Item, ListQuery, UpdateItemRequest};
 use crate::service::ItemsService;
 use crate::tags::{CreateTagRequest, Tag, UpdateTagRequest};
+use crate::views::{CreateSavedViewRequest, SavedView, UpdateSavedViewRequest};
+
+/// `GET /items/filter` query. The filter is JSON because it holds lists.
+#[derive(Debug, Default, Deserialize)]
+struct FilterQuery {
+    filter: Option<String>,
+    limit: Option<u32>,
+    cursor: Option<String>,
+}
 
 /// State of the item routes.
 #[derive(Clone)]
@@ -84,7 +102,95 @@ pub fn router(state: ItemsHttpState) -> Router {
         .route("/invitations/{id}/decline", post(decline_invitation))
         .route("/items/{id}/activity", get(item_activity))
         .route("/activity", get(activity_feed))
+        .route("/items/filter", get(filter_items))
+        .route("/saved-views", post(create_view).get(list_views))
+        .route("/saved-views/{id}", patch(update_view).delete(delete_view))
+        .route("/saved-views/{id}/items", get(view_items))
         .with_state(state)
+}
+
+async fn filter_items(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Query(query): Query<FilterQuery>,
+) -> Result<Json<Page<Item>>, AppError> {
+    let filter: ItemFilter = match query.filter.as_deref() {
+        None | Some("") => ItemFilter::default(),
+        Some(raw) => serde_json::from_str(raw).map_err(|_| {
+            AppError::from(ValidationErrors::from(FieldError::new(
+                "filter",
+                FieldErrorCode::Invalid,
+                "invalid filter",
+            )))
+        })?,
+    };
+    let page = PageRequest::from_params(PageParams {
+        limit: query.limit,
+        cursor: query.cursor,
+    })?;
+    state
+        .items
+        .filter_items(auth.user_id.as_uuid(), &filter, &page)
+        .await
+        .map(Json)
+}
+
+async fn create_view(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Json(request): Json<CreateSavedViewRequest>,
+) -> Result<(StatusCode, Json<SavedView>), AppError> {
+    let new = request.validate()?;
+    let view = state.items.create_view(auth.user_id.as_uuid(), new).await?;
+    Ok((StatusCode::CREATED, Json(view)))
+}
+
+async fn list_views(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+) -> Result<Json<Vec<SavedView>>, AppError> {
+    state
+        .items
+        .list_views(auth.user_id.as_uuid())
+        .await
+        .map(Json)
+}
+
+async fn update_view(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateSavedViewRequest>,
+) -> Result<Json<SavedView>, AppError> {
+    let changes = request.validate()?;
+    state
+        .items
+        .update_view(auth.user_id.as_uuid(), id, changes)
+        .await
+        .map(Json)
+}
+
+async fn delete_view(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    state.items.delete_view(auth.user_id.as_uuid(), id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn view_items(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+    Query(params): Query<PageParams>,
+) -> Result<Json<Page<Item>>, AppError> {
+    let page = PageRequest::from_params(params)?;
+    state
+        .items
+        .view_items(auth.user_id.as_uuid(), id, &page)
+        .await
+        .map(Json)
 }
 
 async fn item_activity(
