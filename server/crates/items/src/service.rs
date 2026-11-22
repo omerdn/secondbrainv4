@@ -15,6 +15,7 @@ use crate::activity::{self, ActivityKind, NewActivity};
 use crate::context::ItemsAccessContext;
 use crate::invitations::{NoSharing, SharingPolicy};
 use crate::model::{Item, ItemChanges, ListState, NewItem, Owner};
+use crate::touch::{self, TouchAction};
 
 /// How long an item stays in the trash before it is purged (N4).
 pub const TRASH_RETENTION: Duration = Duration::days(30);
@@ -207,6 +208,11 @@ impl ItemsService {
             Some(d) => (true, d),
             None => (false, None),
         };
+        let now = self.clock.now();
+        let mut tx = self.pool.begin().await.map_err(internal)?;
+        touch::apply(&mut tx, id, TouchAction::Edited, now)
+            .await
+            .map_err(internal)?;
         let row = sqlx::query_as::<_, ItemRow>(sqlx::AssertSqlSafe(format!(
             "UPDATE items SET title = COALESCE($2, title),
                               description = CASE WHEN $3 THEN $4 ELSE description END,
@@ -218,10 +224,16 @@ impl ItemsService {
         .bind(&changes.title)
         .bind(set_description)
         .bind(&description)
-        .bind(self.clock.now())
-        .fetch_optional(&self.pool)
+        .bind(now)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(internal)?;
+        // Nothing changed for an item in the trash: dropping `tx` undoes the touch.
+        if row.is_some() {
+            tx.commit().await.map_err(internal)?;
+        } else {
+            tx.rollback().await.map_err(internal)?;
+        }
         self.or_conflict(id, row).await
     }
 
@@ -238,6 +250,20 @@ impl ItemsService {
     ) -> Result<Item, AppError> {
         self.require(actor, id, Perms::MANAGE).await?;
         let now = self.clock.now();
+        let mut tx = self.pool.begin().await.map_err(internal)?;
+        let was_archived: Option<bool> = sqlx::query_scalar(
+            "SELECT archived_at IS NOT NULL FROM items WHERE id = $1 FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(internal)?;
+        // Only a real unarchive is a touch; repeating it changes nothing.
+        if !archived && was_archived == Some(true) {
+            touch::apply(&mut tx, id, TouchAction::Unarchived, now)
+                .await
+                .map_err(internal)?;
+        }
         let row = sqlx::query_as::<_, ItemRow>(sqlx::AssertSqlSafe(format!(
             "UPDATE items SET archived_at = CASE WHEN $2 THEN COALESCE(archived_at, $3) END,
                               updated_at = $3
@@ -247,9 +273,14 @@ impl ItemsService {
         .bind(id)
         .bind(archived)
         .bind(now)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(internal)?;
+        if row.is_some() {
+            tx.commit().await.map_err(internal)?;
+        } else {
+            tx.rollback().await.map_err(internal)?;
+        }
         self.or_conflict(id, row).await
     }
 
@@ -266,6 +297,19 @@ impl ItemsService {
     ) -> Result<Item, AppError> {
         self.require(actor, id, Perms::DELETE).await?;
         let now = self.clock.now();
+        let mut tx = self.pool.begin().await.map_err(internal)?;
+        let was_trashed: Option<bool> =
+            sqlx::query_scalar("SELECT deleted_at IS NOT NULL FROM items WHERE id = $1 FOR UPDATE")
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(internal)?;
+        // Only a real restore is a touch; repeating it changes nothing.
+        if !trashed && was_trashed == Some(true) {
+            touch::apply(&mut tx, id, TouchAction::Restored, now)
+                .await
+                .map_err(internal)?;
+        }
         let row = sqlx::query_as::<_, ItemRow>(sqlx::AssertSqlSafe(format!(
             "UPDATE items SET deleted_at = CASE WHEN $2 THEN COALESCE(deleted_at, $3) END,
                               updated_at = $3
@@ -275,9 +319,10 @@ impl ItemsService {
         .bind(id)
         .bind(trashed)
         .bind(now)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(internal)?;
+        tx.commit().await.map_err(internal)?;
         row.map(Item::from).ok_or(AppError::NotFound)
     }
 

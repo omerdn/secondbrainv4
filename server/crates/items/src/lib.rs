@@ -10,6 +10,7 @@ mod model;
 pub mod purge;
 mod service;
 mod tags;
+mod touch;
 
 pub use activity::{Activity, ActivityKind};
 pub use context::ItemsAccessContext;
@@ -26,3 +27,4 @@ pub use service::{ItemsService, LIST_LIMIT, TRASH_RETENTION};
 pub use tags::{
     CreateTagRequest, NewTag, TAG_LIST_LIMIT, TAG_NAME_MAX_CHARS, Tag, TagChanges, UpdateTagRequest,
 };
+pub use touch::{TouchAction, touched_at};

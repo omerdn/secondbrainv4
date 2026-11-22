@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 use crate::invitations::InvitationRole;
 use crate::service::ItemsService;
+use crate::touch::{self, TouchAction};
 
 /// What happened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
@@ -204,8 +205,10 @@ impl ItemsService {
         actor: Uuid,
         item: Uuid,
     ) -> sqlx::Result<()> {
+        let now = self.clock.now();
+        touch::apply(&mut *conn, item, TouchAction::Completed, now).await?;
         let event = NewActivity::new(Some(actor), item, ActivityKind::Completed);
-        record(conn, self.clock.now(), event).await
+        record(conn, now, event).await
     }
 
     /// The history of one item `actor` can view, newest first (A2).
