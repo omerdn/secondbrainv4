@@ -25,6 +25,17 @@ impl World {
         self.db.pool()
     }
 
+    /// Database schema of this test; also its notification channel name.
+    pub(crate) fn schema(&self) -> &str {
+        self.db.schema()
+    }
+
+    pub(crate) async fn revoke(&self, tuple: RelationTuple) {
+        let mut tx = self.pool().begin().await.unwrap();
+        self.engine.revoke(&mut tx, tuple).await.unwrap();
+        tx.commit().await.unwrap();
+    }
+
     pub(crate) fn permissions(&self) -> PermissionService<DefaultAccessContext> {
         self.engine.permissions()
     }

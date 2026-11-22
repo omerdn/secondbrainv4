@@ -36,3 +36,4 @@ export type * from "./generated/ValidationErrors";
 export type * from "./generated/VerifyEmailRequest";
 export type * from "./generated/WsErrorCode";
 export type * from "./generated/WsEvent";
+export type * from "./generated/WsUnsubscribeReason";

@@ -17,13 +17,15 @@
 //! transaction); every instance runs a [`Bridge`] that `LISTEN`s and feeds its local [`Hub`]
 //! (T0.5.2, ADR-0009).
 
+pub mod access;
 pub mod bridge;
 pub mod hub;
 pub mod protocol;
 pub mod sessions;
 pub mod ws;
 
+pub use access::ItemViewCheck;
 pub use bridge::{Bridge, DEFAULT_NOTIFY_CHANNEL, Notifier, PublishError};
 pub use hub::Hub;
-pub use protocol::{Channel, ClientMessage, Event, ServerMessage};
+pub use protocol::{Channel, ClientMessage, Event, ServerMessage, UnsubscribeReason};
 pub use ws::{CLOSE_SESSION_ENDED, RealtimeConfig, RealtimeState, router};

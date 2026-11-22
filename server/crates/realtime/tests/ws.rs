@@ -61,6 +61,7 @@ async fn server_with(idle_timeout: Duration) -> Server {
     let app = realtime::router(RealtimeState {
         hub: hub.clone(),
         identity: identity.clone(),
+        items: realtime::ItemViewCheck::deny_all(),
         clock,
         config,
     });

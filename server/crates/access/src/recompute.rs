@@ -17,7 +17,8 @@ use uuid::Uuid;
 
 use crate::affected::{Change, affected_items, changed_team, compute_inputs};
 use crate::compute::{AccessGraph, ItemAttrs, RolePolicy, compute_access};
-use crate::model::{ObjectType, Relation, RelationTuple};
+use crate::events::AccessRevoked;
+use crate::model::{ObjectType, Perms, Relation, RelationTuple};
 use crate::repo::{self, AccessEntry};
 
 /// Facts other modules own that `compute_access` needs: item attributes (`items`) and team role
@@ -402,9 +403,29 @@ impl Loader {
                     reasons: serde_json::to_value(&access.reasons).unwrap_or_default(),
                 })
                 .collect();
+            let before = repo::viewers(&mut *conn, item).await?;
             match mode {
                 Write::Replace => repo::replace_item_access(conn, item, &entries).await?,
                 Write::Restrict => repo::restrict_item_access(conn, item, &entries).await?,
+            }
+            // V10: whoever could view the item and no longer can is announced, so open
+            // subscriptions end. Restrict keeps (before ∩ new) viewers: the same set is lost.
+            let lost: Vec<Uuid> = before
+                .into_iter()
+                .filter(|user| {
+                    !entries
+                        .iter()
+                        .any(|e| e.user_id == *user && e.perms.contains(Perms::VIEW))
+                })
+                .collect();
+            if !lost.is_empty() {
+                let event = AccessRevoked {
+                    item_id: item,
+                    user_ids: lost,
+                };
+                db::outbox::publish(conn, &event).await.map_err(|err| {
+                    sqlx::Error::Protocol(format!("publish access.revoked: {err}"))
+                })?;
             }
         }
         Ok(())

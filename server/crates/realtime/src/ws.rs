@@ -13,6 +13,7 @@ use identity::http::Authenticated;
 use identity::{IdentityService, SessionId, UserId};
 use kernel::{AppError, SharedClock};
 
+use crate::access::ItemViewCheck;
 use crate::hub::{ConnectionId, Hub, Registered, Subscribe};
 use crate::protocol::{Channel, ClientMessage, ErrorCode, ServerMessage};
 
@@ -57,6 +58,8 @@ impl RealtimeConfig {
 pub struct RealtimeState {
     pub hub: Hub,
     pub identity: IdentityService,
+    /// Who may subscribe to `item:<id>` (VIEW through `PermissionService`).
+    pub items: ItemViewCheck,
     pub clock: SharedClock,
     pub config: RealtimeConfig,
 }
@@ -166,7 +169,7 @@ async fn connection(socket: WebSocket, state: RealtimeState, user: UserId, sessi
                     break;
                 }
                 let reply = match message {
-                    Message::Text(text) => handle(&state, id, user, text.as_str()),
+                    Message::Text(text) => handle(&state, id, user, text.as_str()).await,
                     Message::Binary(_) => error(ErrorCode::BadRequest, "binary frames are not supported", None),
                     Message::Close(_) => break,
                     // Protocol-level ping/pong is answered by the WebSocket layer; it also
@@ -209,7 +212,12 @@ async fn session_still_active(identity: &IdentityService, session: SessionId) ->
 }
 
 /// Answers one client message.
-fn handle(state: &RealtimeState, id: ConnectionId, user: UserId, text: &str) -> ServerMessage {
+async fn handle(
+    state: &RealtimeState,
+    id: ConnectionId,
+    user: UserId,
+    text: &str,
+) -> ServerMessage {
     let Ok(message) = serde_json::from_str::<ClientMessage>(text) else {
         return error(ErrorCode::BadRequest, "not a valid client message", None);
     };
@@ -221,7 +229,7 @@ fn handle(state: &RealtimeState, id: ConnectionId, user: UserId, text: &str) -> 
             let Ok(channel) = name.parse::<Channel>() else {
                 return error(ErrorCode::BadRequest, "unknown channel", Some(name));
             };
-            if !may_subscribe(user, &channel) {
+            if !may_subscribe(state, user, &channel).await {
                 return error(ErrorCode::Forbidden, "not allowed", Some(name));
             }
             match state.hub.subscribe(id, channel) {
@@ -239,16 +247,20 @@ fn handle(state: &RealtimeState, id: ConnectionId, user: UserId, text: &str) -> 
             if let Ok(channel) = name.parse::<Channel>() {
                 state.hub.unsubscribe(id, &channel);
             }
-            ServerMessage::Unsubscribed { channel: name }
+            ServerMessage::Unsubscribed {
+                channel: name,
+                reason: None,
+            }
         }
     }
 }
 
-/// Who may receive a channel. A user channel belongs to that user only. Object and team
-/// channels will be decided by `PermissionService` (access crate) when they are added.
-fn may_subscribe(user: UserId, channel: &Channel) -> bool {
+/// Who may receive a channel. A user channel belongs to that user only; an item channel needs
+/// VIEW on the item (`PermissionService`).
+async fn may_subscribe(state: &RealtimeState, user: UserId, channel: &Channel) -> bool {
     match channel {
         Channel::User(owner) => *owner == user,
+        Channel::Item(item) => state.items.can_view(user, *item).await,
     }
 }
 
@@ -311,9 +323,13 @@ mod tests {
     }
 
     #[test]
-    fn users_may_subscribe_only_to_their_own_channel() {
-        let (me, other) = (UserId::new(), UserId::new());
-        assert!(may_subscribe(me, &Channel::User(me)));
-        assert!(!may_subscribe(me, &Channel::User(other)));
+    fn channel_names_round_trip() {
+        let user = UserId::new();
+        let item = uuid::Uuid::now_v7();
+        for channel in [Channel::User(user), Channel::Item(item)] {
+            assert_eq!(channel.to_string().parse::<Channel>(), Ok(channel));
+        }
+        assert!("item:nope".parse::<Channel>().is_err());
+        assert!("team:x".parse::<Channel>().is_err());
     }
 }

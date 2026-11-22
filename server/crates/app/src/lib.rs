@@ -43,6 +43,7 @@ where
     // Domain modules register their subscribers here as they are implemented.
     let mut dispatcher = db::outbox::Dispatcher::new(db::outbox::DispatchConfig::default());
     realtime::sessions::register(&mut dispatcher, pool.clone(), realtime::Notifier::default());
+    realtime::access::register(&mut dispatcher, pool.clone(), realtime::Notifier::default());
     let (stop_dispatcher, dispatcher_stopped) = tokio::sync::oneshot::channel::<()>();
     let dispatcher_pool = pool.clone();
     let dispatcher_task = tokio::spawn(async move {
@@ -168,6 +169,7 @@ where
     let ws = realtime::router(realtime::RealtimeState {
         hub,
         identity: identity.clone(),
+        items: realtime::ItemViewCheck::new(access_engine.permissions(), pool.clone()),
         clock: clock.clone(),
         config: realtime::RealtimeConfig::new(config.cors_origins.clone()),
     });
