@@ -87,6 +87,8 @@ Migration akışının kendisini test etmek için boş bir şema: `TestDb::new_u
 - Docker gerekir. **OrbStack kullanıyorsanız** testcontainers Docker soketini kendiliğinden bulamaz, kabuğunuzda şunu tanımlayın: `export DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock`.
 - Konteyner yerine mevcut bir sunucu kullanmak için: `TEST_DATABASE_URL=postgres://...` (ör. compose veritabanı).
 
+- **Görünürlük kuralları (V1–V12)** `crates/app/tests/visibility/` altında, kural başına bir dosya. Henüz implemente edilmemiş senaryolar `#[ignore = "T<x.y.z>: …"]` ile açılacağı görevi söyler (meta test bunu ve görevin ROADMAP'te olduğunu denetler). Görevi biten senaryodan `#[ignore]`'u kaldırıp `pending()` yerine gerçek senaryoyu yazın. Bekleyenleri görmek için: `cargo test -p app --test visibility -- --ignored`.
+
 ## Idempotency key'leri (`app::idempotency`)
 Her mutasyon istemcide üretilen bir `Idempotency-Key` başlığı taşır (ARCHITECTURE §10, ADR-0003).
 - Domain modüllerinin router'ları `app::run` içinde `idempotency::protect(..)` içine eklenir. Bu router'larda oturum açmış kullanıcının `POST/PUT/PATCH/DELETE` istekleri başlıksız gelirse 422 döner.
