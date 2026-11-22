@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use access::{AccessConfig, AccessEngine, PermissionService, Relation, RelationTuple};
 use db::testing::TestDb;
-use items::{ItemsAccessContext, ItemsService};
+use items::{Item, ItemsAccessContext, ItemsService, NewItem};
 use uuid::Uuid;
 
 /// One isolated, fully migrated database per test.
@@ -44,6 +44,16 @@ impl World {
             Arc::new(kernel::SystemClock),
             self.engine.clone(),
         )
+    }
+
+    /// A real item of `kind` owned by `owner`.
+    pub(crate) async fn item(&self, owner: Uuid, kind: &str, title: &str) -> Item {
+        let new = NewItem {
+            kind: kind.into(),
+            title: title.into(),
+            description: None,
+        };
+        self.items().create(owner, new).await.unwrap()
     }
 
     pub(crate) fn permissions(&self) -> PermissionService<ItemsAccessContext> {
