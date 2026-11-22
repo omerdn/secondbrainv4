@@ -17,7 +17,10 @@ export function DesktopDeepLinks({
     if (listen === null) return;
     return listen((url) => {
       const path = deepLinkPath(url);
-      if (path !== null) router.push(path as Href);
+      if (path === null) return;
+      // Assigned first: CI has no generated typed routes, where Href is plain string.
+      const href = path as Href;
+      router.push(href);
     });
   }, [listen, router]);
   return null;
