@@ -1,0 +1,83 @@
+# Deploys main to the production host (ADR-0021, T0.7.2). Every merge to main ships: images
+# are built here, copied over SSH (no registry) and rolled out by infra/production/deploy.sh.
+# Secrets: DEPLOY_HOST, DEPLOY_SSH_KEY (private key of the `deploy` user), DEPLOY_KNOWN_HOSTS.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  API_URL: https://api.routune.dev
+  TAG: ${{ github.sha }}
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: server/Dockerfile
+          tags: routune-server:${{ env.TAG }}
+          outputs: type=docker,dest=${{ runner.temp }}/server.tar
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,scope=server,mode=max
+
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/production/web.Dockerfile
+          build-args: EXPO_PUBLIC_API_URL=${{ env.API_URL }}
+          tags: routune-web:${{ env.TAG }}
+          outputs: type=docker,dest=${{ runner.temp }}/web.tar
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+
+      - name: Compress images
+        run: gzip -1 "$RUNNER_TEMP/server.tar" "$RUNNER_TEMP/web.tar"
+
+      - name: SSH setup
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Upload files and images
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          scp -i ~/.ssh/deploy_key infra/edge/compose.yaml infra/edge/Caddyfile "deploy@$HOST:/opt/edge/"
+          scp -i ~/.ssh/deploy_key infra/postgres/init/* "deploy@$HOST:/opt/routune/postgres-init/"
+          scp -i ~/.ssh/deploy_key infra/production/compose.yaml infra/production/deploy.sh \
+            infra/production/site.caddy.template "deploy@$HOST:/opt/routune/"
+          scp -i ~/.ssh/deploy_key "$RUNNER_TEMP/server.tar.gz" "$RUNNER_TEMP/web.tar.gz" \
+            "deploy@$HOST:/opt/routune/images/"
+
+      - name: Roll out
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+        run: ssh -i ~/.ssh/deploy_key "deploy@$HOST" "sh /opt/routune/deploy.sh $TAG"
+
+      - name: Public health check
+        run: curl -fsS --retry 5 --retry-delay 5 --retry-all-errors "$API_URL/health"

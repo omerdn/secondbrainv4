@@ -1,4 +1,4 @@
-# Build context of server/Dockerfile and infra/staging/web.Dockerfile is the repository root
+# Build context of server/Dockerfile and infra/production/web.Dockerfile is the repository root
 # (T0.7.1). Keep it small and free of secrets.
 .git
 **/node_modules
@@ -13,6 +13,6 @@ apps/client/src/lib/editor/native/editorHtml.js
 .env
 .env.*
 !.env.example
-infra/staging/.env
+infra/production/.env
 .claude
 .mcp.json

@@ -304,3 +304,35 @@
   - Çerezi `SameSite=None` yapmak: WebKit'in üçüncü taraf çerez engeli (ITP) yine engeller; web'in CSRF korumasını da zayıflatır. Reddedildi.
   - Token'ı WebSocket URL'sinde ya da `Sec-WebSocket-Protocol` başlığında göndermek: token loglara sızabilir; Rust eklentisi header gönderebildiği için gerek yok. Reddedildi.
   - Electron: ADR-0002'de reddedildi; spike bu kararı değiştirecek bir sorun göstermedi.
+
+## ADR-0021 · Barındırma: Türkiye'de tek VDS, tek ortam, ortak edge proxy, merge'de otomatik deploy
+**Durum:** Kabul · 2026-11-22 (sahibin onayıyla; ARCHITECTURE §17'deki ayrı "staging/beta" ortamının yerine geçer)
+
+- **Bağlam:**
+  - E0.7 için bir sunucu ve alan adı gerekiyordu.
+  - Sahip Türkiye'de bir VDS aldı (4 çekirdek, 6 GB, 50 GB SSD, Debian 13) ve `routune.dev` alan adını Cloudflare'den kaydetti. Uygulamanın adı **routune**.
+  - Sahip aynı sunucuda başka Docker servislerini (ör. n8n) de çalıştırmak istiyor.
+  - Gerçek kullanıcı gelene kadar ayrı bir staging ortamına gerek görmüyor: canlı ortam şimdilik staging işlevi görecek.
+- **Karar:**
+  - **Tek ortam:** `main`'e giren her değişiklik canlıya deploy edilir (`.github/workflows/deploy.yml`). Dallar `main`'e girmeden hiçbir şey canlıya çıkmaz.
+  - **Modüler sunucu:**
+    - `/opt/edge` (`infra/edge`): 80/443'ü dinleyen tek container olan ortak Caddy. TLS'i (Let's Encrypt) o sağlar ve `sites/*.caddy` dosyalarını okur.
+    - Her uygulama ayrı bir Compose klasöründe çalışır (`/opt/routune` = `infra/production`, ileride `/opt/n8n`…). Dış `edge` Docker ağına benzersiz bir adla bağlanır ve kendi veritabanını kendi iç ağında tutar.
+  - **Deploy:**
+    - İmajlar GitHub Actions'ta derlenir ve SSH ile `deploy` kullanıcısına kopyalanır. Registry kullanılmaz.
+    - Sunucuda `deploy.sh` imajları yükler, `current` olarak etiketler, servisleri `--wait` ile başlatır, `/health` kontrolü yapar ve son 3 sürümü geri alma için saklar.
+    - Sırlar sunucudaki `/opt/routune/.env` dosyasında durur. Deploy anahtarı ve host bilgisi GitHub secrets'tadır.
+  - **Sunucu güvenliği** (`infra/server/bootstrap.sh`): sadece anahtarla SSH, ufw (22/80/443), fail2ban, otomatik güvenlik güncellemeleri.
+  - DNS Cloudflare'de, kayıtlar **DNS only**. Cloudflare proxy'si kullanılmaz; TLS ve WebSocket doğrudan Caddy'de sonlanır.
+- **Sonuçlar:**
+  - Veri Türkiye'de kalır. Sunucu tarafında KVKK yurt dışı aktarım sorunu doğmaz. Yedeklerin nereye alınacağı (T0.7.3) bu açıdan ayrıca değerlendirilir.
+  - Canlıda geliştirme yapıldığı için migration'lar geriye uyumlu yazılır (genişlet → taşı → daralt). Geri alma imaj etiketiyle yapılır, migration geri alınmaz.
+  - Gerçek bir e-posta sağlayıcısı (aday: Resend) bağlanana kadar sunucu `APP_ENV=staging` ve `EMAIL_DRIVER=log` ile çalışır.
+  - Gerçek kullanıcılar gelince ayrı bir staging ortamı, aynı yapıya ikinci bir uygulama klasörü olarak eklenebilir (`/opt/routune-staging`, başka alt alan adları).
+  - Paylaşılan sunucuda kaynaklar ortak. Başka servisler routune'u etkilememeli; gerekirse Compose'ta bellek sınırı verilir.
+- **Alternatifler:**
+  - Ayrı staging ve production: şimdilik gereksiz maliyet ve bakım. Gerçek kullanıcılarla birlikte yeniden değerlendirilecek.
+  - Dokploy veya Coolify gibi bir panel: n8n kurulumu kolaylaşır, ama panel 0,5–1 GB bellek kullanır ve deploy mantığı repodan panele taşınır. Reddedildi; ileride görsel izleme için hafif bir araç (Portainer) eklenebilir.
+  - Container registry (GHCR) ile pull: paket görünürlüğü ve sunucuya ek bir token gerekir. SSH ile imaj aktarımı tek sunucu için daha sade.
+  - Cloudflare proxy'si (turuncu bulut): DDoS koruması sağlar, ama TLS modu, WebSocket ve gerçek istemci IP'si için ek ayar gerekir. Gerekirse ileride açılır.
+  - Hetzner gibi AB merkezli sağlayıcılar: daha ucuz, ama KVKK yurt dışı aktarım yükü getiriyor.

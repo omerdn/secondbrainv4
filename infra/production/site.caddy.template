@@ -1,0 +1,20 @@
+# Edge site of the app (ADR-0021). deploy.sh renders it with the domains from .env into
+# /opt/edge/sites/routune.caddy. Upstreams are the app's aliases on the `edge` network.
+
+__WEB_DOMAIN__ {
+	import security_headers
+	reverse_proxy routune-web:80
+}
+
+# API and the /ws realtime channel (Caddy proxies WebSocket upgrades as-is).
+__API_DOMAIN__ {
+	import security_headers
+	encode zstd gzip
+	reverse_proxy routune-server:8080 {
+		# The server trusts proxy headers (TRUST_PROXY_HEADERS=true) for rate limiting. Caddy
+		# replaces X-Forwarded-For for untrusted clients; also overwrite the other two so a
+		# client cannot choose its own rate-limit key.
+		header_up X-Real-IP {remote_host}
+		header_up -Forwarded
+	}
+}

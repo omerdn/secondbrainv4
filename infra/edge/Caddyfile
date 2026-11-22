@@ -1,0 +1,14 @@
+# Edge proxy (ADR-0021). Each app owns one file in sites/ (for example routune.caddy written
+# by the routune deploy, n8n.caddy added by hand). Reload after a change:
+#   docker compose -f /opt/edge/compose.yaml exec caddy caddy reload --config /etc/caddy/Caddyfile
+
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
+import /etc/caddy/sites/*.caddy
