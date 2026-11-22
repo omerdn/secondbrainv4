@@ -166,6 +166,349 @@ fn ids(items: &[items::Item]) -> Vec<Uuid> {
     items.iter().map(|i| i.id).collect()
 }
 
+// --- filters and saved views (T1.2.7, F1-F3) ----------------------------------------------------
+
+async fn filtered(w: &World, actor: Uuid, filter: items::ItemFilter) -> HashSet<Uuid> {
+    let page = w
+        .items
+        .filter_items(actor, &filter, &first_page())
+        .await
+        .unwrap();
+    page.items.iter().map(|item| item.id).collect()
+}
+
+#[tokio::test]
+async fn f1_filters_run_only_on_accessible_items() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    let mine = w.items.create(ali, World::task("Mine")).await.unwrap();
+    w.items.create(ayse, World::task("Hers")).await.unwrap();
+    let filter = items::ItemFilter {
+        kinds: Some(vec!["task".into()]),
+        ..items::ItemFilter::default()
+    };
+    assert_eq!(filtered(&w, ali, filter).await, HashSet::from([mine.id]));
+}
+
+#[tokio::test]
+async fn f1_filter_by_tag_uses_only_the_callers_tags() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    let shared = w.items.create(ali, World::task("Shared")).await.unwrap();
+    let other = w.items.create(ali, World::task("Other")).await.unwrap();
+    w.grant(RelationTuple::new(shared.id, R::Watcher, ayse))
+        .await;
+    let alis = w.items.create_tag(ali, tag("Work")).await.unwrap();
+    w.items.attach_tag(ali, shared.id, alis.id).await.unwrap();
+    let by_tag = items::ItemFilter {
+        tag_ids: Some(vec![alis.id]),
+        ..items::ItemFilter::default()
+    };
+    assert_eq!(
+        filtered(&w, ali, by_tag.clone()).await,
+        HashSet::from([shared.id])
+    );
+    assert!(!filtered(&w, ali, by_tag.clone()).await.contains(&other.id));
+    // E2: Ayse cannot learn what Ali tagged by filtering with Ali's tag id.
+    assert!(filtered(&w, ayse, by_tag).await.is_empty());
+}
+
+#[tokio::test]
+async fn f1_filter_by_kind_and_status_and_state() {
+    let w = World::new().await;
+    let ali = Uuid::now_v7();
+    let task = w.items.create(ali, World::task("T")).await.unwrap();
+    let goal = w.items.create(ali, of_kind("goal", "G")).await.unwrap();
+    let archived = w.items.create(ali, World::task("A")).await.unwrap();
+    let trashed = w.items.create(ali, World::task("D")).await.unwrap();
+    w.items.set_archived(ali, archived.id, true).await.unwrap();
+    w.items.set_trashed(ali, trashed.id, true).await.unwrap();
+    sqlx::query("UPDATE items SET status = 'doing' WHERE id = $1")
+        .bind(task.id)
+        .execute(w.db.pool())
+        .await
+        .unwrap();
+
+    let kinds = items::ItemFilter {
+        kinds: Some(vec!["goal".into()]),
+        ..items::ItemFilter::default()
+    };
+    assert_eq!(filtered(&w, ali, kinds).await, HashSet::from([goal.id]));
+    let statuses = items::ItemFilter {
+        statuses: Some(vec!["doing".into(), "done".into()]),
+        ..items::ItemFilter::default()
+    };
+    assert_eq!(filtered(&w, ali, statuses).await, HashSet::from([task.id]));
+    assert_eq!(
+        filtered(&w, ali, items::ItemFilter::default()).await,
+        HashSet::from([task.id, goal.id]),
+        "active by default"
+    );
+    for (state, id) in [
+        (ListState::Archived, archived.id),
+        (ListState::Trash, trashed.id),
+    ] {
+        let filter = items::ItemFilter {
+            state: Some(state),
+            ..items::ItemFilter::default()
+        };
+        assert_eq!(filtered(&w, ali, filter).await, HashSet::from([id]));
+    }
+    // Dimensions combine with AND.
+    let none = items::ItemFilter {
+        kinds: Some(vec!["goal".into()]),
+        statuses: Some(vec!["doing".into()]),
+        ..items::ItemFilter::default()
+    };
+    assert!(filtered(&w, ali, none).await.is_empty());
+}
+
+#[tokio::test]
+async fn f1_filter_by_date_is_half_open() {
+    let w = World::new().await;
+    let ali = Uuid::now_v7();
+    let first = w.items.create(ali, World::task("1")).await.unwrap();
+    let boundary = start() + Duration::days(1);
+    w.clock.set(boundary);
+    let second = w.items.create(ali, World::task("2")).await.unwrap();
+    let date = |from, to| items::ItemFilter {
+        date: Some(items::DateFilter {
+            field: items::DateField::Created,
+            from,
+            to,
+        }),
+        ..items::ItemFilter::default()
+    };
+    assert_eq!(
+        filtered(&w, ali, date(Some(boundary), None)).await,
+        HashSet::from([second.id])
+    );
+    assert_eq!(
+        filtered(&w, ali, date(None, Some(boundary))).await,
+        HashSet::from([first.id])
+    );
+
+    w.clock.set(start() + Duration::days(5));
+    let changes = items::ItemChanges {
+        title: Some("Touched".into()),
+        description: None,
+    };
+    w.items.update(ali, first.id, changes).await.unwrap();
+    let touched_filter = items::ItemFilter {
+        date: Some(items::DateFilter {
+            field: items::DateField::LastTouched,
+            from: None,
+            to: Some(start() + Duration::days(2)),
+        }),
+        ..items::ItemFilter::default()
+    };
+    assert_eq!(
+        filtered(&w, ali, touched_filter).await,
+        HashSet::from([second.id])
+    );
+}
+
+#[tokio::test]
+async fn f1_f3_filter_by_person_accepts_only_friends() {
+    let w = World::new().await;
+    let (ali, ayse, stranger) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
+    w.sharing.befriend(ali, ayse);
+    let with_ayse = w.items.create(ali, World::task("A")).await.unwrap();
+    let with_stranger = w.items.create(ali, World::task("B")).await.unwrap();
+    w.items.create(ali, World::task("Solo")).await.unwrap();
+    // An item only Ayse can see must not come back.
+    w.items.create(ayse, World::task("Hers")).await.unwrap();
+    w.grant(RelationTuple::new(with_ayse.id, R::Watcher, ayse))
+        .await;
+    w.grant(RelationTuple::new(with_stranger.id, R::Watcher, stranger))
+        .await;
+    let people = |list: Vec<Uuid>| items::ItemFilter {
+        people: Some(list),
+        ..items::ItemFilter::default()
+    };
+    assert_eq!(
+        filtered(&w, ali, people(vec![ayse])).await,
+        HashSet::from([with_ayse.id])
+    );
+    // F3: a non-friend is ignored, so nothing can be learned about them.
+    assert!(filtered(&w, ali, people(vec![stranger])).await.is_empty());
+    assert_eq!(
+        filtered(&w, ali, people(vec![ayse, stranger])).await,
+        HashSet::from([with_ayse.id])
+    );
+    w.sharing.unfriend(ali, ayse);
+    assert!(filtered(&w, ali, people(vec![ayse])).await.is_empty());
+}
+
+#[tokio::test]
+async fn f1_filter_by_team_is_empty_until_teams_exist() {
+    let w = World::new().await;
+    let ali = Uuid::now_v7();
+    w.items.create(ali, World::task("Personal")).await.unwrap();
+    let filter = items::ItemFilter {
+        team_ids: Some(vec![Uuid::now_v7()]),
+        ..items::ItemFilter::default()
+    };
+    assert!(filtered(&w, ali, filter).await.is_empty());
+}
+
+fn view(name: &str, filter: items::ItemFilter) -> items::CreateSavedViewRequest {
+    items::CreateSavedViewRequest {
+        name: name.into(),
+        filter,
+        pinned: None,
+        position: None,
+    }
+}
+
+#[tokio::test]
+async fn f2_saved_views_crud_pin_and_privacy() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    let task = w.items.create(ali, World::task("T")).await.unwrap();
+    w.items.create(ali, of_kind("goal", "G")).await.unwrap();
+    let tasks_only = items::ItemFilter {
+        kinds: Some(vec!["task".into()]),
+        ..items::ItemFilter::default()
+    };
+    let first = w
+        .items
+        .create_view(ali, view("Alpha", items::ItemFilter::default()))
+        .await
+        .unwrap();
+    let second = w
+        .items
+        .create_view(ali, view("Tasks", tasks_only.clone()))
+        .await
+        .unwrap();
+    assert_eq!(second.filter, tasks_only);
+    assert!(matches!(
+        w.items
+            .create_view(ali, view("tasks", items::ItemFilter::default()))
+            .await,
+        Err(AppError::Conflict(_))
+    ));
+    // Names are per person.
+    w.items
+        .create_view(ayse, view("Tasks", items::ItemFilter::default()))
+        .await
+        .unwrap();
+
+    let page = w
+        .items
+        .view_items(ali, second.id, &first_page())
+        .await
+        .unwrap();
+    assert_eq!(ids(&page.items), vec![task.id]);
+
+    // Pinned views come first.
+    let pin = items::UpdateSavedViewRequest {
+        pinned: Some(true),
+        ..items::UpdateSavedViewRequest::default()
+    };
+    let pinned = w
+        .items
+        .update_view(ali, second.id, pin.clone())
+        .await
+        .unwrap();
+    assert!(pinned.pinned);
+    let listed: Vec<Uuid> = w
+        .items
+        .list_views(ali)
+        .await
+        .unwrap()
+        .iter()
+        .map(|v| v.id)
+        .collect();
+    assert_eq!(listed, vec![second.id, first.id]);
+
+    // Someone else's view behaves as if it did not exist.
+    assert!(matches!(
+        w.items.update_view(ayse, second.id, pin).await,
+        Err(AppError::NotFound)
+    ));
+    assert!(matches!(
+        w.items.delete_view(ayse, second.id).await,
+        Err(AppError::NotFound)
+    ));
+    assert!(matches!(
+        w.items.view_items(ayse, second.id, &first_page()).await,
+        Err(AppError::NotFound)
+    ));
+
+    w.items.delete_view(ali, second.id).await.unwrap();
+    assert_eq!(w.items.list_views(ali).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn filter_and_view_endpoints() {
+    let w = World::new().await;
+    let (_, token) = w.user("filters@example.com").await;
+    for minute in 0..3 {
+        w.clock.set(start() + Duration::minutes(minute));
+        w.call(
+            Method::POST,
+            "/items",
+            &token,
+            Some(json!({"kind": "task", "title": "T"})),
+        )
+        .await;
+    }
+    w.call(
+        Method::POST,
+        "/items",
+        &token,
+        Some(json!({"kind": "goal", "title": "G"})),
+    )
+    .await;
+    // {"kinds":["task"]}
+    let encoded = "%7B%22kinds%22%3A%5B%22task%22%5D%7D";
+    let uri = format!("/items/filter?filter={encoded}&limit=2");
+    let body = json_body(w.call(Method::GET, &uri, &token, None).await).await;
+    assert_eq!(body["items"].as_array().unwrap().len(), 2);
+    let cursor = body["next_cursor"].as_str().unwrap();
+    let uri = format!("/items/filter?filter={encoded}&limit=2&cursor={cursor}");
+    let body = json_body(w.call(Method::GET, &uri, &token, None).await).await;
+    assert_eq!(body["items"].as_array().unwrap().len(), 1);
+    assert!(body["next_cursor"].is_null());
+
+    let response = w
+        .call(Method::GET, "/items/filter?filter=nope", &token, None)
+        .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let response = w
+        .call(
+            Method::POST,
+            "/saved-views",
+            &token,
+            Some(json!({"name": "Tasks", "filter": {"kinds": ["task"]}, "pinned": true})),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let created = json_body(response).await;
+    assert_eq!(created["pinned"], true);
+    let id = created["id"].as_str().unwrap();
+    let uri = format!("/saved-views/{id}/items");
+    let body = json_body(w.call(Method::GET, &uri, &token, None).await).await;
+    assert_eq!(body["items"].as_array().unwrap().len(), 3);
+    let uri = format!("/saved-views/{id}");
+    let response = w
+        .call(
+            Method::PATCH,
+            &uri,
+            &token,
+            Some(json!({"pinned": false, "position": 2})),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["position"], 2);
+    let response = w.call(Method::DELETE, &uri, &token, None).await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    let body = json_body(w.call(Method::GET, "/saved-views", &token, None).await).await;
+    assert_eq!(body, json!([]));
+}
+
 // --- last_touched_at (T1.2.6, H4) ---------------------------------------------------------------
 
 async fn touched(w: &World, actor: Uuid, item: Uuid) -> DateTime<Utc> {

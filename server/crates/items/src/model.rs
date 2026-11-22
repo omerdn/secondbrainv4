@@ -40,7 +40,7 @@ pub struct Item {
 }
 
 /// Which items a list returns.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export, rename = "ItemListState")]
 pub enum ListState {

@@ -71,6 +71,18 @@ impl From<ItemRow> for Item {
     }
 }
 
+/// The permission a list in `state` needs, and its SQL condition on `items`.
+pub(crate) const fn state_filter(state: ListState) -> (Perms, &'static str) {
+    match state {
+        ListState::Active => (Perms::VIEW, "deleted_at IS NULL AND archived_at IS NULL"),
+        ListState::Archived => (
+            Perms::VIEW,
+            "deleted_at IS NULL AND archived_at IS NOT NULL",
+        ),
+        ListState::Trash => (Perms::DELETE, "deleted_at IS NOT NULL"),
+    }
+}
+
 fn internal(err: impl std::error::Error + Send + Sync + 'static) -> AppError {
     AppError::Internal(Box::new(err))
 }
@@ -163,14 +175,7 @@ impl ItemsService {
         state: ListState,
         tag: Option<Uuid>,
     ) -> Result<Vec<Item>, AppError> {
-        let (required, filter) = match state {
-            ListState::Active => (Perms::VIEW, "deleted_at IS NULL AND archived_at IS NULL"),
-            ListState::Archived => (
-                Perms::VIEW,
-                "deleted_at IS NULL AND archived_at IS NOT NULL",
-            ),
-            ListState::Trash => (Perms::DELETE, "deleted_at IS NOT NULL"),
-        };
+        let (required, filter) = state_filter(state);
         let ids = self
             .access
             .permissions()
