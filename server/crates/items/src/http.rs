@@ -22,6 +22,9 @@
 //! | GET    | `/items/{id}/links` | 200 `ItemLink[]`; hidden ends are left out (V9) |
 //! | PUT    | `/items/{id}/links/{target_id}` | 200 [`ItemLink`]; LINK + target VIEW (V4) |
 //! | DELETE | `/items/{id}/links/{target_id}` | 204; LINK + target VIEW |
+//! | POST   | `/items/{id}/invitations` | 201 [`Invitation`]; SHARE + V1 |
+//! | GET    | `/invitations` | 200 `Invitation[]`: the caller's pending invitations |
+//! | POST   | `/invitations/{id}/accept`, `/invitations/{id}/decline` | 200 [`Invitation`] |
 
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::StatusCode;
@@ -32,6 +35,7 @@ use identity::http::Authenticated;
 use kernel::AppError;
 use uuid::Uuid;
 
+use crate::invitations::{CreateInvitationRequest, Invitation};
 use crate::links::ItemLink;
 use crate::model::{CreateItemRequest, Item, ListQuery, UpdateItemRequest};
 use crate::service::ItemsService;
@@ -71,7 +75,59 @@ pub fn router(state: ItemsHttpState) -> Router {
             "/items/{id}/links/{target_id}",
             put(link_item).delete(unlink_item),
         )
+        .route("/items/{id}/invitations", post(invite))
+        .route("/invitations", get(pending_invitations))
+        .route("/invitations/{id}/accept", post(accept_invitation))
+        .route("/invitations/{id}/decline", post(decline_invitation))
         .with_state(state)
+}
+
+async fn invite(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+    Json(request): Json<CreateInvitationRequest>,
+) -> Result<(StatusCode, Json<Invitation>), AppError> {
+    let invitation = state
+        .items
+        .invite(auth.user_id.as_uuid(), id, request)
+        .await?;
+    Ok((StatusCode::CREATED, Json(invitation)))
+}
+
+async fn pending_invitations(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+) -> Result<Json<Vec<Invitation>>, AppError> {
+    state
+        .items
+        .pending_invitations(auth.user_id.as_uuid())
+        .await
+        .map(Json)
+}
+
+async fn accept_invitation(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Invitation>, AppError> {
+    state
+        .items
+        .accept_invitation(auth.user_id.as_uuid(), id)
+        .await
+        .map(Json)
+}
+
+async fn decline_invitation(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Invitation>, AppError> {
+    state
+        .items
+        .decline_invitation(auth.user_id.as_uuid(), id)
+        .await
+        .map(Json)
 }
 
 async fn item_links(

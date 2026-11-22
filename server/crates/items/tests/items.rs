@@ -4,7 +4,8 @@
 // Integration-test file: panics are the failure mechanism, including in helpers.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 
 use access::{AccessConfig, AccessEngine, Relation as R, RelationTuple};
 use axum::Router;
@@ -27,11 +28,37 @@ fn start() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 11, 22, 12, 0, 0).unwrap()
 }
 
+/// Stand-in for friendships (E3.1): who may share with whom (V1).
+#[derive(Clone, Default)]
+struct FakeSharing(Arc<Mutex<HashSet<(Uuid, Uuid)>>>);
+
+impl FakeSharing {
+    fn befriend(&self, a: Uuid, b: Uuid) {
+        let mut pairs = self.0.lock().unwrap();
+        pairs.insert((a, b));
+        pairs.insert((b, a));
+    }
+
+    fn unfriend(&self, a: Uuid, b: Uuid) {
+        let mut pairs = self.0.lock().unwrap();
+        pairs.remove(&(a, b));
+        pairs.remove(&(b, a));
+    }
+}
+
+impl items::SharingPolicy for FakeSharing {
+    fn can_share(&self, from: Uuid, to: Uuid) -> items::SharingFuture<'_> {
+        let allowed = self.0.lock().unwrap().contains(&(from, to));
+        Box::pin(async move { Ok(allowed) })
+    }
+}
+
 struct World {
     db: TestDb,
     clock: FixedClock,
     access: AccessEngine<ItemsAccessContext>,
     items: ItemsService,
+    sharing: FakeSharing,
     router: Router,
 }
 
@@ -41,7 +68,9 @@ impl World {
         let clock = FixedClock::new(start());
         let shared = Arc::new(clock.clone());
         let access = AccessEngine::new(ItemsAccessContext, AccessConfig::default());
-        let items = ItemsService::new(db.pool().clone(), shared.clone(), access.clone());
+        let sharing = FakeSharing::default();
+        let items = ItemsService::new(db.pool().clone(), shared.clone(), access.clone())
+            .with_sharing(Arc::new(sharing.clone()));
         let identity = IdentityService::new(
             db.pool().clone(),
             shared,
@@ -59,6 +88,7 @@ impl World {
             clock,
             access,
             items,
+            sharing,
             router,
         }
     }
@@ -134,6 +164,281 @@ async fn json_body(response: Response) -> Value {
 
 fn ids(items: &[items::Item]) -> Vec<Uuid> {
     items.iter().map(|i| i.id).collect()
+}
+
+// --- invitations (T1.2.4, G5, V1, V5) -----------------------------------------------------------
+
+fn invite_as(to_user: Uuid, role: items::InvitationRole) -> items::CreateInvitationRequest {
+    items::CreateInvitationRequest { to_user, role }
+}
+
+fn assignee(to_user: Uuid) -> items::CreateInvitationRequest {
+    invite_as(to_user, items::InvitationRole::Assignee)
+}
+
+#[tokio::test]
+async fn g5_accepting_adds_the_member_and_publishes_an_event() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    w.sharing.befriend(ali, ayse);
+    let task = w.items.create(ali, World::task("Plan")).await.unwrap();
+
+    let invitation = w.items.invite(ali, task.id, assignee(ayse)).await.unwrap();
+    assert_eq!(invitation.status, items::InvitationStatus::Pending);
+    assert_eq!(invitation.item_title, "Plan");
+    // No access until accepted.
+    assert!(matches!(
+        w.items.get(ayse, task.id).await,
+        Err(AppError::NotFound)
+    ));
+    let events: Vec<Value> =
+        sqlx::query_scalar("SELECT payload FROM outbox WHERE event_type = 'invitation.created'")
+            .fetch_all(w.db.pool())
+            .await
+            .unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["to_user"], ayse.to_string());
+
+    let inbox = w.items.pending_invitations(ayse).await.unwrap();
+    assert_eq!(inbox, vec![invitation.clone()]);
+    w.clock.set(start() + Duration::hours(1));
+    let accepted = w
+        .items
+        .accept_invitation(ayse, invitation.id)
+        .await
+        .unwrap();
+    assert_eq!(accepted.status, items::InvitationStatus::Accepted);
+    assert_eq!(accepted.responded_at, Some(start() + Duration::hours(1)));
+    assert_eq!(w.items.get(ayse, task.id).await.unwrap().id, task.id);
+    assert!(w.items.pending_invitations(ayse).await.unwrap().is_empty());
+    assert!(matches!(
+        w.items.accept_invitation(ayse, invitation.id).await,
+        Err(AppError::Conflict(_))
+    ));
+}
+
+#[tokio::test]
+async fn g5_declining_changes_nothing() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    w.sharing.befriend(ali, ayse);
+    let task = w.items.create(ali, World::task("Plan")).await.unwrap();
+    let invitation = w.items.invite(ali, task.id, assignee(ayse)).await.unwrap();
+
+    let declined = w
+        .items
+        .decline_invitation(ayse, invitation.id)
+        .await
+        .unwrap();
+    assert_eq!(declined.status, items::InvitationStatus::Declined);
+    assert!(matches!(
+        w.items.get(ayse, task.id).await,
+        Err(AppError::NotFound)
+    ));
+    assert!(matches!(
+        w.items.accept_invitation(ayse, invitation.id).await,
+        Err(AppError::Conflict(_))
+    ));
+    // A new invitation is possible afterwards.
+    w.items.invite(ali, task.id, assignee(ayse)).await.unwrap();
+}
+
+#[tokio::test]
+async fn v1_only_friends_can_be_invited_and_the_default_refuses_everyone() {
+    let w = World::new().await;
+    let (ali, stranger) = (Uuid::now_v7(), Uuid::now_v7());
+    let task = w.items.create(ali, World::task("Plan")).await.unwrap();
+    assert!(matches!(
+        w.items.invite(ali, task.id, assignee(stranger)).await,
+        Err(AppError::Forbidden)
+    ));
+
+    // Production wiring until E3.1: no policy, so nobody can be invited.
+    w.sharing.befriend(ali, stranger);
+    let shared: Arc<FixedClock> = Arc::new(w.clock.clone());
+    let default = ItemsService::new(w.db.pool().clone(), shared, w.access.clone());
+    assert!(matches!(
+        default.invite(ali, task.id, assignee(stranger)).await,
+        Err(AppError::Forbidden)
+    ));
+}
+
+#[tokio::test]
+async fn v5_inviting_needs_share_and_only_the_invitee_can_answer() {
+    let w = World::new().await;
+    let (ali, ayse, can) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
+    w.sharing.befriend(ali, ayse);
+    w.sharing.befriend(ayse, can);
+    let task = w.items.create(ali, World::task("Plan")).await.unwrap();
+    // Cannot see the item.
+    assert!(matches!(
+        w.items.invite(can, task.id, assignee(ayse)).await,
+        Err(AppError::NotFound)
+    ));
+    w.grant(RelationTuple::new(task.id, R::Assignee, can)).await;
+    // A member without SHARE.
+    assert!(matches!(
+        w.items.invite(can, task.id, assignee(ayse)).await,
+        Err(AppError::Forbidden)
+    ));
+
+    let invitation = w.items.invite(ali, task.id, assignee(ayse)).await.unwrap();
+    for other in [ali, can] {
+        assert!(matches!(
+            w.items.accept_invitation(other, invitation.id).await,
+            Err(AppError::NotFound)
+        ));
+        assert!(matches!(
+            w.items.decline_invitation(other, invitation.id).await,
+            Err(AppError::NotFound)
+        ));
+    }
+    assert!(w.items.pending_invitations(can).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn invitations_reject_bad_targets_and_duplicates() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    w.sharing.befriend(ali, ayse);
+    let task = w.items.create(ali, World::task("Plan")).await.unwrap();
+    let page = w.items.create(ali, of_kind("page", "Notes")).await.unwrap();
+    assert!(matches!(
+        w.items.invite(ali, task.id, assignee(ali)).await,
+        Err(AppError::Validation(_))
+    ));
+    assert!(matches!(
+        w.items.invite(ali, page.id, assignee(ayse)).await,
+        Err(AppError::Validation(_))
+    ));
+    assert!(matches!(
+        w.items
+            .invite(ali, task.id, invite_as(ayse, items::InvitationRole::Editor))
+            .await,
+        Err(AppError::Validation(_))
+    ));
+
+    let invitation = w.items.invite(ali, task.id, assignee(ayse)).await.unwrap();
+    assert!(matches!(
+        w.items.invite(ali, task.id, assignee(ayse)).await,
+        Err(AppError::Conflict(_))
+    ));
+    w.items
+        .accept_invitation(ayse, invitation.id)
+        .await
+        .unwrap();
+    assert!(
+        matches!(
+            w.items.invite(ali, task.id, assignee(ayse)).await,
+            Err(AppError::Conflict(_))
+        ),
+        "already a member"
+    );
+}
+
+#[tokio::test]
+async fn accepting_expires_an_invitation_that_is_no_longer_valid() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    w.sharing.befriend(ali, ayse);
+
+    // V1 stopped holding.
+    let unfriended = w.items.create(ali, World::task("A")).await.unwrap();
+    let first = w
+        .items
+        .invite(ali, unfriended.id, assignee(ayse))
+        .await
+        .unwrap();
+    w.sharing.unfriend(ali, ayse);
+    assert!(matches!(
+        w.items.accept_invitation(ayse, first.id).await,
+        Err(AppError::Conflict(_))
+    ));
+    assert!(matches!(
+        w.items.get(ayse, unfriended.id).await,
+        Err(AppError::NotFound)
+    ));
+    assert!(w.items.pending_invitations(ayse).await.unwrap().is_empty());
+
+    // The item went to the trash: hidden from the inbox, and it cannot be accepted.
+    w.sharing.befriend(ali, ayse);
+    let trashed = w.items.create(ali, World::task("B")).await.unwrap();
+    let second = w
+        .items
+        .invite(ali, trashed.id, assignee(ayse))
+        .await
+        .unwrap();
+    w.items.set_trashed(ali, trashed.id, true).await.unwrap();
+    assert!(w.items.pending_invitations(ayse).await.unwrap().is_empty());
+    assert!(matches!(
+        w.items.accept_invitation(ayse, second.id).await,
+        Err(AppError::Conflict(_))
+    ));
+    w.items.set_trashed(ali, trashed.id, false).await.unwrap();
+    assert!(matches!(
+        w.items.get(ayse, trashed.id).await,
+        Err(AppError::NotFound)
+    ));
+}
+
+#[tokio::test]
+async fn purging_an_item_deletes_its_invitations() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    w.sharing.befriend(ali, ayse);
+    let task = w.items.create(ali, World::task("Plan")).await.unwrap();
+    w.items.invite(ali, task.id, assignee(ayse)).await.unwrap();
+    w.items.set_trashed(ali, task.id, true).await.unwrap();
+    let later = start() + TRASH_RETENTION + Duration::hours(1);
+    assert_eq!(w.items.purge_expired(later).await.unwrap(), 1);
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM invitations")
+        .fetch_one(w.db.pool())
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
+}
+
+#[tokio::test]
+async fn invitation_endpoints() {
+    let w = World::new().await;
+    let (ali, ali_token) = w.user("inviter@example.com").await;
+    let (ayse, ayse_token) = w.user("invitee@example.com").await;
+    w.sharing.befriend(ali, ayse);
+    let response = w
+        .call(
+            Method::POST,
+            "/items",
+            &ali_token,
+            Some(json!({"kind": "task", "title": "Shared"})),
+        )
+        .await;
+    let task = json_body(response).await["id"].as_str().unwrap().to_owned();
+
+    let response = w
+        .call(
+            Method::POST,
+            &format!("/items/{task}/invitations"),
+            &ali_token,
+            Some(json!({"to_user": ayse, "role": "assignee"})),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let id = json_body(response).await["id"].as_str().unwrap().to_owned();
+
+    let inbox = json_body(w.call(Method::GET, "/invitations", &ayse_token, None).await).await;
+    assert_eq!(inbox[0]["item_title"], "Shared");
+    assert_eq!(inbox[0]["status"], "pending");
+
+    let uri = format!("/invitations/{id}/accept");
+    let response = w.call(Method::POST, &uri, &ali_token, None).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let response = w.call(Method::POST, &uri, &ayse_token, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["status"], "accepted");
+    let response = w
+        .call(Method::GET, &format!("/items/{task}"), &ayse_token, None)
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
 }
 
 // --- links (T1.2.3, B1-B3, V3, V4, V8, V9) --------------------------------------------------

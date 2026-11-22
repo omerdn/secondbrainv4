@@ -230,6 +230,8 @@ Her spike'ın sonucu bir ADR olarak yazılır.
   - F1, F2
 - **T1.2.8** · Sahibin erişimi düşen sayfa bağlantılarının kaldırılması · backend · S
   - V13
+- **T1.2.9** · Davet uç noktasında hız sınırı · backend · S
+  - ARCHITECTURE hız sınırları; E3.1'de V1 açılmadan önce bitmeli
 
 ### E1.3 · Takip motoru (`tracking`) · bağımlılık: E1.2
 - **T1.3.1** · `trackers` ve `tracker_entries` şeması · backend · S

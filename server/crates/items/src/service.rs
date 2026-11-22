@@ -1,6 +1,8 @@
 //! `ItemsService`: create, read, update, archive, trash, restore and purge (PRD N1–N4, V6,
 //! T1.2.1). Every authorization goes through `access::PermissionService`.
 
+use std::sync::Arc;
+
 use chrono::{DateTime, Duration, Utc};
 use db::PgPool;
 use kernel::{AppError, SharedClock};
@@ -10,6 +12,7 @@ use uuid::Uuid;
 use access::{AccessEngine, Perms, Relation, RelationTuple};
 
 use crate::context::ItemsAccessContext;
+use crate::invitations::{NoSharing, SharingPolicy};
 use crate::model::{Item, ItemChanges, ListState, NewItem, Owner};
 
 /// How long an item stays in the trash before it is purged (N4).
@@ -76,6 +79,7 @@ pub struct ItemsService {
     pub(crate) pool: PgPool,
     pub(crate) clock: SharedClock,
     pub(crate) access: AccessEngine<ItemsAccessContext>,
+    pub(crate) sharing: Arc<dyn SharingPolicy>,
 }
 
 impl ItemsService {
@@ -84,7 +88,15 @@ impl ItemsService {
             pool,
             clock,
             access,
+            sharing: Arc::new(NoSharing),
         }
+    }
+
+    /// Replaces the V1 check. Without this, every invitation is refused ([`NoSharing`]).
+    #[must_use]
+    pub fn with_sharing(mut self, sharing: Arc<dyn SharingPolicy>) -> Self {
+        self.sharing = sharing;
+        self
     }
 
     /// Creates a personal item owned by `actor`; the owner relation is written in the same
@@ -294,6 +306,12 @@ impl ItemsService {
                     .rows_affected();
                 if deleted == 1 {
                     self.access.remove_item(&mut tx, id).await?;
+                    sqlx::query(
+                        "DELETE FROM invitations WHERE kind = 'item_member' AND object_id = $1",
+                    )
+                    .bind(id)
+                    .execute(&mut *tx)
+                    .await?;
                     purged += 1;
                 }
                 tx.commit().await?;

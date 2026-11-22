@@ -3,6 +3,7 @@
 
 mod context;
 pub mod http;
+mod invitations;
 mod links;
 mod model;
 pub mod purge;
@@ -10,6 +11,10 @@ mod service;
 mod tags;
 
 pub use context::ItemsAccessContext;
+pub use invitations::{
+    CreateInvitationRequest, Invitation, InvitationCreated, InvitationRole, InvitationStatus,
+    NoSharing, SharingFuture, SharingPolicy, role_allowed,
+};
 pub use links::{ItemLink, LinkDirection, link_allowed, register_link_cleanup};
 pub use model::{
     CreateItemRequest, DESCRIPTION_MAX_CHARS, Item, ItemChanges, ListQuery, ListState, NewItem,
