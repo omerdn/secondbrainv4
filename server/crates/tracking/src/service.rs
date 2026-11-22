@@ -24,9 +24,9 @@ use crate::repo;
 /// Longest entry note (T2: "short").
 pub const NOTE_MAX_CHARS: usize = 500;
 /// Decimal places a value may have (`numeric(20, 4)`); more is refused rather than rounded.
-const VALUE_MAX_SCALE: u32 = 4;
+pub(crate) const VALUE_MAX_SCALE: u32 = 4;
 /// Values stay below 10^16 (`numeric(20, 4)`).
-const VALUE_LIMIT: Decimal = Decimal::from_parts(1_874_919_424, 2_328_306, 0, false, 0);
+pub(crate) const VALUE_LIMIT: Decimal = Decimal::from_parts(1_874_919_424, 2_328_306, 0, false, 0);
 /// How far ahead of the server clock a device's `occurred_at` may be.
 const CLOCK_SKEW: Duration = Duration::minutes(5);
 
@@ -151,10 +151,10 @@ fn internal(err: impl std::error::Error + Send + Sync + 'static) -> AppError {
 /// Shared handle; cheap to clone.
 #[derive(Clone)]
 pub struct TrackerEntries {
-    pool: PgPool,
-    clock: SharedClock,
-    permissions: PermissionService<ItemsAccessContext>,
-    items: ItemsService,
+    pub(crate) pool: PgPool,
+    pub(crate) clock: SharedClock,
+    pub(crate) permissions: PermissionService<ItemsAccessContext>,
+    pub(crate) items: ItemsService,
     identity: IdentityService,
 }
 
@@ -278,7 +278,11 @@ impl TrackerEntries {
         }
     }
 
-    async fn require_live_tracker(&self, actor: Uuid, tracker: Uuid) -> Result<(), AppError> {
+    pub(crate) async fn require_live_tracker(
+        &self,
+        actor: Uuid,
+        tracker: Uuid,
+    ) -> Result<(), AppError> {
         let item = self.items.get(actor, tracker).await?;
         if item.deleted_at.is_some() {
             return Err(AppError::Conflict(

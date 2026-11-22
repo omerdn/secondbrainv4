@@ -4,19 +4,23 @@
 //!
 //! | Method | Path | Response |
 //! |---|---|---|
+//! | POST   | `/trackers` | 201 [`TrackerView`]; creates the item and its definition |
+//! | GET    | `/trackers/{id}` | 200 [`TrackerView`]; VIEW |
+//! | PATCH  | `/trackers/{id}` | 200 [`TrackerView`]; EDIT |
 //! | POST   | `/trackers/{id}/entries` | 201 [`EntryView`]; EDIT |
 //! | GET    | `/trackers/{id}/entries?from=&to=&limit=&cursor=` | 200 `Page<TrackerEntry>`; VIEW |
 //! | DELETE | `/trackers/{id}/entries/{entry_id}` | 204; own: EDIT, someone else's: MANAGE |
 
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::StatusCode;
-use axum::routing::{delete, post};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use identity::IdentityService;
 use identity::http::Authenticated;
 use kernel::{AppError, Page, PageParams, PageRequest};
 use uuid::Uuid;
 
+use crate::definitions::{CreateTrackerRequest, TrackerView, UpdateTrackerRequest};
 use crate::service::{CreateEntryRequest, EntryView, ListEntriesQuery, TrackerEntries};
 
 /// State of the tracker routes.
@@ -35,9 +39,48 @@ impl FromRef<TrackingHttpState> for IdentityService {
 /// The tracker routes.
 pub fn router(state: TrackingHttpState) -> Router {
     Router::new()
+        .route("/trackers", post(create_tracker))
+        .route("/trackers/{id}", get(read_tracker).patch(update_tracker))
         .route("/trackers/{id}/entries", post(add_entry).get(list_entries))
         .route("/trackers/{id}/entries/{entry_id}", delete(delete_entry))
         .with_state(state)
+}
+
+async fn create_tracker(
+    State(state): State<TrackingHttpState>,
+    Authenticated(auth): Authenticated,
+    Json(request): Json<CreateTrackerRequest>,
+) -> Result<(StatusCode, Json<TrackerView>), AppError> {
+    let tracker = state
+        .entries
+        .create_tracker(auth.user_id.as_uuid(), request)
+        .await?;
+    Ok((StatusCode::CREATED, Json(tracker)))
+}
+
+async fn read_tracker(
+    State(state): State<TrackingHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+) -> Result<Json<TrackerView>, AppError> {
+    state
+        .entries
+        .tracker(auth.user_id.as_uuid(), id)
+        .await
+        .map(Json)
+}
+
+async fn update_tracker(
+    State(state): State<TrackingHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateTrackerRequest>,
+) -> Result<Json<TrackerView>, AppError> {
+    state
+        .entries
+        .update_tracker(auth.user_id.as_uuid(), id, request)
+        .await
+        .map(Json)
 }
 
 async fn add_entry(
