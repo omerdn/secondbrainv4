@@ -8,16 +8,29 @@ import { StatusBar } from "expo-status-bar";
 import { I18nextProvider } from "react-i18next";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
-import { ConnectivityProvider } from "@/connectivity";
+import { ConnectivityGate, ConnectivityProvider, useOnConnected } from "@/connectivity";
 import { LanguageSync, SessionProvider, useSession } from "@/features/auth";
 import { api, idempotencyKey, queryClient } from "@/lib/api";
 import { i18n } from "@/lib/i18n";
+
+/**
+ * A session restore that failed for lack of connection is retried when the connection comes
+ * up (only then, so a server answering 5xx is not retried in a loop).
+ */
+function SessionRecovery() {
+  const { state, retry } = useSession();
+  useOnConnected(() => {
+    if (state.status === "unavailable") retry();
+  });
+  return null;
+}
 
 /** Connection state machine (T0.5.3); the session decides between `/ws` and the probe. */
 function Connectivity({ children }: { children: ReactNode }) {
   const { state } = useSession();
   return (
     <ConnectivityProvider authenticated={state.status === "signedIn"}>
+      <SessionRecovery />
       {children}
     </ConnectivityProvider>
   );
@@ -27,7 +40,7 @@ function ThemedStatusBar() {
   return <StatusBar style={useScheme() === "dark" ? "light" : "dark"} />;
 }
 
-/** Root layout: API + query client, session (T0.4.5), connectivity (T0.5.3), i18n (T0.4.7), theme (ADR-0017), one stack for every platform (ADR-0012). */
+/** Root layout: API + query client, session (T0.4.5), connectivity (T0.5.3) and its screens (T0.5.4), i18n (T0.4.7), theme (ADR-0017), one stack for every platform (ADR-0012). */
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
@@ -39,7 +52,9 @@ export default function RootLayout() {
               <ThemeProvider>
                 <ToastProvider>
                   <ThemedStatusBar />
-                  <Stack screenOptions={{ headerShown: false }} />
+                  <ConnectivityGate>
+                    <Stack screenOptions={{ headerShown: false }} />
+                  </ConnectivityGate>
                 </ToastProvider>
               </ThemeProvider>
             </Connectivity>
