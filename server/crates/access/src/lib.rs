@@ -3,6 +3,7 @@
 //! Owns the `access_relations` and `item_access` tables (ARCHITECTURE §5.11, §6). Other crates
 //! never touch them with SQL (ADR-0007).
 
+mod compute;
 mod model;
 #[cfg_attr(
     not(test),
@@ -13,4 +14,7 @@ mod model;
 )]
 mod repo;
 
+pub use compute::{
+    Access, AccessGraph, ItemAttrs, Reason, RolePolicy, TeamRole, TeamVisibility, compute_access,
+};
 pub use model::{ObjectType, Perms, Relation, RelationTuple, SubjectType};
