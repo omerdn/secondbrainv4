@@ -187,6 +187,12 @@ impl<C: AccessContext> AccessEngine<C> {
         &self.ctx
     }
 
+    /// The read side: permission checks, listing, explanations and previews.
+    #[must_use]
+    pub fn permissions(&self) -> crate::PermissionService<C> {
+        crate::PermissionService::new(Arc::clone(&self.ctx))
+    }
+
     /// Adds a relation and recomputes the affected items. Returns `false` (and recomputes nothing)
     /// if the relation already existed. Call it inside the transaction that makes the domain
     /// change.
@@ -341,8 +347,8 @@ enum Write {
 /// Loads just enough of the relation graph from the database, level by level, driven by the pure
 /// functions that decide what is needed.
 #[derive(Default)]
-struct Loader {
-    graph: AccessGraph,
+pub(crate) struct Loader {
+    pub(crate) graph: AccessGraph,
     forward_loaded: HashSet<(ObjectType, Uuid)>,
     reverse_loaded: HashSet<Uuid>,
 }
@@ -355,7 +361,7 @@ impl Loader {
     }
 
     /// Loads reverse edges until the affected set stops growing.
-    async fn affected(
+    pub(crate) async fn affected(
         &mut self,
         conn: &mut PgConnection,
         change: &Change,
@@ -405,7 +411,7 @@ impl Loader {
     }
 
     /// Loads forward edges until everything `compute_access` reads for `items` is present.
-    async fn load_compute_inputs(
+    pub(crate) async fn load_compute_inputs(
         &mut self,
         conn: &mut PgConnection,
         items: &BTreeSet<Uuid>,
@@ -424,7 +430,7 @@ impl Loader {
         }
     }
 
-    async fn load_context(
+    pub(crate) async fn load_context(
         &mut self,
         conn: &mut PgConnection,
         ctx: &impl AccessContext,

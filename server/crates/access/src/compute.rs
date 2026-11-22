@@ -4,12 +4,14 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use uuid::Uuid;
 
 use crate::model::{ObjectType, Perms, Relation, RelationTuple};
 
 /// A team role, highest first.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum TeamRole {
     Admin,
@@ -91,8 +93,10 @@ pub struct ItemAttrs {
     pub created_by: Option<Uuid>,
 }
 
-/// Why a user has access ("Why am I seeing this?", V11). Stored in `item_access.reasons`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Why a user has access ("Why am I seeing this?", V11). Stored in `item_access.reasons`,
+/// sorted in declaration order: direct relations first, inherited ones last.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
+#[ts(export, rename = "AccessReason")]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Reason {
     /// Personal owner.
@@ -130,7 +134,7 @@ impl Reason {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Access {
     pub perms: Perms,
-    /// Distinct reasons, in the order they were found.
+    /// Distinct reasons, sorted (see [`Reason`]).
     pub reasons: Vec<Reason>,
 }
 
@@ -180,6 +184,33 @@ impl AccessGraph {
                 .entry(tuple.subject_id())
                 .or_default()
                 .push(tuple.object_id());
+        }
+    }
+
+    /// Whether the graph holds `tuple`.
+    pub(crate) fn contains(&self, tuple: RelationTuple) -> bool {
+        self.edges(tuple.object_type(), tuple.object_id())
+            .contains(&(tuple.relation(), tuple.subject_id()))
+    }
+
+    /// Removes a tuple, if present.
+    pub(crate) fn remove(&mut self, tuple: RelationTuple) {
+        if let Some(edges) = self
+            .relations
+            .get_mut(&(tuple.object_type(), tuple.object_id()))
+        {
+            let before = edges.len();
+            edges.retain(|e| *e != (tuple.relation(), tuple.subject_id()));
+            if edges.len() < before
+                && let Some(deps) = self.dependents.get_mut(&tuple.subject_id())
+                && let Some(pos) = deps.iter().position(|o| *o == tuple.object_id())
+                && matches!(
+                    tuple.relation(),
+                    Relation::LinkedTo | Relation::InNotebook | Relation::OwnedBy
+                )
+            {
+                deps.remove(pos);
+            }
         }
     }
 
@@ -311,6 +342,9 @@ fn compute(
         }
     }
     visiting.remove(&item);
+    for access in result.values_mut() {
+        access.reasons.sort_unstable();
+    }
     result
 }
 

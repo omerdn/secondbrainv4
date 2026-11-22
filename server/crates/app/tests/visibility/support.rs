@@ -1,23 +1,50 @@
-//! Shared fixtures for the visibility suite. Grows with the access engine: T1.1.5 adds users and
-//! items through the public services, T3.1.1 friendships, T5.1.1 teams.
+//! Shared fixtures for the visibility suite: relations go through the access engine (T1.1.3), checks
+//! through `PermissionService` (T1.1.5). Grows with items (T1.2.1), friendships (T3.1.1), teams (T5.1.1).
 
+use access::{
+    AccessConfig, AccessEngine, DefaultAccessContext, PermissionService, Relation, RelationTuple,
+};
 use db::testing::TestDb;
+use uuid::Uuid;
 
 /// One isolated, fully migrated database per test.
 pub(crate) struct World {
     db: TestDb,
+    engine: AccessEngine<DefaultAccessContext>,
 }
 
 impl World {
     pub(crate) async fn new() -> Self {
         Self {
             db: TestDb::new().await,
+            engine: AccessEngine::new(DefaultAccessContext, AccessConfig::default()),
         }
     }
 
     pub(crate) fn pool(&self) -> &db::PgPool {
         self.db.pool()
     }
+
+    pub(crate) fn permissions(&self) -> PermissionService<DefaultAccessContext> {
+        self.engine.permissions()
+    }
+
+    /// Writes relations through the access engine in one committed transaction.
+    pub(crate) async fn grant(&self, tuples: &[RelationTuple]) {
+        let mut tx = self.pool().begin().await.unwrap();
+        for tuple in tuples {
+            self.engine.grant(&mut tx, *tuple).await.unwrap();
+        }
+        tx.commit().await.unwrap();
+    }
+}
+
+pub(crate) fn id() -> Uuid {
+    Uuid::now_v7()
+}
+
+pub(crate) fn t(object: Uuid, relation: Relation, subject: Uuid) -> RelationTuple {
+    RelationTuple::new(object, relation, subject)
 }
 
 /// Body of a scenario whose behaviour is not implemented yet. The test is `#[ignore]`d with the
