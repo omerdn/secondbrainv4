@@ -5,6 +5,14 @@ version = 4
 [[package]]
 name = "access"
 version = "0.0.0"
+dependencies = [
+ "db",
+ "proptest",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
 
 [[package]]
 name = "addr2line"
