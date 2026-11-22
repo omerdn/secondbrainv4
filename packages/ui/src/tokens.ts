@@ -161,4 +161,6 @@ export const layout = {
   tabBarHeight: 56,
   /** Readable content width on wide screens. */
   contentMaxWidth: 960,
+  /** Narrower column for forms and settings on wide screens (T0.7.5). */
+  formMaxWidth: 640,
 } as const;

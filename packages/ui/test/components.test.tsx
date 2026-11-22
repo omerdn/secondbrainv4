@@ -58,6 +58,13 @@ describe("Button", () => {
     expect(screen.getByTestId("button-spinner")).toBeOnTheScreen();
   });
 
+  it("renders the quiet danger variant and still calls onPress", async () => {
+    const onPress = jest.fn();
+    await render(<Button title="Sign out" variant="dangerOutline" onPress={onPress} />);
+    await act(() => fireEvent.press(screen.getByRole("button", { name: "Sign out" })));
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
   it("does nothing when disabled", async () => {
     const onPress = jest.fn();
     await render(<Button title="Save" disabled onPress={onPress} />);

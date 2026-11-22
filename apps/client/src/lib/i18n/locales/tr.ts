@@ -6,7 +6,22 @@
 export const tr = {
   common: {
     loading: "Yükleniyor",
-    comingSoon: { title: "Yakında", description: "Bu bölüm sonraki sürümlerde gelecek." },
+    tagline: "Görevlerin, rutinlerin ve notların tek yerde.",
+    comingSoon: {
+      title: "Yakında",
+      description: "Bu bölüm sonraki sürümlerde gelecek.",
+      sections: {
+        today: "Günün görevleri, rutinleri ve hedefleri burada bir araya gelecek.",
+        tasks: "Alt görevli görevlerin ve kişisel kanban panon burada olacak.",
+        routines: "Tekrarlayan rutinlerini ve serilerini buradan takip edeceksin.",
+        goals: "Hedeflerini ve ilerlemelerini burada göreceksin.",
+        trackers: "Ölçmek istediğin her şeyi buradan takip edeceksin.",
+        notebooks: "Defterlerin ve birlikte düzenlediğin sayfalar burada olacak.",
+        calendar: "Görev ve rutinlerin takvim görünümü burada olacak.",
+        settings: "Bu bölüm sonraki sürümlerde gelecek.",
+        more: "Bu bölüm sonraki sürümlerde gelecek.",
+      },
+    },
     notFound: { title: "Sayfa bulunamadı", home: "Ana sayfaya dön" },
   },
   connectivity: {
@@ -33,6 +48,7 @@ export const tr = {
     more: "Daha fazla",
   },
   settings: {
+    account: "Hesap",
     language: "Dil",
     languages: { tr: "Türkçe", en: "English" },
     languageFailed: "Dil değiştirilemedi. Tekrar dene.",

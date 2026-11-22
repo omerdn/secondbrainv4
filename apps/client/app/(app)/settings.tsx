@@ -19,11 +19,20 @@ export default function Settings() {
   );
 
   return (
-    <Screen title={t("nav.settings")}>
+    <Screen title={t("nav.settings")} width="form">
       {state.status === "signedIn" ? (
-        <Card className="gap-1">
-          <Text variant="heading">{state.user.display_name}</Text>
-          <Text tone="muted">{state.user.email}</Text>
+        <Card className="gap-3">
+          <View className="gap-1">
+            <Text variant="label">{t("settings.account")}</Text>
+            <Text variant="heading">{state.user.display_name}</Text>
+            <Text tone="muted">{state.user.email}</Text>
+          </View>
+          <Button
+            title={t("auth.session.signOut")}
+            variant="dangerOutline"
+            className="self-start"
+            onPress={() => void signOut()}
+          />
         </Card>
       ) : null}
       <Card className="gap-3">
@@ -45,11 +54,6 @@ export default function Settings() {
         </View>
         {setLocale.isError ? <Text tone="danger">{t("settings.languageFailed")}</Text> : null}
       </Card>
-      <Button
-        title={t("auth.session.signOut")}
-        variant="secondary"
-        onPress={() => void signOut()}
-      />
     </Screen>
   );
 }
