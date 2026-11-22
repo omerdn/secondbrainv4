@@ -267,7 +267,7 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 **Çıkış kriteri:**
 - Görev, rutin, hedef, takip, defter, Work Session, Bugün ekranı, takvim, arama ve bildirim merkezi uçtan uca çalışıyor.
 - Kritik akışların Playwright testleri var.
-- Her epic sonunda iOS simülatöründe kısa doğrulama yapıldı.
+- Her epic sonunda web'de kısa doğrulama yapıldı (ADR-0024).
 
 ### E2.1 · Görevler · bağımlılık: F1
 - **T2.1.1** · Görev, alt kırılım ve atanan kişiler: şema ve API · backend · M
@@ -478,6 +478,8 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 
 > **Not (ADR-0023, 2026-11-22):** E4.1'in dağıtım ve güncelleme görevleri ile E4.2'deki T4.2.5–T4.2.7, sahibin kararıyla F1'den önce yapılır.
 
+> **Not (ADR-0024, 2026-11-22):** Kalan platform işleri (T4.1.2, T4.2.1–T4.2.3) ve beta paketlerinin çıkarılması tüm fazlar bittikten sonra yapılır. Ücretli Apple Developer hesabı gerektiren iş yapılmaz; iOS push kapsam dışıdır. T4.2.3 sadece Android'de, FCM ile yapılır. T4.3.3 yasal onay altyapısına dönüştü; metinler T4.3.6'ya taşındı ve en sona kaldı. T4.3.4 (uygulama içi geri bildirim) en sona kaldı; beta geri bildirimleri GitHub issue'larıyla toplanır. T4.4.2 ADR-0021 gereği yapılmaz.
+
 ### E4.1 · Masaüstü · bağımlılık: T0.6.3
 - **T4.1.1** · Tauri 2 uygulaması · infra · M
   - Web build'inin paketlenmesi
@@ -496,7 +498,7 @@ Her spike'ın sonucu bir ADR olarak yazılır.
   - Navigasyon, klavye davranışı, güvenli alanlar, jestler
 - **T4.2.2** · Mobil editör · client · M
   - 10tap-editor entegrasyonu
-- **T4.2.3** · Push bildirimleri (Expo Push) · backend · M
+- **T4.2.3** · Android push bildirimleri (FCM) · backend · M
   - Cihaz token yönetimi
 - **T4.2.4** · Web Push · backend · S
 - **T4.2.5** · Mobil paketler (CI) · infra · M
@@ -511,12 +513,14 @@ Her spike'ın sonucu bir ADR olarak yazılır.
   - 30 gün sonra otomatik devir ve silme işi (HS2)
 - **T4.3.2** · Veri dışa aktarma · backend · M
   - JSON ve Markdown (HS3)
-- **T4.3.3** · Yasal metin sayfaları · docs · S
-  - Gizlilik politikası, KVKK aydınlatma metni, kullanım koşulları (HS5)
+- **T4.3.3** · Yasal onay altyapısı · backend · M
+  - Yer tutucu metinli sayfalar, kayıtta zorunlu onay, onay sürümünün kaydı (HS5)
 - **T4.3.4** · Uygulama içi geri bildirim ve hata bildirimi · client · S
 - **T4.3.5** · Haftalık özet · backend · M
   - Hesaplama işi
   - E-posta ve uygulama içi gösterim (OZ1)
+- **T4.3.6** · Yasal metinler · docs · S
+  - Gizlilik politikası, KVKK aydınlatma metni, kullanım koşulları (HS5); en sona
 
 ### E4.4 · Beta
 - **T4.4.1** · Beta kurulum dokümanı · docs · S

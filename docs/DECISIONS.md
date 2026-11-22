@@ -381,3 +381,26 @@
   - EAS Build ve EAS Update: kurulumu hızlı, ama Expo hesabı ve üçüncü taraf hizmeti gerektirir. Kendi CI ve sunucumuz tercih edildi; gerekirse geçiş kolaydır.
   - TestFlight ve notarization: ücretli Apple hesabı gerektirir; şimdilik reddedildi.
   - Masaüstünde uzak web adresini yüklemek (her zaman güncel): ADR-0020'de güvenlik nedeniyle reddedildi.
+
+## ADR-0024 · Web öncelikli geliştirme; platform paketleri ve native özellikler en sona
+**Durum:** Kabul · 2026-11-22 (sahibin onayıyla; ADR-0023'ün altyapısını korur, sürüm çıkarma zamanlamasını değiştirir)
+
+- **Bağlam:**
+  - Uygulama tüm fazlar bitince arkadaşlara beta olarak gönderilecek. O zamana kadar ihtiyaç, işlevleri çalışan bir uygulama.
+  - Her platformda ayrı kontrol ve ara sürüm çıkarmak iş yükünü ve maliyeti artırıyor.
+  - Ücretli Apple Developer hesabı yok ve alınmayacak (ADR-0023).
+- **Karar:**
+  - Geliştirme ve doğrulama web'de yapılır. `main`'e düzenli merge edilir; sahip küçük kontrolleri https://app.routune.dev üzerinden yapar.
+  - Masaüstü (`desktop-v*`) ve mobil (`mobile-v*`) paketleri tüm fazlar bitene kadar çıkarılmaz. İlk beta paketleri en sonda üretilir. ADR-0023'teki CI, otomatik güncelleme, OTA ve minimum sürüm altyapısı olduğu gibi kalır.
+  - Platform kontrolü (iOS simülatörü, Android, masaüstü) sadece kritik ve platforma özgü davranışlarda yapılır; epic kapanışındaki kontrol web'dedir.
+  - Native özellikler ve platform işleri en sona bırakılır ve board'da `zamanlama:en-son` etiketiyle işaretlenir: masaüstü bildirimleri (T4.1.2), mobil uyumluluk turu (T4.2.1), mobil editör (T4.2.2), Android push (T4.2.3), Android'de Google ile giriş (T0.4.11), uygulama içi geri bildirim (T4.3.4).
+  - Ücretli Apple Developer hesabı gerektiren hiçbir iş yapılmaz (ör. iOS push, TestFlight). iOS imzasız IPA ile desteklenmeye devam eder.
+  - Mobil push sadece Android'de, Firebase Cloud Messaging ile yapılır; ayrıntılı karar T4.2.3'te ayrı bir ADR olarak yazılır.
+  - Android'de Apple ile giriş sunulmaz; Android'deki seçenekler e-posta + şifre ve Google'dır.
+  - Beta geri bildirimleri şimdilik GitHub issue'larıyla toplanır.
+- **Sonuçlar:**
+  - İş yükü ve CI maliyeti düşer; geri bildirim döngüsü web üzerinden hızlanır.
+  - Platforma özgü hatalar geç fark edilebilir. Bunu azaltmak için kritik native davranışlar yine kontrol edilir ve beta öncesine bir uyumluluk turu (T4.2.1) konur.
+  - React Native bileşen kuralı (ADR-0012) sürdüğü için arayüz kodu platformlara taşınabilir kalır.
+- **Alternatifler:**
+  - Her epic sonunda iOS simülatöründe kontrol ve düzenli ara sürümler: zaman ve maliyet nedeniyle şimdilik reddedildi.
