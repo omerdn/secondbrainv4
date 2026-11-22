@@ -11,10 +11,18 @@
 //! | POST   | `/items/{id}/archive`, `/items/{id}/unarchive` | 200 [`Item`]; MANAGE |
 //! | DELETE | `/items/{id}` | 200 [`Item`] moved to the trash; owner only (V6) |
 //! | POST   | `/items/{id}/restore` | 200 [`Item`]; owner only |
+//! | GET    | `/items/{id}/tags` | 200 `Tag[]`: the caller's own tags on the item (E2) |
+//! | PUT    | `/items/{id}/tags/{tag_id}` | 204; attach the caller's tag; VIEW |
+//! | DELETE | `/items/{id}/tags/{tag_id}` | 204; detach the caller's tag; VIEW |
+//! | POST   | `/tags` | 201 [`Tag`]; body [`CreateTagRequest`]; 409 for a taken name |
+//! | GET    | `/tags` | 200 `Tag[]`: the tags the caller can see (E4) |
+//! | PATCH  | `/tags/{id}` | 200 [`Tag`]; body [`UpdateTagRequest`]; 404 if not theirs |
+//! | DELETE | `/tags/{id}` | 204; 404 if not theirs |
+//! | GET    | `/tags/{id}/items?state=…` | 200 `Item[]`: accessible items with the tag (E4) |
 
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::StatusCode;
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
 use identity::IdentityService;
 use identity::http::Authenticated;
@@ -23,6 +31,7 @@ use uuid::Uuid;
 
 use crate::model::{CreateItemRequest, Item, ListQuery, UpdateItemRequest};
 use crate::service::ItemsService;
+use crate::tags::{CreateTagRequest, Tag, UpdateTagRequest};
 
 /// State of the item routes.
 #[derive(Clone)]
@@ -45,7 +54,108 @@ pub fn router(state: ItemsHttpState) -> Router {
         .route("/items/{id}/archive", post(archive))
         .route("/items/{id}/unarchive", post(unarchive))
         .route("/items/{id}/restore", post(restore))
+        .route("/items/{id}/tags", get(item_tags))
+        .route(
+            "/items/{id}/tags/{tag_id}",
+            put(attach_tag).delete(detach_tag),
+        )
+        .route("/tags", post(create_tag).get(list_tags))
+        .route("/tags/{id}", patch(update_tag).delete(delete_tag))
+        .route("/tags/{id}/items", get(items_by_tag))
         .with_state(state)
+}
+
+async fn item_tags(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<Tag>>, AppError> {
+    state
+        .items
+        .item_tags(auth.user_id.as_uuid(), id)
+        .await
+        .map(Json)
+}
+
+async fn attach_tag(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path((id, tag_id)): Path<(Uuid, Uuid)>,
+) -> Result<StatusCode, AppError> {
+    state
+        .items
+        .attach_tag(auth.user_id.as_uuid(), id, tag_id)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn detach_tag(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path((id, tag_id)): Path<(Uuid, Uuid)>,
+) -> Result<StatusCode, AppError> {
+    state
+        .items
+        .detach_tag(auth.user_id.as_uuid(), id, tag_id)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn create_tag(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Json(request): Json<CreateTagRequest>,
+) -> Result<(StatusCode, Json<Tag>), AppError> {
+    let new = request.validate()?;
+    let tag = state.items.create_tag(auth.user_id.as_uuid(), new).await?;
+    Ok((StatusCode::CREATED, Json(tag)))
+}
+
+async fn list_tags(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+) -> Result<Json<Vec<Tag>>, AppError> {
+    state
+        .items
+        .list_tags(auth.user_id.as_uuid())
+        .await
+        .map(Json)
+}
+
+async fn update_tag(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateTagRequest>,
+) -> Result<Json<Tag>, AppError> {
+    let changes = request.validate()?;
+    state
+        .items
+        .update_tag(auth.user_id.as_uuid(), id, changes)
+        .await
+        .map(Json)
+}
+
+async fn delete_tag(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    state.items.delete_tag(auth.user_id.as_uuid(), id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn items_by_tag(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+    Query(query): Query<ListQuery>,
+) -> Result<Json<Vec<Item>>, AppError> {
+    state
+        .items
+        .items_by_tag(auth.user_id.as_uuid(), id, query.state.unwrap_or_default())
+        .await
+        .map(Json)
 }
 
 async fn create(

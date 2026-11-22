@@ -136,6 +136,167 @@ fn ids(items: &[items::Item]) -> Vec<Uuid> {
     items.iter().map(|i| i.id).collect()
 }
 
+// --- tags (T1.2.2, E1, E2, E4) -----------------------------------------------------------------
+
+fn tag(name: &str) -> items::NewTag {
+    items::NewTag {
+        name: name.into(),
+        color: None,
+    }
+}
+
+#[tokio::test]
+async fn personal_tag_on_shared_item_is_invisible_to_other_members() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    let item = w.items.create(ali, World::task("Shared")).await.unwrap();
+    w.grant(RelationTuple::new(item.id, R::Assignee, ayse))
+        .await;
+    let alis = w.items.create_tag(ali, tag("Private")).await.unwrap();
+    let ayses = w.items.create_tag(ayse, tag("Mine")).await.unwrap();
+    w.items.attach_tag(ali, item.id, alis.id).await.unwrap();
+    w.items.attach_tag(ayse, item.id, ayses.id).await.unwrap();
+
+    // E2: each member sees only their own tag on the same item.
+    let seen = w.items.item_tags(ali, item.id).await.unwrap();
+    assert_eq!(seen, vec![alis.clone()]);
+    let seen = w.items.item_tags(ayse, item.id).await.unwrap();
+    assert_eq!(seen, vec![ayses.clone()]);
+
+    // E4: the tag list holds only the caller's tags.
+    assert_eq!(w.items.list_tags(ayse).await.unwrap(), vec![ayses.clone()]);
+
+    // E2: someone else's tag behaves as if it did not exist.
+    let changes = items::TagChanges {
+        name: Some("Stolen".into()),
+        color: None,
+    };
+    for result in [
+        w.items.attach_tag(ayse, item.id, alis.id).await,
+        w.items.detach_tag(ayse, item.id, alis.id).await,
+        w.items.delete_tag(ayse, alis.id).await,
+        w.items.update_tag(ayse, alis.id, changes).await.map(|_| ()),
+        w.items
+            .items_by_tag(ayse, alis.id, ListState::Active)
+            .await
+            .map(|_| ()),
+    ] {
+        assert!(matches!(result, Err(AppError::NotFound)));
+    }
+    assert_eq!(w.items.item_tags(ali, item.id).await.unwrap(), vec![alis]);
+}
+
+#[tokio::test]
+async fn items_by_tag_returns_only_accessible_items() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    let shared = w.items.create(ali, World::task("Shared")).await.unwrap();
+    let own = w.items.create(ayse, World::task("Own")).await.unwrap();
+    let untagged = w.items.create(ayse, World::task("Untagged")).await.unwrap();
+    let tuple = RelationTuple::new(shared.id, R::Assignee, ayse);
+    w.grant(tuple).await;
+    let label = w.items.create_tag(ayse, tag("Label")).await.unwrap();
+    w.items.attach_tag(ayse, shared.id, label.id).await.unwrap();
+    w.items.attach_tag(ayse, own.id, label.id).await.unwrap();
+    // Attaching twice is a no-op.
+    w.items.attach_tag(ayse, own.id, label.id).await.unwrap();
+
+    let found = w
+        .items
+        .items_by_tag(ayse, label.id, ListState::Active)
+        .await
+        .unwrap();
+    assert_eq!(found.len(), 2);
+    assert!(!ids(&found).contains(&untagged.id));
+
+    // Access revoked: the tag stays, but the item no longer appears and cannot be re-tagged.
+    let mut tx = w.db.pool().begin().await.unwrap();
+    w.access.revoke(&mut tx, tuple).await.unwrap();
+    tx.commit().await.unwrap();
+    let found = w
+        .items
+        .items_by_tag(ayse, label.id, ListState::Active)
+        .await
+        .unwrap();
+    assert_eq!(ids(&found), vec![own.id]);
+    assert!(matches!(
+        w.items.attach_tag(ayse, shared.id, label.id).await,
+        Err(AppError::NotFound)
+    ));
+}
+
+#[tokio::test]
+async fn tag_names_are_unique_per_owner_and_trash_blocks_attaching() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    let first = w.items.create_tag(ali, tag("Work")).await.unwrap();
+    assert!(matches!(
+        w.items.create_tag(ali, tag("work")).await,
+        Err(AppError::Conflict(_))
+    ));
+    w.items.create_tag(ayse, tag("Work")).await.unwrap();
+
+    let item = w.items.create(ali, World::task("Task")).await.unwrap();
+    w.items.set_trashed(ali, item.id, true).await.unwrap();
+    assert!(matches!(
+        w.items.attach_tag(ali, item.id, first.id).await,
+        Err(AppError::Conflict(_))
+    ));
+    w.items.set_trashed(ali, item.id, false).await.unwrap();
+    w.items.attach_tag(ali, item.id, first.id).await.unwrap();
+
+    // Deleting the tag detaches it.
+    w.items.delete_tag(ali, first.id).await.unwrap();
+    assert!(w.items.item_tags(ali, item.id).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn tag_endpoints() {
+    let w = World::new().await;
+    let (_, token) = w.user("tags@example.com").await;
+    let (_, other) = w.user("other@example.com").await;
+    let response = w
+        .call(
+            Method::POST,
+            "/tags",
+            &token,
+            Some(json!({"name": " Work ", "color": "#FF0000"})),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let created = json_body(response).await;
+    assert_eq!(created["name"], "Work");
+    assert_eq!(created["color"], "#ff0000");
+    let tag_id = created["id"].as_str().unwrap().to_owned();
+
+    let response = w
+        .call(
+            Method::POST,
+            "/items",
+            &token,
+            Some(json!({"kind": "task", "title": "Tagged"})),
+        )
+        .await;
+    let item_id = json_body(response).await["id"].as_str().unwrap().to_owned();
+    let attach = format!("/items/{item_id}/tags/{tag_id}");
+    let response = w.call(Method::PUT, &attach, &token, None).await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    let response = w.call(Method::PUT, &attach, &other, None).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let uri = format!("/tags/{tag_id}/items");
+    let body = json_body(w.call(Method::GET, &uri, &token, None).await).await;
+    assert_eq!(body[0]["id"], item_id.as_str());
+    let response = w.call(Method::GET, &uri, &other, None).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let response = w.call(Method::DELETE, &attach, &token, None).await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    let uri = format!("/items/{item_id}/tags");
+    let body = json_body(w.call(Method::GET, &uri, &token, None).await).await;
+    assert_eq!(body, json!([]));
+}
+
 // --- service --------------------------------------------------------------------------------
 
 #[tokio::test]
