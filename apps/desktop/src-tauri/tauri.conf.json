@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Second Brain",
+  "productName": "Routune",
   "version": "0.0.0",
   "identifier": "app.secondbrain.desktop",
   "build": {
@@ -10,7 +10,7 @@
   "app": {
     "windows": [
       {
-        "title": "Second Brain",
+        "title": "Routune",
         "width": 1100,
         "height": 760,
         "url": "/dev/desktop"
