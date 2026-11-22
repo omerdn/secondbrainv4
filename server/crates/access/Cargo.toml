@@ -9,3 +9,13 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+serde_json.workspace = true
+sqlx.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+db = { path = "../db", features = ["testing"] }
+proptest.workspace = true
+tokio.workspace = true
