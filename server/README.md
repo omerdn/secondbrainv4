@@ -150,6 +150,8 @@ tx.commit().await?; // NOTIFY commit'te gider; rollback'te hiç gitmez
 cargo run -p app        # .env okunur; varsayılan http://127.0.0.1:8080
 curl localhost:8080/health
 ```
+En düşük desteklenen istemci sürümü (T4.2.7): `GET /client/policy` (herkese açık) platform başına `MIN_VERSION_*` ve `DOWNLOAD_URL_*` değerlerini döner. Daha eski masaüstü/iOS/Android uygulamaları "yeni sürüm gerekli" ekranında kalır.
+
 Mobil OTA güncellemeleri (`updates` crate, T4.2.6): `UPDATES_DIR` tanımlıysa `GET /updates/manifest` ve `GET /updates/assets/...` açılır (Expo Updates protokolü v1, sadece dosya; bkz. `apps/client/BETA.md`).
 
 Yapılandırma ortam değişkenleriyle yapılır: `DATABASE_URL` (zorunlu), `DB_MAX_CONNECTIONS`, `DB_MIGRATE_ON_START`, `APP_HOST`, `APP_PORT`, `SHUTDOWN_TIMEOUT_SECS` (bkz. `.env.example`). Önce `pnpm db:up` ile yerel veritabanını başlatın. SIGTERM veya Ctrl-C gelince sunucu yeni bağlantı almayı bırakır, devam eden istekleri en fazla `SHUTDOWN_TIMEOUT_SECS` saniye bekler ve çıkar.

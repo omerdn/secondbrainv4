@@ -34,6 +34,8 @@ pub struct Config {
     pub resend: Option<ResendSettings>,
     /// Directory of the mobile OTA updates (`UPDATES_DIR`, T4.2.6); `None` = `/updates` is off.
     pub updates_dir: Option<std::path::PathBuf>,
+    /// Minimum supported client versions (`MIN_VERSION_*`, `DOWNLOAD_URL_*`, T4.2.7).
+    pub client_policy: crate::client_policy::ClientPolicy,
     /// Public URL of the web app for links in e-mails (`PUBLIC_WEB_URL`).
     pub public_web_url: String,
     /// Public URL of this server for OAuth callbacks (`PUBLIC_API_URL`).
@@ -235,6 +237,33 @@ impl Config {
                 .filter(|v| !v.is_empty())
         };
         let updates_dir = non_empty("UPDATES_DIR").map(std::path::PathBuf::from);
+        let platform_policy =
+            |version_key: &'static str,
+             url_key: &'static str|
+             -> Result<crate::client_policy::PlatformPolicy, ConfigError> {
+                let min_version = non_empty(version_key);
+                if let Some(version) = &min_version
+                    && !crate::client_policy::is_version(version)
+                {
+                    return Err(ConfigError::Invalid {
+                        key: version_key,
+                        reason: "must be major.minor.patch, e.g. 0.2.0".into(),
+                    });
+                }
+                let download_url = match non_empty(url_key) {
+                    Some(_) => Some(http_url(&lookup, url_key, "")?),
+                    None => None,
+                };
+                Ok(crate::client_policy::PlatformPolicy {
+                    min_version,
+                    download_url,
+                })
+            };
+        let client_policy = crate::client_policy::ClientPolicy {
+            ios: platform_policy("MIN_VERSION_IOS", "DOWNLOAD_URL_IOS")?,
+            android: platform_policy("MIN_VERSION_ANDROID", "DOWNLOAD_URL_ANDROID")?,
+            desktop: platform_policy("MIN_VERSION_DESKTOP", "DOWNLOAD_URL_DESKTOP")?,
+        };
         let resend = match email_driver {
             EmailDriver::Log => None,
             EmailDriver::Resend => {
@@ -347,6 +376,7 @@ impl Config {
             email_driver,
             resend,
             updates_dir,
+            client_policy,
             public_web_url,
             bind_addr: SocketAddr::new(host, port),
             shutdown_timeout: Duration::from_secs(shutdown_secs),
@@ -697,6 +727,33 @@ mod tests {
         let resend = config.resend.clone().unwrap();
         assert_eq!(resend.from, "Routune <noreply@routune.dev>");
         assert!(!format!("{config:?}").contains("re_s3cret"));
+    }
+
+    #[test]
+    fn client_policy_reads_versions_and_download_urls() {
+        let config = config(&[
+            ("DATABASE_URL", URL),
+            ("MIN_VERSION_DESKTOP", "0.2.0"),
+            ("DOWNLOAD_URL_DESKTOP", "https://example.test/desktop/"),
+        ])
+        .unwrap();
+        let desktop = &config.client_policy.desktop;
+        assert_eq!(desktop.min_version.as_deref(), Some("0.2.0"));
+        assert_eq!(
+            desktop.download_url.as_deref(),
+            Some("https://example.test/desktop")
+        );
+        assert_eq!(config.client_policy.ios, Default::default());
+        for (key, value) in [
+            ("MIN_VERSION_IOS", "1.2"),
+            ("DOWNLOAD_URL_ANDROID", "ftp://example.test/app.apk"),
+        ] {
+            let err = config_err(&[("DATABASE_URL", URL), (key, value)]);
+            assert!(
+                matches!(&err, ConfigError::Invalid { key: k, .. } if *k == key),
+                "{err:?}"
+            );
+        }
     }
 
     #[test]

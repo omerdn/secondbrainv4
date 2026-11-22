@@ -9,6 +9,7 @@ use std::io;
 
 use tokio::net::TcpListener;
 
+pub mod client_policy;
 pub mod config;
 pub mod http;
 pub mod idempotency;
@@ -170,6 +171,8 @@ where
     let mut modules = identity::http::rate_limited_router(identity.clone(), limits)
         .merge(idempotency::protect(profile, idempotency))
         .merge(ws);
+    // Minimum supported client versions (T4.2.7): public, read before sign-in.
+    modules = modules.merge(client_policy::router(config.client_policy.clone()));
     if let Some(dir) = &config.updates_dir {
         // Mobile OTA updates (T4.2.6, ADR-0023): files only, no auth (public JS bundles).
         modules = modules.merge(updates::router(updates::UpdatesConfig {
