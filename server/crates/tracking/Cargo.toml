@@ -9,3 +9,16 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+chrono.workspace = true
+kernel = { path = "../kernel" }
+rust_decimal.workspace = true
+sqlx.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+access = { path = "../access" }
+db = { path = "../db", features = ["testing"] }
+items = { path = "../items" }
+tokio.workspace = true

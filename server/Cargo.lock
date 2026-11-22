@@ -122,6 +122,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arrayvec"
+version = "0.7.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
+
+[[package]]
 name = "astral-tokio-tar"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3214,6 +3220,23 @@ name = "routines"
 version = "0.0.0"
 
 [[package]]
+name = "rust_decimal"
+version = "1.43.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7653272e75dcac41dc199fbea6f5797633994fafd339943c06c9af16bf29cd3a"
+dependencies = [
+ "arrayvec",
+ "borsh",
+ "bytes",
+ "num-traits",
+ "rand 0.8.8",
+ "rand 0.9.5",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3868,6 +3891,7 @@ dependencies = [
  "log",
  "memchr",
  "percent-encoding",
+ "rust_decimal",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -3938,6 +3962,7 @@ dependencies = [
  "generic-array",
  "log",
  "percent-encoding",
+ "rust_decimal",
  "serde",
  "sha1 0.11.0",
  "sha2 0.11.1",
@@ -3972,6 +3997,7 @@ dependencies = [
  "md-5",
  "memchr",
  "rand 0.10.4",
+ "rust_decimal",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -4579,6 +4605,17 @@ dependencies = [
 [[package]]
 name = "tracking"
 version = "0.0.0"
+dependencies = [
+ "access",
+ "chrono",
+ "db",
+ "items",
+ "kernel",
+ "rust_decimal",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
 
 [[package]]
 name = "try-lock"
