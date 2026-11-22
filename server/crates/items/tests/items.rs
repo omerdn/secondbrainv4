@@ -351,6 +351,101 @@ async fn link_endpoints() {
     assert_eq!(body, json!([]));
 }
 
+// --- V13: links whose page owner lost the target (T1.2.8) ---------------------------------------
+
+async fn revoke(w: &World, tuple: RelationTuple) {
+    let mut tx = w.db.pool().begin().await.unwrap();
+    w.access.revoke(&mut tx, tuple).await.unwrap();
+    tx.commit().await.unwrap();
+}
+
+/// Delivers everything in the outbox, including events published by the handlers.
+async fn deliver(w: &World) {
+    let mut dispatcher = db::outbox::Dispatcher::new(db::outbox::DispatchConfig::default());
+    items::register_link_cleanup(&mut dispatcher, w.items.clone());
+    for _ in 0..3 {
+        dispatcher.dispatch_batch(w.db.pool()).await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn v13_owner_losing_the_target_drops_the_link_and_inherited_access() {
+    let w = World::new().await;
+    let (ali, ayse, can) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
+    let page = w
+        .items
+        .create(ali, of_kind("page", "Private"))
+        .await
+        .unwrap();
+    let task = w.items.create(ayse, World::task("Ayse's")).await.unwrap();
+    let membership = RelationTuple::new(task.id, R::Watcher, ali);
+    w.grant(membership).await;
+    w.grant(RelationTuple::new(task.id, R::Watcher, can)).await;
+    w.items.link(ali, page.id, task.id).await.unwrap();
+    assert_eq!(w.items.get(can, page.id).await.unwrap().id, page.id);
+
+    revoke(&w, membership).await;
+    deliver(&w).await;
+
+    for viewer in [ayse, can] {
+        assert!(
+            matches!(w.items.get(viewer, page.id).await, Err(AppError::NotFound)),
+            "the page closes to everyone who saw it through the link"
+        );
+    }
+    assert_eq!(w.items.get(ali, page.id).await.unwrap().id, page.id);
+    assert!(w.items.links(ayse, task.id).await.unwrap().is_empty());
+    // A repeated delivery changes nothing.
+    let again = w
+        .items
+        .drop_links_of_lost_owners(task.id, &[ali])
+        .await
+        .unwrap();
+    assert_eq!(again, 0);
+}
+
+#[tokio::test]
+async fn v13_link_stays_while_the_owner_still_sees_the_target() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    let page = w.items.create(ali, of_kind("page", "Notes")).await.unwrap();
+    let task = w.items.create(ayse, World::task("Task")).await.unwrap();
+    let watcher = RelationTuple::new(task.id, R::Watcher, ali);
+    w.grant(watcher).await;
+    w.grant(RelationTuple::new(task.id, R::Assignee, ali)).await;
+    w.items.link(ali, page.id, task.id).await.unwrap();
+
+    // One path is gone, another remains; even a stale event must not drop the link.
+    revoke(&w, watcher).await;
+    let dropped = w
+        .items
+        .drop_links_of_lost_owners(task.id, &[ali])
+        .await
+        .unwrap();
+    assert_eq!(dropped, 0);
+    assert_eq!(w.items.links(ali, page.id).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn v13_someone_else_losing_the_target_keeps_the_link() {
+    let w = World::new().await;
+    let (ali, can) = (Uuid::now_v7(), Uuid::now_v7());
+    let page = w.items.create(ali, of_kind("page", "Notes")).await.unwrap();
+    let task = w.items.create(ali, World::task("Task")).await.unwrap();
+    let watcher = RelationTuple::new(task.id, R::Watcher, can);
+    w.grant(watcher).await;
+    w.items.link(ali, page.id, task.id).await.unwrap();
+
+    revoke(&w, watcher).await;
+    deliver(&w).await;
+
+    assert_eq!(w.items.links(ali, page.id).await.unwrap().len(), 1);
+    assert!(matches!(
+        w.items.get(can, page.id).await,
+        Err(AppError::NotFound)
+    ));
+}
+
 // --- tags (T1.2.2, E1, E2, E4) -----------------------------------------------------------------
 
 fn tag(name: &str) -> items::NewTag {

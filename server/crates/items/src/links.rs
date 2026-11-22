@@ -4,8 +4,9 @@
 //! transaction, so viewers of the target can open the page and lose it when the link goes. Links
 //! to goals from tasks, routines and trackers grant nothing. Text mentions (B3) are not links.
 
-use access::{Perms, Relation, RelationTuple};
+use access::{AccessRevoked, Perms, Relation, RelationTuple};
 use chrono::{DateTime, Utc};
+use db::outbox::Dispatcher;
 use kernel::{AppError, FieldError, FieldErrorCode, ValidationErrors};
 use serde::Serialize;
 use sqlx::FromRow;
@@ -219,6 +220,75 @@ impl ItemsService {
         .map_err(internal)?;
         Ok(rows.into_iter().map(ItemLink::from).collect())
     }
+
+    /// Removes the links from pages owned by one of `users` to `target` when that owner can no
+    /// longer view it (V13), so a link they cannot see (V9) does not keep their page open to
+    /// others. Access is re-read in the transaction: a stale or repeated event changes nothing.
+    /// Returns how many links were removed.
+    ///
+    /// # Errors
+    /// Database errors.
+    pub async fn drop_links_of_lost_owners(
+        &self,
+        target: Uuid,
+        users: &[Uuid],
+    ) -> sqlx::Result<usize> {
+        let links: Vec<(Uuid, Uuid)> = sqlx::query_as(
+            "SELECT l.source_item_id, s.owner_user_id
+             FROM item_links l JOIN items s ON s.id = l.source_item_id
+             WHERE l.target_item_id = $1 AND s.kind = 'page' AND s.owner_user_id = ANY($2)",
+        )
+        .bind(target)
+        .bind(users)
+        .fetch_all(&self.pool)
+        .await?;
+        let mut dropped = 0;
+        for (page, owner) in links {
+            let mut tx = self.pool.begin().await?;
+            let can_view = self
+                .access
+                .permissions()
+                .check(&mut *tx, owner, target, Perms::VIEW)
+                .await?;
+            if !can_view {
+                let deleted = sqlx::query(
+                    "DELETE FROM item_links WHERE source_item_id = $1 AND target_item_id = $2",
+                )
+                .bind(page)
+                .bind(target)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected();
+                if deleted == 1 {
+                    self.access
+                        .revoke(
+                            &mut tx,
+                            RelationTuple::new(page, Relation::LinkedTo, target),
+                        )
+                        .await?;
+                    dropped += 1;
+                }
+            }
+            tx.commit().await?;
+        }
+        Ok(dropped)
+    }
+}
+
+/// Subscribes the V13 cleanup to `AccessRevoked` (call from `app::run`).
+pub fn register_link_cleanup(dispatcher: &mut Dispatcher, service: ItemsService) {
+    dispatcher.subscribe(
+        "items.drop-links-of-lost-owners",
+        move |event: AccessRevoked, _| {
+            let service = service.clone();
+            async move {
+                service
+                    .drop_links_of_lost_owners(event.item_id, &event.user_ids)
+                    .await?;
+                Ok(())
+            }
+        },
+    );
 }
 
 #[cfg(test)]

@@ -212,6 +212,7 @@ Bu bölüm ürünün en kritik bölümüdür. Her kural, sunucu tarafında otoma
 - `V12` **Takım nesnelerinin görünürlük modu** oluşturulurken seçilir:
   - **Tüm takım**,
   - **Sadece atananlar.** Bu modda oluşturan kişi, atananlar ve yönetici ile üstündeki roller görür.
+- `V13` **Sahibin erişimi düşen bağlantı kalkar:** Sayfa sahibi, sayfasının bağlı olduğu bir nesneyi artık göremiyorsa o bağlantı otomatik olarak kaldırılır ve bağlantıyla gelen erişim düşer (V8). Böylece sahibin göremediği (V9) bir bağlantı, sayfayı başkalarına açık bırakmaz.
 
 ## 8. Arkadaşlık ve sosyal özellikler
 
