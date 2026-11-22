@@ -3,58 +3,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { Text } from "react-native";
 
-import {
-  ConnectivityProvider,
-  type LinkHandlers,
-  type LinkOpener,
-  useConnectivity,
-} from "@/connectivity";
+import { ConnectivityProvider, useConnectivity } from "@/connectivity";
 import { netInfoSource } from "@/connectivity/ConnectivityProvider";
 
-interface FakeLink {
-  authenticated: boolean;
-  handlers: LinkHandlers;
-  checks: number;
-  closed: boolean;
-}
-
-function fakeLinks() {
-  const links: FakeLink[] = [];
-  const open: LinkOpener = (authenticated, handlers) => {
-    const link: FakeLink = { authenticated, handlers, checks: 0, closed: false };
-    links.push(link);
-    return {
-      check: () => {
-        link.checks += 1;
-      },
-      close: () => {
-        link.closed = true;
-      },
-    };
-  };
-  const last = () => {
-    const link = links.at(-1);
-    if (link === undefined) throw new Error("no link opened");
-    return link;
-  };
-  return { links, open, last };
-}
-
-function fakeNetwork() {
-  let listener: ((connected: boolean) => void) | undefined;
-  return {
-    source: (l: (connected: boolean) => void) => {
-      listener = l;
-      return () => {
-        listener = undefined;
-      };
-    },
-    set: (connected: boolean) =>
-      act(() => {
-        listener?.(connected);
-      }),
-  };
-}
+import { fakeLinks, fakeNetwork } from "./support/connectivity";
 
 function Probe() {
   const { state, retry } = useConnectivity();

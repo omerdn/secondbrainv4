@@ -7,6 +7,18 @@ export const en: Catalog = {
     comingSoon: { title: "Coming soon", description: "This section arrives in a later version." },
     notFound: { title: "Page not found", home: "Go home" },
   },
+  connectivity: {
+    connecting: "Connecting",
+    offline: {
+      title: "No connection",
+      description: "Check your internet connection and try again.",
+      retry: "Try again",
+    },
+    reconnecting: {
+      title: "Connection lost, reconnecting…",
+      description: "You can continue where you left off once the connection is back.",
+    },
+  },
   nav: {
     today: "Today",
     tasks: "Tasks",

@@ -9,6 +9,18 @@ export const tr = {
     comingSoon: { title: "Yakında", description: "Bu bölüm sonraki sürümlerde gelecek." },
     notFound: { title: "Sayfa bulunamadı", home: "Ana sayfaya dön" },
   },
+  connectivity: {
+    connecting: "Bağlanılıyor",
+    offline: {
+      title: "Bağlantı yok",
+      description: "İnternet bağlantını kontrol edip tekrar dene.",
+      retry: "Tekrar dene",
+    },
+    reconnecting: {
+      title: "Bağlantı koptu, yeniden bağlanılıyor…",
+      description: "Bağlantı gelince kaldığın yerden devam edebilirsin.",
+    },
+  },
   nav: {
     today: "Bugün",
     tasks: "Görevler",
