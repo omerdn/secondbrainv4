@@ -166,6 +166,120 @@ fn ids(items: &[items::Item]) -> Vec<Uuid> {
     items.iter().map(|i| i.id).collect()
 }
 
+// --- last_touched_at (T1.2.6, H4) ---------------------------------------------------------------
+
+async fn touched(w: &World, actor: Uuid, item: Uuid) -> DateTime<Utc> {
+    w.items.get(actor, item).await.unwrap().last_touched_at
+}
+
+#[tokio::test]
+async fn h4_reading_and_private_actions_do_not_touch() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    w.sharing.befriend(ali, ayse);
+    let task = w.items.create(ali, World::task("Task")).await.unwrap();
+    let goal = w.items.create(ali, of_kind("goal", "Goal")).await.unwrap();
+    w.clock.set(start() + Duration::days(1));
+
+    w.items.get(ali, task.id).await.unwrap();
+    w.items.list(ali, ListState::Active).await.unwrap();
+    let label = w.items.create_tag(ali, tag("Private")).await.unwrap();
+    w.items.attach_tag(ali, task.id, label.id).await.unwrap();
+    w.items.link(ali, task.id, goal.id).await.unwrap();
+    w.items.unlink(ali, task.id, goal.id).await.unwrap();
+    let invitation = w.items.invite(ali, task.id, assignee(ayse)).await.unwrap();
+    w.items
+        .decline_invitation(ayse, invitation.id)
+        .await
+        .unwrap();
+    w.items.set_archived(ali, task.id, true).await.unwrap();
+    w.items.set_archived(ali, task.id, true).await.unwrap();
+
+    assert_eq!(touched(&w, ali, task.id).await, start());
+    assert_eq!(touched(&w, ali, goal.id).await, start());
+}
+
+#[tokio::test]
+async fn h4_meaningful_changes_touch() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    w.sharing.befriend(ali, ayse);
+    let task = w.items.create(ali, World::task("Task")).await.unwrap();
+
+    let edited = start() + Duration::days(1);
+    w.clock.set(edited);
+    let changes = items::ItemChanges {
+        title: Some("Renamed".into()),
+        description: None,
+    };
+    let updated = w.items.update(ali, task.id, changes).await.unwrap();
+    assert_eq!(updated.last_touched_at, edited, "returned row is fresh");
+
+    let joined = start() + Duration::days(2);
+    w.clock.set(joined);
+    let invitation = w.items.invite(ali, task.id, assignee(ayse)).await.unwrap();
+    assert_eq!(touched(&w, ali, task.id).await, edited);
+    w.items
+        .accept_invitation(ayse, invitation.id)
+        .await
+        .unwrap();
+    assert_eq!(touched(&w, ali, task.id).await, joined);
+
+    let completed = start() + Duration::days(3);
+    w.clock.set(completed);
+    let mut tx = w.db.pool().begin().await.unwrap();
+    w.items
+        .record_completed(&mut tx, ayse, task.id)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(touched(&w, ali, task.id).await, completed);
+
+    w.items.set_archived(ali, task.id, true).await.unwrap();
+    let unarchived = start() + Duration::days(4);
+    w.clock.set(unarchived);
+    let item = w.items.set_archived(ali, task.id, false).await.unwrap();
+    assert_eq!(item.last_touched_at, unarchived);
+    // Unarchiving again is not a change.
+    w.clock.set(start() + Duration::days(5));
+    let item = w.items.set_archived(ali, task.id, false).await.unwrap();
+    assert_eq!(item.last_touched_at, unarchived);
+
+    w.items.set_trashed(ali, task.id, true).await.unwrap();
+    let restored = start() + Duration::days(6);
+    w.clock.set(restored);
+    let item = w.items.set_trashed(ali, task.id, false).await.unwrap();
+    assert_eq!(item.last_touched_at, restored);
+    w.clock.set(start() + Duration::days(7));
+    let item = w.items.set_trashed(ali, task.id, false).await.unwrap();
+    assert_eq!(
+        item.last_touched_at, restored,
+        "restoring again is no touch"
+    );
+}
+
+#[tokio::test]
+async fn h4_a_refused_edit_does_not_touch() {
+    let w = World::new().await;
+    let ali = Uuid::now_v7();
+    let task = w.items.create(ali, World::task("Task")).await.unwrap();
+    w.items.set_trashed(ali, task.id, true).await.unwrap();
+    w.clock.set(start() + Duration::days(1));
+    let changes = items::ItemChanges {
+        title: Some("Nope".into()),
+        description: None,
+    };
+    assert!(matches!(
+        w.items.update(ali, task.id, changes).await,
+        Err(AppError::Conflict(_))
+    ));
+    assert!(matches!(
+        w.items.set_archived(ali, task.id, false).await,
+        Err(AppError::Conflict(_))
+    ));
+    assert_eq!(touched(&w, ali, task.id).await, start());
+}
+
 // --- activity (T1.2.5, A1, A2) ------------------------------------------------------------------
 
 fn first_page() -> kernel::PageRequest {

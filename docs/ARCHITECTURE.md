@@ -136,7 +136,7 @@
 - `items(id, kind, owner_user_id NULL, owner_team_id NULL, title, description, status, team_visibility[all|assignees] NULL, created_by, created_at, updated_at, last_touched_at, archived_at, deleted_at)`
   - `kind` değerleri: `task | routine | goal | tracker | notebook | page | module:<ad>`
   - `CHECK`: `owner_user_id` ve `owner_team_id` alanlarından tam olarak biri dolu olmalı.
-  - `last_touched_at`: "Unutulanlar" (H4) bu alana göre hesaplanır.
+  - `last_touched_at`: "Unutulanlar" (H4) bu alana göre hesaplanır. Düzenleme, tamamlama, daveti kabul ederek katılma, arşivden çıkarma ve çöpten geri alma dokunma sayılır. Okuma sayılmaz. Kişisel etiket, bağlantı ve yanıtlanmamış davet de sayılmaz, çünkü bu alan ortak satırdadır ve diğer üyelere gizli bir işlemi ele vermemelidir (E2, V9, G5).
 - `item_tags(item_id, tag_id, tagged_by)` · `tags(id, owner_user_id NULL, owner_team_id NULL, name, color)`
 - `item_links(id, source_item_id, target_item_id, created_by, created_at)`
   - Örnek yönler: sayfa → nesne, nesne → hedef.

@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 use crate::activity::{self, ActivityKind, NewActivity};
 use crate::service::{ItemsService, LIST_LIMIT};
+use crate::touch::{self, TouchAction};
 
 /// Result of a [`SharingPolicy`] check.
 pub type SharingFuture<'a> = Pin<Box<dyn Future<Output = Result<bool, AppError>> + Send + 'a>>;
@@ -354,6 +355,9 @@ impl ItemsService {
                 ..NewActivity::new(Some(from_user), item_id, ActivityKind::for_role(role))
             };
             activity::record(&mut tx, now, event)
+                .await
+                .map_err(internal)?;
+            touch::apply(&mut tx, item_id, TouchAction::MemberJoined, now)
                 .await
                 .map_err(internal)?;
         }
