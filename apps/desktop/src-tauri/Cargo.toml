@@ -1,0 +1,21 @@
+[package]
+name = "secondbrain-desktop"
+version = "0.0.0"
+description = "Tauri 2 desktop shell around the client's web build"
+edition = "2024"
+publish = false
+
+# Not part of the server workspace.
+[workspace]
+
+[lib]
+name = "secondbrain_desktop"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.6", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.7", features = [] }
+tauri-plugin-websocket = "2.5.0"
+serde_json = "1"

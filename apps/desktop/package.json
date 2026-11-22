@@ -1,0 +1,13 @@
+{
+  "name": "@secondbrain/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Tauri 2 desktop shell around the client's web build (ADR-0002, spike T0.6.3).",
+  "scripts": {
+    "tauri": "tauri",
+    "build:app": "tauri build --debug --bundles app"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.6"
+  }
+}
