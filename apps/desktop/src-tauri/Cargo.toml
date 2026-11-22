@@ -1,7 +1,7 @@
 [package]
 name = "secondbrain-desktop"
 version = "0.0.0"
-description = "Tauri 2 desktop shell around the client's web build"
+description = "Routune desktop app: Tauri 2 shell around the client's web build"
 edition = "2024"
 publish = false
 
@@ -18,4 +18,5 @@ tauri-build = { version = "2.7.6", features = [] }
 [dependencies]
 tauri = { version = "2.12.7", features = [] }
 tauri-plugin-websocket = "2.5.0"
-serde_json = "1"
+# Session token in the OS secure storage (ADR-0020).
+keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }

@@ -15,7 +15,9 @@ import {
 import { Platform } from "react-native";
 
 import { API_URL, credentials } from "@/lib/api";
+import { isTauri } from "@/lib/platform";
 
+import { tauriSocket } from "./tauri-socket";
 import { defaultRules, eventOf, type InvalidationRules, invalidationsFor } from "./invalidation";
 import {
   type Link,
@@ -70,9 +72,11 @@ export const netInfoSource: NetworkSource = (listener) => {
 
 /**
  * Browsers send the session cookie on the handshake by themselves; React Native's WebSocket
- * takes headers as a third argument, which the DOM typings do not know.
+ * takes headers as a third argument, which the DOM typings do not know. The desktop shell
+ * opens it from Rust with the bearer token (ADR-0020).
  */
 function createSocket(url: string, token: string | null): SocketLike {
+  if (isTauri()) return tauriSocket(url, token);
   if (Platform.OS === "web" || token === null) {
     return new WebSocket(url) as unknown as SocketLike;
   }

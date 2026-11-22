@@ -148,7 +148,8 @@ describe("web", () => {
   });
 
   it("uses the cookie transport only in browsers", () => {
-    expect(defaultTransport("web")).toBe("cookie");
+    expect(defaultTransport("web", false)).toBe("cookie");
+    expect(defaultTransport("web", true)).toBe("bearer");
     expect(defaultTransport("ios")).toBe("bearer");
     expect(defaultTransport("android")).toBe("bearer");
   });
