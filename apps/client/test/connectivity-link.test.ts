@@ -1,4 +1,5 @@
 import {
+  CLOSE_SESSION_ENDED,
   type LinkHandlers,
   openProbeLink,
   openSocketLink,
@@ -11,7 +12,7 @@ import {
 class FakeSocket implements SocketLike {
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((event: { code?: number }) => void) | null = null;
   onerror: (() => void) | null = null;
   sent: unknown[] = [];
   closed = false;
@@ -48,6 +49,7 @@ function handlers() {
     up: () => calls.push("up"),
     failed: () => calls.push("failed"),
     lost: (reason) => calls.push(`lost:${reason}`),
+    sessionEnded: () => calls.push("session_ended"),
     message: (message) => messages.push(message),
   };
   return { h, calls, messages };
@@ -105,7 +107,7 @@ describe("socket link", () => {
 
   it("fails when the handshake is refused", () => {
     const { socket, calls } = socketLink();
-    socket.onclose?.();
+    socket.onclose?.({ code: 1006 });
     expect(calls).toEqual(["failed"]);
   });
 
@@ -132,7 +134,7 @@ describe("socket link", () => {
   it("is lost when the socket closes after hello", () => {
     const { socket, calls } = socketLink();
     socket.receive(hello);
-    socket.onclose?.();
+    socket.onclose?.({ code: 1006 });
     expect(calls).toEqual(["up", "lost:socket_closed"]);
   });
 
@@ -156,12 +158,29 @@ describe("socket link", () => {
     expect(calls).toEqual(["up"]);
   });
 
+  it("reports a session that ended (close code 4003) instead of a lost link", () => {
+    const { socket, calls } = socketLink();
+    socket.receive(hello);
+    socket.onclose?.({ code: CLOSE_SESSION_ENDED });
+    jest.advanceTimersByTime(60_000);
+    expect(calls).toEqual(["up", "session_ended"]);
+  });
+
+  it("other close codes are a lost link", () => {
+    for (const code of [4000, 4001, 1011]) {
+      const { socket, calls } = socketLink();
+      socket.receive(hello);
+      socket.onclose?.({ code });
+      expect(calls).toEqual(["up", "lost:socket_closed"]);
+    }
+  });
+
   it("reports nothing after close", () => {
     const { link, socket, calls } = socketLink();
     socket.receive(hello);
     link.close();
     expect(socket.closed).toBe(true);
-    socket.onclose?.();
+    socket.onclose?.({ code: 1006 });
     jest.advanceTimersByTime(60_000);
     expect(calls).toEqual(["up"]);
   });

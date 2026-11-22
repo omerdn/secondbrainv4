@@ -132,6 +132,28 @@ describe("connectivity state machine (ARCHITECTURE §10.2)", () => {
   });
 });
 
+describe("session ended (close code 4003, T0.5.7)", () => {
+  it("closes the link without locking the screen when online", () => {
+    expect(run([{ type: "session_ended" }], { kind: "online" })).toEqual({
+      state: { kind: "online" },
+      effects: [{ type: "close" }],
+    });
+  });
+
+  it("stops reconnecting", () => {
+    expect(run([{ type: "session_ended" }], { kind: "reconnecting", attempt: 2 })).toEqual({
+      state: { kind: "online" },
+      effects: [{ type: "cancel_retry" }, { type: "close" }],
+    });
+  });
+
+  it("changes nothing before the app is connected", () => {
+    for (const state of [{ kind: "booting" }, { kind: "offline_blocked" }] as const) {
+      expect(transition(state, { type: "session_ended" }, half)).toEqual({ state, effects: [] });
+    }
+  });
+});
+
 describe("retry delays (BP5: no per-second checks)", () => {
   it("double per attempt and are capped", () => {
     const ceilings = [1, 2, 3, 4, 5, 6, 7, 50].map((attempt) => retryDelay(attempt, 0.999999));

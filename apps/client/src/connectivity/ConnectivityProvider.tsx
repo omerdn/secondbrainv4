@@ -112,6 +112,7 @@ export function ConnectivityProvider({
   network = netInfoSource,
   random = Math.random,
   invalidationRules = defaultRules,
+  onSessionEnded,
 }: {
   /** The signed-in user, or null (decides between the socket and the probe). */
   userId: string | null;
@@ -121,6 +122,8 @@ export function ConnectivityProvider({
   random?: () => number;
   /** Which queries each `/ws` event invalidates (T0.5.5). */
   invalidationRules?: InvalidationRules;
+  /** The server ended the session (close code 4003): sign the user out locally (T0.5.7). */
+  onSessionEnded?: () => void;
 }) {
   const queryClient = useQueryClient();
   const [state, setState] = useState<ConnectivityState>(initial().state);
@@ -130,8 +133,8 @@ export function ConnectivityProvider({
   const userIdRef = useRef(userId);
   const listenersRef = useRef(new Set<MessageListener>());
   // Effects run from callbacks; keep the latest dependencies in refs.
-  const depsRef = useRef({ openLink, random, queryClient, invalidationRules });
-  depsRef.current = { openLink, random, queryClient, invalidationRules };
+  const depsRef = useRef({ openLink, random, queryClient, invalidationRules, onSessionEnded });
+  depsRef.current = { openLink, random, queryClient, invalidationRules, onSessionEnded };
 
   const dispatchRef = useRef<(event: ConnectivityEvent) => void>(() => {});
 
@@ -144,6 +147,10 @@ export function ConnectivityProvider({
           up: () => dispatch({ type: "link_up" }),
           failed: () => dispatch({ type: "link_failed" }),
           lost: (reason) => dispatch({ type: "link_lost", reason }),
+          sessionEnded: () => {
+            dispatch({ type: "session_ended" });
+            depsRef.current.onSessionEnded?.();
+          },
           message: (message) => {
             const event = eventOf(message);
             if (event !== null) {

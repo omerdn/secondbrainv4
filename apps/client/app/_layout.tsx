@@ -27,9 +27,13 @@ function SessionRecovery() {
 
 /** Connection state machine (T0.5.3); the session decides between `/ws` and the probe. */
 function Connectivity({ children }: { children: ReactNode }) {
-  const { state } = useSession();
+  const { state, forget } = useSession();
   return (
-    <ConnectivityProvider userId={state.status === "signedIn" ? state.user.id : null}>
+    <ConnectivityProvider
+      userId={state.status === "signedIn" ? state.user.id : null}
+      // Signed out elsewhere (or the session expired): back to the login screen (T0.5.7).
+      onSessionEnded={() => void forget()}
+    >
       <SessionRecovery />
       {children}
     </ConnectivityProvider>
