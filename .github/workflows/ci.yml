@@ -115,6 +115,11 @@ jobs:
       - name: Verify database
         run: sh scripts/db-check.sh
 
+      - name: Validate staging compose (T0.7.1)
+        run: |
+          cp infra/staging/.env.example infra/staging/.env
+          docker compose -f infra/staging/compose.yaml config --quiet
+
       - name: Postgres logs on failure
         if: failure()
         run: docker compose logs postgres
