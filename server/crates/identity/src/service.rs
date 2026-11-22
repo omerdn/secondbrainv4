@@ -7,6 +7,7 @@ use db::PgPool;
 use kernel::{AppError, SharedClock, SharedEmailSender};
 use uuid::Uuid;
 
+use crate::events::SessionsEnded;
 use crate::model::{Credentials, CurrentUser, NewAccount, SessionId, SessionInfo, UserId};
 use crate::password;
 use crate::token::{self, SessionToken};
@@ -399,17 +400,41 @@ impl IdentityService {
         user_id: UserId,
         session_id: SessionId,
     ) -> Result<(), AppError> {
+        let mut tx = self.pool().begin().await.map_err(AppError::internal)?;
         let deleted = sqlx::query("DELETE FROM sessions WHERE id = $1 AND user_id = $2")
             .bind(session_id.as_uuid())
             .bind(user_id.as_uuid())
-            .execute(self.pool())
+            .execute(&mut *tx)
             .await
             .map_err(AppError::internal)?
             .rows_affected();
         if deleted == 0 {
             return Err(AppError::NotFound);
         }
+        db::outbox::publish(
+            &mut tx,
+            &SessionsEnded {
+                user_id,
+                session_id: Some(session_id),
+            },
+        )
+        .await
+        .map_err(AppError::internal)?;
+        tx.commit().await.map_err(AppError::internal)?;
         Ok(())
+    }
+
+    /// Whether a session still exists and has not expired. Read-only: unlike
+    /// [`Self::authenticate`] it does not extend the session. Used by long-lived connections
+    /// (`/ws`) to notice expiry.
+    pub async fn session_active(&self, session_id: SessionId) -> Result<bool, AppError> {
+        let expires_at =
+            sqlx::query_scalar::<_, DateTime<Utc>>("SELECT expires_at FROM sessions WHERE id = $1")
+                .bind(session_id.as_uuid())
+                .fetch_optional(self.pool())
+                .await
+                .map_err(AppError::internal)?;
+        Ok(expires_at.is_some_and(|expires_at| self.now() < expires_at))
     }
 }
 

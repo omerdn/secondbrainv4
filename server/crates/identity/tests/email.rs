@@ -339,6 +339,17 @@ async fn reset_sets_the_password_signs_out_everywhere_and_verifies() {
     assert_eq!(old_session.status(), StatusCode::UNAUTHORIZED);
     assert!(app.verified("reset@example.test").await);
 
+    // T0.5.6: every session of the user ended; their WebSocket connections close.
+    let ended: Vec<serde_json::Value> = sqlx::query_scalar(
+        "SELECT payload FROM outbox WHERE event_type = 'identity.sessions_ended'",
+    )
+    .fetch_all(app.db.pool())
+    .await
+    .unwrap();
+    assert_eq!(ended.len(), 1);
+    assert!(ended[0]["user_id"].is_string());
+    assert!(ended[0]["session_id"].is_null());
+
     assert_invalid_token(app.reset(&token, "another password").await).await;
 }
 

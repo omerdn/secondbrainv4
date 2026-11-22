@@ -11,7 +11,7 @@
 use std::time::Duration;
 
 use db::testing::TestDb;
-use identity::UserId;
+use identity::{SessionId, UserId};
 use realtime::hub::ConnectionId;
 use realtime::{Bridge, Channel, Event, Hub, Notifier, PublishError, ServerMessage};
 use serde_json::json;
@@ -37,9 +37,9 @@ async fn instance(db: &TestDb) -> Instance {
 
 /// A connection on `hub` subscribed to `user`'s channel.
 fn subscriber(hub: &Hub, user: UserId) -> (ConnectionId, Receiver<ServerMessage>) {
-    let (id, inbox) = hub.connect(user);
-    hub.subscribe(id, Channel::User(user));
-    (id, inbox)
+    let connection = hub.connect(user, SessionId::new());
+    hub.subscribe(connection.id, Channel::User(user));
+    (connection.id, connection.outbox)
 }
 
 fn event(id: &str) -> Event {
@@ -216,4 +216,38 @@ async fn the_listener_recovers_after_losing_its_connection() {
     })
     .await
     .expect("events flow again after a reconnect");
+}
+
+#[tokio::test]
+async fn ended_sessions_are_closed_on_every_instance() {
+    let db = TestDb::new().await;
+    let (a, b) = (instance(&db).await, instance(&db).await);
+    let user = UserId::new();
+    let (phone, laptop) = (SessionId::new(), SessionId::new());
+    let mut phone_on_a = a.hub.connect(user, phone);
+    let mut phone_on_b = b.hub.connect(user, phone);
+    let mut laptop_on_b = b.hub.connect(user, laptop);
+    let notifier = Notifier::new(db.schema());
+
+    notifier
+        .end_sessions(db.pool(), user, Some(phone))
+        .await
+        .unwrap();
+    timeout(WITHIN, &mut phone_on_a.session_ended)
+        .await
+        .unwrap()
+        .unwrap();
+    timeout(WITHIN, &mut phone_on_b.session_ended)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(laptop_on_b.session_ended.try_recv().is_err());
+
+    // A password reset ends all of the user's sessions.
+    notifier.end_sessions(db.pool(), user, None).await.unwrap();
+    timeout(WITHIN, &mut laptop_on_b.session_ended)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(a.hub.connection_count() + b.hub.connection_count(), 0);
 }

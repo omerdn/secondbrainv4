@@ -10,6 +10,8 @@
 //!    `idle_timeout_secs` (close code 4000).
 //! 4. Events arrive as `event {channel, event: {name, data}}`. They only say *what changed*;
 //!    data is refetched over HTTP.
+//! 5. When the session ends (sign-out, revocation, password reset, expiry) the server closes
+//!    the connection with code 4003 ([`CLOSE_SESSION_ENDED`]): the user must sign in again.
 //!
 //! Other modules publish through a [`Notifier`] (Postgres `NOTIFY`, optionally inside their
 //! transaction); every instance runs a [`Bridge`] that `LISTEN`s and feeds its local [`Hub`]
@@ -18,9 +20,10 @@
 pub mod bridge;
 pub mod hub;
 pub mod protocol;
+pub mod sessions;
 pub mod ws;
 
 pub use bridge::{Bridge, DEFAULT_NOTIFY_CHANNEL, Notifier, PublishError};
 pub use hub::Hub;
 pub use protocol::{Channel, ClientMessage, Event, ServerMessage};
-pub use ws::{RealtimeConfig, RealtimeState, router};
+pub use ws::{CLOSE_SESSION_ENDED, RealtimeConfig, RealtimeState, router};

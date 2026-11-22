@@ -10,10 +10,10 @@ use axum::response::Response;
 use axum::routing::get;
 use futures_util::{SinkExt, StreamExt};
 use identity::http::Authenticated;
-use identity::{IdentityService, UserId};
+use identity::{IdentityService, SessionId, UserId};
 use kernel::{AppError, SharedClock};
 
-use crate::hub::{ConnectionId, Hub, Subscribe};
+use crate::hub::{ConnectionId, Hub, Registered, Subscribe};
 use crate::protocol::{Channel, ClientMessage, ErrorCode, ServerMessage};
 
 /// Largest frame accepted from a client; real messages are tiny.
@@ -23,6 +23,9 @@ const MAX_MESSAGE_BYTES: usize = 4 * 1024;
 pub const CLOSE_IDLE: u16 = 4000;
 /// Close code for a connection the hub dropped as too slow.
 pub const CLOSE_SLOW: u16 = 4001;
+/// Close code when the connection's session ended (sign-out, revocation, password reset or
+/// expiry): reconnecting will not help, the user has to sign in again (T0.5.6).
+pub const CLOSE_SESSION_ENDED: u16 = 4003;
 
 /// Timing and origin settings.
 #[derive(Debug, Clone)]
@@ -84,11 +87,11 @@ async fn upgrade(
     {
         return Err(AppError::Forbidden);
     }
-    let user = auth.user_id;
+    let (user, session) = (auth.user_id, auth.session_id);
     Ok(ws
         .max_message_size(MAX_MESSAGE_BYTES)
         .max_frame_size(MAX_MESSAGE_BYTES)
-        .on_upgrade(move |socket| connection(socket, state, user)))
+        .on_upgrade(move |socket| connection(socket, state, user, session)))
 }
 
 /// No `Origin` (non-browser client) or an exactly matching allowed origin.
@@ -113,9 +116,13 @@ impl Drop for Registration {
     }
 }
 
-async fn connection(socket: WebSocket, state: RealtimeState, user: UserId) {
+async fn connection(socket: WebSocket, state: RealtimeState, user: UserId, session: SessionId) {
     let (mut sink, mut stream) = socket.split();
-    let (id, mut outbox) = state.hub.connect(user);
+    let Registered {
+        id,
+        mut outbox,
+        mut session_ended,
+    } = state.hub.connect(user, session);
     let _registration = Registration {
         hub: state.hub.clone(),
         id,
@@ -133,6 +140,13 @@ async fn connection(socket: WebSocket, state: RealtimeState, user: UserId) {
 
     loop {
         tokio::select! {
+            biased;
+            // `Err` (sender dropped: removed as too slow) disables this branch; the outbox
+            // branch then closes with `CLOSE_SLOW`.
+            Ok(()) = &mut session_ended => {
+                close(&mut sink, CLOSE_SESSION_ENDED, "session ended").await;
+                break;
+            }
             incoming = tokio::time::timeout(state.config.idle_timeout, stream.next()) => {
                 let message = match incoming {
                     Err(_) => {
@@ -142,6 +156,15 @@ async fn connection(socket: WebSocket, state: RealtimeState, user: UserId) {
                     Ok(None | Some(Err(_))) => break,
                     Ok(Some(Ok(message))) => message,
                 };
+                // Heartbeats double as a session check (expiry, or a revocation whose
+                // notification was missed): every `heartbeat` seconds, never per second (BP5).
+                if let Message::Text(text) = &message
+                    && is_ping(text.as_str())
+                    && !session_still_active(&state.identity, session).await
+                {
+                    close(&mut sink, CLOSE_SESSION_ENDED, "session ended").await;
+                    break;
+                }
                 let reply = match message {
                     Message::Text(text) => handle(&state, id, user, text.as_str()),
                     Message::Binary(_) => error(ErrorCode::BadRequest, "binary frames are not supported", None),
@@ -168,6 +191,21 @@ async fn connection(socket: WebSocket, state: RealtimeState, user: UserId) {
         }
     }
     tracing::debug!(connection = ?id, "realtime connection closed");
+}
+
+fn is_ping(text: &str) -> bool {
+    matches!(serde_json::from_str(text), Ok(ClientMessage::Ping))
+}
+
+/// A database error keeps the connection: it is not evidence that the session ended.
+async fn session_still_active(identity: &IdentityService, session: SessionId) -> bool {
+    match identity.session_active(session).await {
+        Ok(active) => active,
+        Err(err) => {
+            tracing::warn!(error = %err, "realtime session check failed");
+            true
+        }
+    }
 }
 
 /// Answers one client message.

@@ -12,6 +12,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use db::testing::TestDb;
 use futures_util::{SinkExt, StreamExt};
 use identity::model::{ClientKind, RegisterRequest};
+use identity::service::SESSION_TTL;
 use identity::{EmailSettings, IdentityService, UserId};
 use kernel::FixedClock;
 use kernel::email::RecordingEmailSender;
@@ -38,12 +39,14 @@ struct Server {
     addr: SocketAddr,
     hub: Hub,
     identity: IdentityService,
+    clock: FixedClock,
     _db: TestDb,
 }
 
 async fn server_with(idle_timeout: Duration) -> Server {
     let db = TestDb::new().await;
-    let clock = Arc::new(FixedClock::new(now()));
+    let fixed = FixedClock::new(now());
+    let clock = Arc::new(fixed.clone());
     let identity = IdentityService::new(
         db.pool().clone(),
         clock.clone(),
@@ -68,6 +71,7 @@ async fn server_with(idle_timeout: Duration) -> Server {
         addr,
         hub,
         identity,
+        clock: fixed,
         _db: db,
     }
 }
@@ -366,4 +370,87 @@ async fn closed_connections_leave_the_hub() {
     .await
     .unwrap();
     assert_eq!(server.hub.publish(&Channel::User(id), &event()), 0);
+}
+
+/// Next frame must be a close frame with `code`.
+async fn closed_with(socket: &mut Socket, code: u16) {
+    loop {
+        match timeout(WITHIN, socket.next()).await.unwrap() {
+            Some(Ok(Message::Close(Some(frame)))) => {
+                assert_eq!(frame.code, CloseCode::from(code));
+                return;
+            }
+            Some(Ok(Message::Ping(_) | Message::Pong(_))) => {}
+            other => panic!("expected a close frame, got {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_revoked_session_closes_its_connections_only() {
+    let server = server().await;
+    let (id, token) = user(&server.identity, "ada@example.com").await;
+    let other_token = server
+        .identity
+        .login(
+            identity::model::LoginRequest {
+                email: "ada@example.com".into(),
+                password: "correct horse".into(),
+                client: ClientKind::Native,
+                device: None,
+            }
+            .validate()
+            .unwrap(),
+        )
+        .await
+        .unwrap()
+        .1
+        .token
+        .expose()
+        .to_owned();
+    let mut revoked = ready(server.addr, &token).await;
+    let mut kept = ready(server.addr, &other_token).await;
+
+    let session = server
+        .identity
+        .authenticate(&token)
+        .await
+        .unwrap()
+        .session_id;
+    server.identity.revoke_session(id, session).await.unwrap();
+    // The outbox handler forwards this through NOTIFY; the hub is what it reaches.
+    assert_eq!(server.hub.end_sessions(id, Some(session)), 1);
+    closed_with(&mut revoked, realtime::CLOSE_SESSION_ENDED).await;
+
+    send(&mut kept, json!({"type": "ping"})).await;
+    assert_eq!(recv(&mut kept).await["type"], "pong");
+}
+
+#[tokio::test]
+async fn a_ping_after_the_session_expired_closes_the_connection() {
+    let server = server().await;
+    let (_, token) = user(&server.identity, "ada@example.com").await;
+    let mut socket = ready(server.addr, &token).await;
+    send(&mut socket, json!({"type": "ping"})).await;
+    assert_eq!(recv(&mut socket).await["type"], "pong");
+
+    server.clock.advance(SESSION_TTL);
+    send(&mut socket, json!({"type": "ping"})).await;
+    closed_with(&mut socket, realtime::CLOSE_SESSION_ENDED).await;
+}
+
+#[tokio::test]
+async fn a_ping_after_revocation_closes_the_connection_even_without_the_notification() {
+    let server = server().await;
+    let (id, token) = user(&server.identity, "ada@example.com").await;
+    let mut socket = ready(server.addr, &token).await;
+    let session = server
+        .identity
+        .authenticate(&token)
+        .await
+        .unwrap()
+        .session_id;
+    server.identity.revoke_session(id, session).await.unwrap();
+    send(&mut socket, json!({"type": "ping"})).await;
+    closed_with(&mut socket, realtime::CLOSE_SESSION_ENDED).await;
 }

@@ -312,6 +312,45 @@ async fn logout_ends_only_the_current_session_and_clears_the_cookie() {
         .call(Method::POST, "/auth/logout", Auth::Bearer(&a), None)
         .await;
     assert_eq!(again.status(), StatusCode::NO_CONTENT);
+
+    // T0.5.6: the ended session is announced once, so its WebSocket connections close.
+    let ended = app.sessions_ended().await;
+    assert_eq!(ended.len(), 1);
+    assert!(ended[0]["user_id"].is_string());
+    assert!(ended[0]["session_id"].is_string());
+}
+
+#[tokio::test]
+async fn session_activity_is_checked_without_extending_the_session() {
+    let db = TestDb::new().await;
+    let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 11, 21, 12, 0, 0).unwrap());
+    let service =
+        IdentityService::new(db.pool().clone(), Arc::new(clock.clone()), email_settings());
+    let account = identity::model::RegisterRequest {
+        email: "active@example.test".into(),
+        password: "correct horse".into(),
+        display_name: "Ada".into(),
+        client: identity::model::ClientKind::Native,
+        device: None,
+    }
+    .validate()
+    .unwrap();
+    let (user, session) = service.register(account).await.unwrap();
+    let auth = service.authenticate(session.token.expose()).await.unwrap();
+
+    assert!(service.session_active(auth.session_id).await.unwrap());
+    clock.advance(SESSION_TTL - Duration::seconds(1));
+    assert!(service.session_active(auth.session_id).await.unwrap());
+    // The check itself did not extend it.
+    clock.advance(Duration::seconds(1));
+    assert!(!service.session_active(auth.session_id).await.unwrap());
+
+    clock.set(Utc.with_ymd_and_hms(2026, 11, 21, 12, 0, 0).unwrap());
+    service
+        .revoke_session(user.id, auth.session_id)
+        .await
+        .unwrap();
+    assert!(!service.session_active(auth.session_id).await.unwrap());
 }
 
 #[tokio::test]
@@ -420,6 +459,16 @@ async fn sessions_expire_after_inactivity_and_use_extends_them() {
 }
 
 impl App {
+    /// Payloads of `identity.sessions_ended` outbox events, oldest first.
+    async fn sessions_ended(&self) -> Vec<Value> {
+        sqlx::query_scalar(
+            "SELECT payload FROM outbox WHERE event_type = 'identity.sessions_ended' ORDER BY id",
+        )
+        .fetch_all(self.db.pool())
+        .await
+        .unwrap()
+    }
+
     fn clock_now(&self) -> chrono::DateTime<Utc> {
         use kernel::Clock;
         self.clock.now()

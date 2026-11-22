@@ -9,11 +9,13 @@
 //! - [`email_flow`]: e-mail verification and password reset
 //! - [`oauth`]: Google / Apple sign-in and account linking
 //! - [`profile`]: the user's own profile (display name, avatar URL, time zone, language)
+//! - [`events`]: domain events (`SessionsEnded`)
 //! - [`cleanup`]: daily deletion of expired sessions, e-mail tokens and OAuth states
 //! - [`http`]: `/auth/*` and `/me` endpoints
 
 pub mod cleanup;
 pub mod email_flow;
+pub mod events;
 pub mod http;
 pub mod model;
 pub mod oauth;
@@ -23,5 +25,6 @@ pub mod rate_limit;
 pub mod service;
 pub mod token;
 
+pub use events::SessionsEnded;
 pub use model::{SessionId, UserId};
 pub use service::{AuthContext, EmailSettings, IdentityService};

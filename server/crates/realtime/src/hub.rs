@@ -6,8 +6,8 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, PoisonError, RwLock};
 
-use identity::UserId;
-use tokio::sync::mpsc;
+use identity::{SessionId, UserId};
+use tokio::sync::{mpsc, oneshot};
 
 use crate::protocol::{Channel, Event, ServerMessage};
 
@@ -24,8 +24,21 @@ pub struct ConnectionId(u64);
 #[derive(Debug)]
 struct Connection {
     user: UserId,
+    session: SessionId,
     outbox: mpsc::Sender<ServerMessage>,
+    /// Fired when the connection's session ended (T0.5.6).
+    ended: Option<oneshot::Sender<()>>,
     channels: HashSet<Channel>,
+}
+
+/// What [`Hub::connect`] hands to the connection loop.
+#[derive(Debug)]
+pub struct Registered {
+    pub id: ConnectionId,
+    /// Messages for this connection; yields `None` once the hub dropped it as too slow.
+    pub outbox: mpsc::Receiver<ServerMessage>,
+    /// Resolves when the connection's session ended (sign-out, revocation, password reset).
+    pub session_ended: oneshot::Receiver<()>,
 }
 
 #[derive(Debug, Default)]
@@ -55,10 +68,10 @@ impl Hub {
         Self::default()
     }
 
-    /// Registers a connection; its messages arrive on the returned receiver. The receiver
-    /// yields `None` once the hub dropped the connection.
-    pub fn connect(&self, user: UserId) -> (ConnectionId, mpsc::Receiver<ServerMessage>) {
+    /// Registers a connection of `user` authenticated by `session`.
+    pub fn connect(&self, user: UserId, session: SessionId) -> Registered {
         let (outbox, inbox) = mpsc::channel(OUTBOX_CAPACITY);
+        let (ended, session_ended) = oneshot::channel();
         let mut state = self.write();
         state.next_id += 1;
         let id = ConnectionId(state.next_id);
@@ -66,11 +79,38 @@ impl Hub {
             id,
             Connection {
                 user,
+                session,
                 outbox,
+                ended: Some(ended),
                 channels: HashSet::new(),
             },
         );
-        (id, inbox)
+        Registered {
+            id,
+            outbox: inbox,
+            session_ended,
+        }
+    }
+
+    /// Ends the connections of `user` authenticated by `session` (`None`: all of the user's
+    /// sessions); returns how many. Their loops close them with
+    /// [`crate::ws::CLOSE_SESSION_ENDED`].
+    pub fn end_sessions(&self, user: UserId, session: Option<SessionId>) -> usize {
+        let mut state = self.write();
+        let ended: Vec<ConnectionId> = state
+            .connections
+            .iter()
+            .filter(|(_, c)| c.user == user && session.is_none_or(|s| s == c.session))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &ended {
+            if let Some(mut connection) = state.connections.remove(id)
+                && let Some(signal) = connection.ended.take()
+            {
+                let _ = signal.send(());
+            }
+        }
+        ended.len()
     }
 
     /// Forgets a connection and all its subscriptions.
@@ -166,8 +206,14 @@ mod tests {
     fn publishes_only_to_subscribers_of_the_channel() {
         let hub = Hub::new();
         let (alice, bob) = (UserId::new(), UserId::new());
-        let (a, mut a_rx) = hub.connect(alice);
-        let (_b, mut b_rx) = hub.connect(bob);
+        let Registered {
+            id: a,
+            outbox: mut a_rx,
+            ..
+        } = hub.connect(alice, SessionId::new());
+        let Registered {
+            outbox: mut b_rx, ..
+        } = hub.connect(bob, SessionId::new());
         assert_eq!(hub.subscribe(a, Channel::User(alice)), Subscribe::Added);
         assert_eq!(
             hub.subscribe(a, Channel::User(alice)),
@@ -188,7 +234,7 @@ mod tests {
     fn disconnect_forgets_subscriptions() {
         let hub = Hub::new();
         let user = UserId::new();
-        let (id, _rx) = hub.connect(user);
+        let id = hub.connect(user, SessionId::new()).id;
         assert_eq!(hub.user_of(id), Some(user));
         hub.subscribe(id, Channel::User(user));
         hub.disconnect(id);
@@ -200,7 +246,7 @@ mod tests {
     #[test]
     fn subscriptions_are_limited() {
         let hub = Hub::new();
-        let (id, _rx) = hub.connect(UserId::new());
+        let id = hub.connect(UserId::new(), SessionId::new()).id;
         for _ in 0..MAX_SUBSCRIPTIONS {
             assert_eq!(
                 hub.subscribe(id, Channel::User(UserId::new())),
@@ -218,8 +264,16 @@ mod tests {
         let hub = Hub::new();
         let user = UserId::new();
         let channel = Channel::User(user);
-        let (slow, mut slow_rx) = hub.connect(user);
-        let (fast, mut fast_rx) = hub.connect(user);
+        let Registered {
+            id: slow,
+            outbox: mut slow_rx,
+            ..
+        } = hub.connect(user, SessionId::new());
+        let Registered {
+            id: fast,
+            outbox: mut fast_rx,
+            ..
+        } = hub.connect(user, SessionId::new());
         hub.subscribe(slow, channel);
         hub.subscribe(fast, channel);
         for _ in 0..OUTBOX_CAPACITY {
@@ -239,5 +293,27 @@ mod tests {
             slow_rx.try_recv().is_err(),
             "closed after the buffer drains"
         );
+    }
+
+    #[test]
+    fn ending_sessions_signals_and_removes_their_connections() {
+        let hub = Hub::new();
+        let (ada, bob) = (UserId::new(), UserId::new());
+        let (phone, laptop) = (SessionId::new(), SessionId::new());
+        let mut on_phone = hub.connect(ada, phone);
+        let mut on_laptop = hub.connect(ada, laptop);
+        let mut bobs = hub.connect(bob, SessionId::new());
+
+        assert_eq!(hub.end_sessions(ada, Some(phone)), 1);
+        assert!(on_phone.session_ended.try_recv().is_ok());
+        assert!(on_laptop.session_ended.try_recv().is_err());
+        assert_eq!(hub.user_of(on_phone.id), None);
+
+        // A session of another user with the same id filter is not touched.
+        assert_eq!(hub.end_sessions(bob, Some(laptop)), 0);
+        assert_eq!(hub.end_sessions(ada, None), 1);
+        assert!(on_laptop.session_ended.try_recv().is_ok());
+        assert!(bobs.session_ended.try_recv().is_err());
+        assert_eq!(hub.connection_count(), 1);
     }
 }

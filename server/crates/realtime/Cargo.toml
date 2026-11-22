@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 axum = { workspace = true, features = ["ws"] }
 chrono.workspace = true
+db = { path = "../db" }
 futures-util.workspace = true
 identity = { path = "../identity" }
 kernel = { path = "../kernel" }
