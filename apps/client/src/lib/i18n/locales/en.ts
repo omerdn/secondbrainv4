@@ -4,7 +4,22 @@ import type { Catalog } from "./tr";
 export const en: Catalog = {
   common: {
     loading: "Loading",
-    comingSoon: { title: "Coming soon", description: "This section arrives in a later version." },
+    tagline: "Your tasks, routines and notes in one place.",
+    comingSoon: {
+      title: "Coming soon",
+      description: "This section arrives in a later version.",
+      sections: {
+        today: "Today's tasks, routines and goals will come together here.",
+        tasks: "Your tasks with subtasks and your personal kanban board will live here.",
+        routines: "You will track your recurring routines and streaks here.",
+        goals: "You will see your goals and their progress here.",
+        trackers: "You will track anything you want to measure here.",
+        notebooks: "Your notebooks and the pages you edit together will live here.",
+        calendar: "A calendar view of your tasks and routines will live here.",
+        settings: "This section arrives in a later version.",
+        more: "This section arrives in a later version.",
+      },
+    },
     notFound: { title: "Page not found", home: "Go home" },
   },
   connectivity: {
@@ -31,6 +46,7 @@ export const en: Catalog = {
     more: "More",
   },
   settings: {
+    account: "Account",
     language: "Language",
     languages: { tr: "Türkçe", en: "English" },
     languageFailed: "Could not change the language. Try again.",

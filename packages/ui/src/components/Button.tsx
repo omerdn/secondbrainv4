@@ -3,7 +3,8 @@ import { ActivityIndicator, Pressable, type PressableProps, Text, View } from "r
 
 import { cx } from "../cx";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+/** `dangerOutline`: a reversible but consequential action (e.g. sign out), quieter than `danger`. */
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "dangerOutline";
 export type ButtonSize = "sm" | "md";
 
 const container: Record<ButtonVariant, string> = {
@@ -11,6 +12,7 @@ const container: Record<ButtonVariant, string> = {
   secondary: "bg-surface-raised border border-border",
   ghost: "bg-transparent",
   danger: "bg-danger",
+  dangerOutline: "bg-transparent border border-danger",
 };
 
 const label: Record<ButtonVariant, string> = {
@@ -18,6 +20,7 @@ const label: Record<ButtonVariant, string> = {
   secondary: "text-foreground",
   ghost: "text-primary",
   danger: "text-danger-foreground",
+  dangerOutline: "text-danger",
 };
 
 const sizeClass: Record<ButtonSize, string> = {
