@@ -145,7 +145,7 @@ Her mutasyon istemcide üretilen bir `Idempotency-Key` başlığı taşır (ARCH
 
 ## Gerçek zamanlı kanal (`/ws`, T0.5.1–T0.5.2, T0.5.6)
 - `realtime` crate'i: `GET /ws` el sıkışması diğer istekler gibi doğrulanır (`Authorization: Bearer` ya da web'de oturum cookie'si). Cookie ile gelen el sıkışmada `Origin` izinli web origin'lerinden (CORS listesi) biri olmalıdır; aksi 403 (cross-site WebSocket hijacking).
-- Mesajlar JSON, `type` alanıyla etiketli; tipler `packages/api-types` içinde (`ClientMessage`, `ServerMessage`). Sunucu ilk olarak `hello` ile kendi saatini gönderir. İstemci `subscribe`/`unsubscribe` ile kanallara abone olur (şimdilik yalnız `user:<kendi id>`), 25 sn'de bir `ping` gönderir; 60 sn sessiz kalan bağlantı 4000 koduyla kapanır.
+- Mesajlar JSON, `type` alanıyla etiketli; tipler `packages/api-types` içinde (`ClientMessage`, `ServerMessage`). Sunucu ilk olarak `hello` ile kendi saatini gönderir. İstemci `subscribe`/`unsubscribe` ile kanallara abone olur (`user:<kendi id>` ve VIEW yetkisi olan nesneler için `item:<id>`), 25 sn'de bir `ping` gönderir; 60 sn sessiz kalan bağlantı 4000 koduyla kapanır.
 - WS veri taşımaz, sadece "değişti" der (`event {channel, event: {name, data}}`). Yavaş tüketici (64 mesajlık tampon dolarsa) düşürülür ve 4001 koduyla kapanır; istemci yeniden bağlanıp tazeler.
 - **Olay yayınlama (T0.5.2, ADR-0009):** Modüller `Hub::publish`'i doğrudan çağırmaz, `realtime::Notifier` kullanır. Notifier Postgres `NOTIFY` gönderir; her sunucu örneği (gönderen dahil) `app::run` içinde başlatılan `realtime::Bridge` ile `LISTEN` eder ve olayı kendi hub'ına verir. Böylece bağlantı hangi örnekteyse olay oraya ulaşır.
 
@@ -160,7 +160,7 @@ tx.commit().await?; // NOTIFY commit'te gider; rollback'te hiç gitmez
 - **Oturum bitince (T0.5.6):** Çıkış, `DELETE /auth/sessions/{id}` ve şifre sıfırlama, aynı transaction içinde `identity.sessions_ended` outbox olayını yayınlar. Olayı realtime'ın aboneliği (`realtime::sessions::register`) alır; dağıtıcı olayı tek bir örnekte işlediği için abonelik olayı NOTIFY ile tüm örneklere iletir. Her örnek o oturuma ait bağlantıları **4003** koduyla kapatır. Süresi dolan ya da bildirimi kaçırılan oturumlar her `ping`'de (25 sn'de bir) kontrol edilir ve aynı kodla kapatılır.
 - Kapatma kodları: 4000 sessizlik zaman aşımı, 4001 yavaş tüketici (bu ikisinde yeniden bağlanılır), 4003 oturum bitti (yeniden giriş gerekir).
 - Testlerde bildirim kanalları veritabanı geneli olduğundan her test kendi şema adını kanal adı olarak kullanır (`Bridge::start(pool, db.schema(), hub)`).
-- Nesne ve takım kanalları eklendiğinde yetki `PermissionService` üzerinden verilecek.
+- **Erişim kaybı (T1.1.6, V10):** `item:<id>` aboneliği `PermissionService` ile (VIEW) verilir. Bir yeniden hesaplama VIEW'u düşürürse `access` aynı transaction'da `access.revoked` outbox olayını yazar; `realtime::access::register` aboneliği olayı NOTIFY ile tüm örneklere iletir ve hub o kullanıcıların aboneliğini düşürüp `unsubscribed {channel, reason: "access_revoked"}` gönderir. Bağlantının kendisi açık kalır. Takım kanalları eklendiğinde yetki yine `PermissionService` üzerinden verilecek.
 
 ## Sunucuyu çalıştırma
 ```bash

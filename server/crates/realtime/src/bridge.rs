@@ -24,6 +24,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use identity::{SessionId, UserId};
+use uuid::Uuid;
 
 use crate::hub::Hub;
 use crate::protocol::{Channel, Event};
@@ -49,7 +50,12 @@ enum Envelope {
         user: UserId,
         session: Option<SessionId>,
     },
+    /// End these users' subscriptions to an item they can no longer view (V10).
+    AccessRevoked { item: Uuid, users: Vec<UserId> },
 }
+
+/// Users per `AccessRevoked` notification, keeping payloads far below [`MAX_PAYLOAD_BYTES`].
+const REVOKED_USERS_PER_NOTIFICATION: usize = 100;
 
 /// Why an event could not be published.
 #[derive(Debug)]
@@ -147,6 +153,24 @@ impl Notifier {
             .await
     }
 
+    /// Ends, on every instance, the subscriptions of `users` to `item`'s channel (V10). Large
+    /// user lists are split over several notifications.
+    pub async fn revoke_access(
+        &self,
+        pool: &PgPool,
+        item: Uuid,
+        users: &[UserId],
+    ) -> Result<(), PublishError> {
+        for chunk in users.chunks(REVOKED_USERS_PER_NOTIFICATION) {
+            let envelope = Envelope::AccessRevoked {
+                item,
+                users: chunk.to_vec(),
+            };
+            self.send(pool, &envelope).await?;
+        }
+        Ok(())
+    }
+
     async fn send<'e, E>(&self, executor: E, envelope: &Envelope) -> Result<(), PublishError>
     where
         E: PgExecutor<'e>,
@@ -230,6 +254,9 @@ fn deliver(hub: &Hub, payload: &str) {
         },
         Ok(Envelope::SessionsEnded { user, session }) => {
             hub.end_sessions(user, session);
+        }
+        Ok(Envelope::AccessRevoked { item, users }) => {
+            hub.revoke_item(item, &users);
         }
         // The payload is not logged: it is not ours to trust and may be arbitrary.
         Err(_) => tracing::warn!("realtime bridge ignored a malformed notification"),

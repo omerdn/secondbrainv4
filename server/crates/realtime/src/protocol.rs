@@ -13,18 +13,21 @@ use ts_rs::TS;
 
 /// A stream of events a connection can subscribe to.
 ///
-/// String form `kind:id`. Only `user:<own id>` exists so far; channels for objects and teams
-/// arrive with their modules and are authorised through `PermissionService` (ARCHITECTURE §6).
+/// String form `kind:id`: `user:<own id>` and `item:<id>`. Item channels are authorised through
+/// `PermissionService` (VIEW) and end when the access does (V10). Team channels arrive later.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Channel {
     /// Events for one user (notifications, own objects), e.g. `user:0193…`.
     User(UserId),
+    /// Changes to one item (task, page, …), e.g. `item:0193…`.
+    Item(uuid::Uuid),
 }
 
 impl fmt::Display for Channel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::User(id) => write!(f, "user:{id}"),
+            Self::Item(id) => write!(f, "item:{id}"),
         }
     }
 }
@@ -39,6 +42,7 @@ impl FromStr for Channel {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.split_once(':') {
             Some(("user", id)) => id.parse().map(Self::User).map_err(|_| InvalidChannel),
+            Some(("item", id)) => id.parse().map(Self::Item).map_err(|_| InvalidChannel),
             _ => Err(InvalidChannel),
         }
     }
@@ -80,6 +84,15 @@ pub enum ErrorCode {
     TooManySubscriptions,
 }
 
+/// Why the server ended a subscription the client did not cancel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, rename = "WsUnsubscribeReason")]
+pub enum UnsubscribeReason {
+    /// The user can no longer view the item (V10): drop it from the screen.
+    AccessRevoked,
+}
+
 /// Server → client.
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -102,6 +115,10 @@ pub enum ServerMessage {
     },
     Unsubscribed {
         channel: String,
+        /// Set when the server ended the subscription; absent for the client's own `unsubscribe`.
+        #[ts(optional)]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reason: Option<UnsubscribeReason>,
     },
     Event {
         channel: String,

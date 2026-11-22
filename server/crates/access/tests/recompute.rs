@@ -364,3 +364,54 @@ async fn concurrent_changes_leave_no_stale_access() {
         BTreeMap::from([(ali, ALL), (ayse, VE), (can, VE)])
     );
 }
+
+/// `access.revoked` outbox events, oldest first: (item, users).
+async fn revoked_events(pool: &PgPool) -> Vec<(Uuid, Vec<Uuid>)> {
+    sqlx::query_scalar::<_, serde_json::Value>(
+        "SELECT payload FROM outbox WHERE event_type = 'access.revoked' ORDER BY created_at, id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+    .into_iter()
+    .map(|p| {
+        let e: access::AccessRevoked = serde_json::from_value(p).unwrap();
+        (e.item_id, e.user_ids)
+    })
+    .collect()
+}
+
+#[tokio::test]
+async fn losing_view_access_publishes_access_revoked() {
+    // V10: the realtime layer learns who lost access, in the same transaction.
+    let db = TestDb::new().await;
+    let (ali, ayse, page, task) = (id(), id(), id(), id());
+    for tuple in [
+        t(page, R::Owner, ali),
+        t(task, R::Owner, ali),
+        t(task, R::Watcher, ayse),
+        t(page, R::LinkedTo, task),
+    ] {
+        granted(db.pool(), tuple, &engine()).await;
+    }
+    assert!(
+        revoked_events(db.pool()).await.is_empty(),
+        "grants revoke nothing"
+    );
+
+    revoked(db.pool(), t(task, R::Watcher, ayse), &engine()).await;
+    let mut events = revoked_events(db.pool()).await;
+    events.sort();
+    let mut expected = vec![(page, vec![ayse]), (task, vec![ayse])];
+    expected.sort();
+    assert_eq!(events, expected);
+
+    // A rolled-back revoke publishes nothing.
+    let mut tx = db.pool().begin().await.unwrap();
+    engine()
+        .revoke(&mut tx, t(page, R::LinkedTo, task))
+        .await
+        .unwrap();
+    tx.rollback().await.unwrap();
+    assert_eq!(revoked_events(db.pool()).await.len(), 2);
+}

@@ -9,7 +9,7 @@ use std::sync::{Arc, PoisonError, RwLock};
 use identity::{SessionId, UserId};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::protocol::{Channel, Event, ServerMessage};
+use crate::protocol::{Channel, Event, ServerMessage, UnsubscribeReason};
 
 /// Messages buffered per connection before it counts as too slow and is dropped.
 pub const OUTBOX_CAPACITY: usize = 64;
@@ -142,6 +142,26 @@ impl Hub {
         if let Some(connection) = self.write().connections.get_mut(&id) {
             connection.channels.remove(channel);
         }
+    }
+
+    /// Ends the subscriptions of `users` to the channel of `item` and tells each client with
+    /// `unsubscribed` (reason `access_revoked`, V10); returns how many subscriptions ended.
+    pub fn revoke_item(&self, item: uuid::Uuid, users: &[UserId]) -> usize {
+        let channel = Channel::Item(item);
+        let mut ended = 0;
+        let mut state = self.write();
+        for connection in state.connections.values_mut() {
+            if !users.contains(&connection.user) || !connection.channels.remove(&channel) {
+                continue;
+            }
+            ended += 1;
+            // A full outbox means the client is about to be dropped anyway; it refetches.
+            let _ = connection.outbox.try_send(ServerMessage::Unsubscribed {
+                channel: channel.to_string(),
+                reason: Some(UnsubscribeReason::AccessRevoked),
+            });
+        }
+        ended
     }
 
     /// Sends `event` to every connection subscribed to `channel`; returns how many received

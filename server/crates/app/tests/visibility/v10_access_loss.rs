@@ -1,11 +1,60 @@
 //! `V10` When a user loses access, their open sessions on that object are cut immediately.
 
-use crate::support::pending;
+use access::Relation as R;
+use db::outbox::{DispatchConfig, Dispatcher};
+use identity::{SessionId, UserId};
+use realtime::{Bridge, Channel, Event, Hub, Notifier, ServerMessage, UnsubscribeReason};
+
+use crate::support::{World, id, t};
 
 /// Ayşe has page P open over the realtime channel. Ali removes her access; her subscription to P
-/// is terminated and further updates are not delivered.
+/// is terminated and further updates are not delivered. (The WebSocket round trip itself is
+/// covered in `realtime/tests/access_revoked.rs`.)
 #[tokio::test]
-#[ignore = "T1.1.6: AccessRevoked event and realtime disconnect"]
 async fn revoked_user_is_disconnected() {
-    pending()
+    let world = World::new().await;
+    let (ali, ayse, page, task) = (id(), id(), id(), id());
+    world
+        .grant(&[
+            t(page, R::Owner, ali),
+            t(task, R::Owner, ali),
+            t(task, R::Assignee, ayse),
+            t(page, R::LinkedTo, task),
+        ])
+        .await;
+
+    let hub = Hub::new();
+    let bridge = Bridge::start(world.pool(), world.schema(), hub.clone())
+        .await
+        .unwrap();
+    let mut dispatcher = Dispatcher::new(DispatchConfig::default());
+    realtime::access::register(
+        &mut dispatcher,
+        world.pool().clone(),
+        Notifier::new(world.schema()),
+    );
+    let mut connection = hub.connect(UserId::from_uuid(ayse), SessionId::new());
+    hub.subscribe(connection.id, Channel::Item(page));
+
+    // Unlinking the page from the task takes Ayşe's only path to it away.
+    world.revoke(t(page, R::LinkedTo, task)).await;
+    dispatcher.dispatch_batch(world.pool()).await.unwrap();
+
+    let message = tokio::time::timeout(std::time::Duration::from_secs(5), connection.outbox.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        message,
+        ServerMessage::Unsubscribed {
+            channel: Channel::Item(page).to_string(),
+            reason: Some(UnsubscribeReason::AccessRevoked),
+        }
+    );
+    let update = Event {
+        name: "item.changed".into(),
+        data: serde_json::json!({}),
+    };
+    assert_eq!(hub.publish(&Channel::Item(page), &update), 0);
+    bridge.stop().await;
 }

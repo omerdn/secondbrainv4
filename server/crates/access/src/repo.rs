@@ -238,6 +238,16 @@ pub(crate) async fn restrict_item_access(
     Ok(())
 }
 
+/// Users who can currently view `item_id`, sorted.
+pub(crate) async fn viewers(conn: impl PgExecutor<'_>, item_id: Uuid) -> sqlx::Result<Vec<Uuid>> {
+    sqlx::query_scalar(
+        "SELECT user_id FROM item_access WHERE item_id = $1 AND perms & 1 = 1 ORDER BY user_id",
+    )
+    .bind(item_id)
+    .fetch_all(conn)
+    .await
+}
+
 /// The cached access of `user_id` on `item_id`, if any.
 pub(crate) async fn item_access(
     conn: impl PgExecutor<'_>,
