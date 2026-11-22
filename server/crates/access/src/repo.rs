@@ -31,10 +31,6 @@ fn tuple_from_row(
     Ok(RelationTuple::new(object_id, relation, subject_id))
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by PermissionService (T1.1.5)")
-)]
 fn perms_from_db(bits: i32) -> sqlx::Result<Perms> {
     u8::try_from(bits)
         .ok()
@@ -85,7 +81,7 @@ pub(crate) async fn delete_relation(
 /// All tuples whose object is `object_type:object_id`.
 #[cfg_attr(
     not(test),
-    expect(dead_code, reason = "used by PermissionService (T1.1.5)")
+    expect(dead_code, reason = "tuple listing API, not used yet")
 )]
 pub(crate) async fn relations_of_object(
     conn: impl PgExecutor<'_>,
@@ -110,7 +106,7 @@ pub(crate) async fn relations_of_object(
 /// (reverse lookups, e.g. pages linked to an item).
 #[cfg_attr(
     not(test),
-    expect(dead_code, reason = "used by PermissionService (T1.1.5)")
+    expect(dead_code, reason = "tuple listing API, not used yet")
 )]
 pub(crate) async fn relations_of_subject(
     conn: impl PgExecutor<'_>,
@@ -243,10 +239,6 @@ pub(crate) async fn restrict_item_access(
 }
 
 /// The cached access of `user_id` on `item_id`, if any.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by PermissionService (T1.1.5)")
-)]
 pub(crate) async fn item_access(
     conn: impl PgExecutor<'_>,
     item_id: Uuid,
@@ -271,10 +263,6 @@ pub(crate) async fn item_access(
 }
 
 /// Ids of the items on which `user_id` has at least `required`.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by PermissionService (T1.1.5)")
-)]
 pub(crate) async fn accessible_item_ids(
     conn: impl PgExecutor<'_>,
     user_id: Uuid,

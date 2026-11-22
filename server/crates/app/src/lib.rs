@@ -127,8 +127,8 @@ where
     identity::cleanup::register(identity.clone(), &mut worker, &mut scheduler)
         .map_err(RunError::Schedule)?;
     // Access engine (T1.1.3, T1.1.4): defaults until `items` and `teams` provide their context.
-    access::AccessEngine::new(access::DefaultAccessContext, config.access)
-        .register(&mut worker, pool.clone());
+    let access_engine = access::AccessEngine::new(access::DefaultAccessContext, config.access);
+    access_engine.register(&mut worker, pool.clone());
     let (stop_jobs, jobs_stopped) = tokio::sync::watch::channel(false);
     let jobs_task = {
         let pool = pool.clone();
@@ -173,7 +173,12 @@ where
     });
     let mut modules = identity::http::rate_limited_router(identity.clone(), limits)
         .merge(idempotency::protect(profile, idempotency))
-        .merge(ws);
+        .merge(ws)
+        .merge(access::http::router(access::http::AccessHttpState {
+            permissions: access_engine.permissions(),
+            identity: identity.clone(),
+            pool: pool.clone(),
+        }));
     // Minimum supported client versions (T4.2.7): public, read before sign-in.
     modules = modules.merge(client_policy::router(config.client_policy.clone()));
     if let Some(dir) = &config.updates_dir {

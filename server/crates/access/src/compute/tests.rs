@@ -222,11 +222,11 @@ fn team_items_follow_the_default_role_matrix() {
     assert_eq!(
         a[&CAN].reasons,
         [
+            Reason::Assignee,
             Reason::TeamRole {
                 team_id: TEAM,
                 role: TeamRole::Member
             },
-            Reason::Assignee,
         ]
     );
     // V6: only the admin role deletes by default; V5: admins and managers add members.

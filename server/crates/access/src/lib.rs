@@ -5,7 +5,9 @@
 
 mod affected;
 mod compute;
+pub mod http;
 mod model;
+mod permissions;
 mod recompute;
 mod repo;
 
@@ -14,6 +16,7 @@ pub use compute::{
     Access, AccessGraph, ItemAttrs, Reason, RolePolicy, TeamRole, TeamVisibility, compute_access,
 };
 pub use model::{ObjectType, Perms, Relation, RelationTuple, SubjectType};
+pub use permissions::{Explanation, Permission, PermissionService, PreviewItem};
 pub use recompute::{
     AccessConfig, AccessContext, AccessEngine, DefaultAccessContext, ExpandAccess, Recomputed,
 };
