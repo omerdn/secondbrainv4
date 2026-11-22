@@ -17,14 +17,14 @@ function Probe() {
   );
 }
 
-async function setup(authenticated = true) {
+async function setup(userId: string | null = "u1") {
   const links = fakeLinks();
   const network = fakeNetwork();
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const tree = (auth: boolean) => (
+  const tree = (auth: string | null) => (
     <QueryClientProvider client={queryClient}>
       <ConnectivityProvider
-        authenticated={auth}
+        userId={auth}
         openLink={links.open}
         network={network.source}
         random={() => 0}
@@ -33,12 +33,12 @@ async function setup(authenticated = true) {
       </ConnectivityProvider>
     </QueryClientProvider>
   );
-  const view = await render(tree(authenticated));
+  const view = await render(tree(userId));
   return {
     ...links,
     network,
     queryClient,
-    rerender: (auth: boolean) => view.rerender(tree(auth)),
+    rerender: (auth: string | null) => view.rerender(tree(auth)),
     unmount: view.unmount,
   };
 }
@@ -54,16 +54,16 @@ afterEach(() => jest.useRealTimers());
 
 describe("ConnectivityProvider", () => {
   it("boots with the socket when signed in and goes online", async () => {
-    const { last } = await setup(true);
+    const { last } = await setup("u1");
     expect(shown()).toBe("booting");
-    expect(last().authenticated).toBe(true);
+    expect(last().userId).toBe("u1");
     await signal(() => last().handlers.up());
     expect(shown()).toBe("online");
   });
 
   it("BP1: a failed boot blocks until retry succeeds", async () => {
-    const { last, links } = await setup(false);
-    expect(last().authenticated).toBe(false);
+    const { last, links } = await setup(null);
+    expect(last().userId).toBeNull();
     await signal(() => last().handlers.failed());
     expect(shown()).toBe("offline_blocked");
     await fireEvent.press(screen.getByTestId("state"));
@@ -134,12 +134,12 @@ describe("ConnectivityProvider", () => {
   });
 
   it("swaps the link when the session changes, without leaving online", async () => {
-    const { last, links, rerender } = await setup(false);
+    const { last, links, rerender } = await setup(null);
     await signal(() => last().handlers.up());
-    await rerender(true);
+    await rerender("u1");
     expect(links).toHaveLength(2);
     expect(links[0]?.closed).toBe(true);
-    expect(last().authenticated).toBe(true);
+    expect(last().userId).toBe("u1");
     expect(shown()).toBe("online");
   });
 

@@ -57,7 +57,7 @@ function parse(data: unknown): ServerMessage | null {
 }
 
 /**
- * The `/ws` link: up on `hello`; then pings every `heartbeat_secs` and counts the link as lost
+ * The `/ws` link: up on `hello` (after subscribing to `channels`); then pings every `heartbeat_secs` and counts the link as lost
  * if a `pong` (or any message) does not arrive within {@link RESPONSE_TIMEOUT_MS}.
  */
 export function openSocketLink(
@@ -65,6 +65,8 @@ export function openSocketLink(
   token: string | null,
   handlers: LinkHandlers,
   createSocket: SocketFactory,
+  /** Channels to subscribe to once connected, e.g. `user:<own id>`. */
+  channels: readonly string[] = [],
 ): Link {
   let state: "connecting" | "up" | "done" = "connecting";
   let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -113,7 +115,8 @@ export function openSocketLink(
       state = "up";
       const every = Math.max(1, message.heartbeat_secs) * 1_000;
       heartbeat = setInterval(() => ping("heartbeat_timeout"), every);
-      handlers.up();
+      for (const channel of channels) send({ type: "subscribe", channel });
+      if (state === "up") handlers.up();
     } else if (message.type !== "pong") {
       handlers.message?.(message);
     }

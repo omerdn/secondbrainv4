@@ -10,3 +10,4 @@ export {
 export type { Link, LinkHandlers } from "./link";
 export type { ConnectivityState } from "./machine";
 export { useOnConnected } from "./useOnConnected";
+export { defaultRules, type InvalidationRule, type InvalidationRules } from "./invalidation";
