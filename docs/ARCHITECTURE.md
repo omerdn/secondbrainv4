@@ -155,7 +155,10 @@ Her türün kendi detay tablosu vardır: `tasks`, `routines`, `goals`, `trackers
 - `user_task_placements(user_id, task_id, column_id, position)`: `position`, kesirli indeks (fractional indexing) ile tutulur.
 
 ### 5.5 Takip motoru
-- `trackers(item_id, unit, target_value, period[day|week|month|total|range], aggregation[sum|count|last|max], direction[increase|limit], owner_kind[standalone|routine|module])`
+- `trackers(item_id, unit, target_value, period[day|week|month|total|range], range_start NULL, range_end NULL, aggregation[sum|count|last|max], direction[increase|limit], owner_kind[standalone|routine|module])`
+  - `range_start` ve `range_end` yalnız `period = range` iken doludur.
+  - `item_id`, `items` tablosuna `ON DELETE CASCADE` ile bağlıdır: kalıcı silinen nesnenin takibi ve kayıtları da silinir, `tracking` crate'i `items` tablosuna SQL ile erişmez.
+  - Değerler `numeric` olarak saklanır ve Rust'ta `rust_decimal` ile taşınır; para ve kaloride yuvarlama hatası olmaz.
 - `tracker_entries(id, tracker_item_id, user_id, value numeric, occurred_at, local_date, note_block_id NULL, created_at, deleted_at)`
   - `note_block_id`: kaydın notunu süreç sayfasındaki satıra bağlar (T3).
 
