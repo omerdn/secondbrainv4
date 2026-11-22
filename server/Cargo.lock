@@ -80,6 +80,7 @@ dependencies = [
  "dotenvy",
  "http-body-util",
  "identity",
+ "items",
  "jobs",
  "kernel",
  "notebooks",
@@ -1743,6 +1744,24 @@ checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
 [[package]]
 name = "items"
 version = "0.0.0"
+dependencies = [
+ "access",
+ "axum",
+ "chrono",
+ "db",
+ "http-body-util",
+ "identity",
+ "jobs",
+ "kernel",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tower",
+ "tracing",
+ "ts-rs",
+ "uuid",
+]
 
 [[package]]
 name = "itertools"

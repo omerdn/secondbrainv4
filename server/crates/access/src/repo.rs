@@ -79,10 +79,6 @@ pub(crate) async fn delete_relation(
 }
 
 /// All tuples whose object is `object_type:object_id`.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "tuple listing API, not used yet")
-)]
 pub(crate) async fn relations_of_object(
     conn: impl PgExecutor<'_>,
     object_type: ObjectType,
@@ -104,10 +100,6 @@ pub(crate) async fn relations_of_object(
 
 /// All tuples whose subject is `subject_type:subject_id`, optionally limited to one relation
 /// (reverse lookups, e.g. pages linked to an item).
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "tuple listing API, not used yet")
-)]
 pub(crate) async fn relations_of_subject(
     conn: impl PgExecutor<'_>,
     subject_type: SubjectType,

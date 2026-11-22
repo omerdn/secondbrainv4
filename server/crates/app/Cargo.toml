@@ -17,6 +17,7 @@ chrono.workspace = true
 db = { path = "../db" }
 dotenvy.workspace = true
 identity = { path = "../identity" }
+items = { path = "../items" }
 jobs = { path = "../jobs" }
 kernel = { path = "../kernel" }
 notebooks = { path = "../notebooks" }

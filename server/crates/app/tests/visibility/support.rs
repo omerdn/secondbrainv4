@@ -1,23 +1,24 @@
 //! Shared fixtures for the visibility suite: relations go through the access engine (T1.1.3), checks
 //! through `PermissionService` (T1.1.5). Grows with items (T1.2.1), friendships (T3.1.1), teams (T5.1.1).
 
-use access::{
-    AccessConfig, AccessEngine, DefaultAccessContext, PermissionService, Relation, RelationTuple,
-};
+use std::sync::Arc;
+
+use access::{AccessConfig, AccessEngine, PermissionService, Relation, RelationTuple};
 use db::testing::TestDb;
+use items::{ItemsAccessContext, ItemsService};
 use uuid::Uuid;
 
 /// One isolated, fully migrated database per test.
 pub(crate) struct World {
     db: TestDb,
-    engine: AccessEngine<DefaultAccessContext>,
+    engine: AccessEngine<ItemsAccessContext>,
 }
 
 impl World {
     pub(crate) async fn new() -> Self {
         Self {
             db: TestDb::new().await,
-            engine: AccessEngine::new(DefaultAccessContext, AccessConfig::default()),
+            engine: AccessEngine::new(ItemsAccessContext, AccessConfig::default()),
         }
     }
 
@@ -36,7 +37,16 @@ impl World {
         tx.commit().await.unwrap();
     }
 
-    pub(crate) fn permissions(&self) -> PermissionService<DefaultAccessContext> {
+    /// The items service on this world's database and access engine, with the system clock.
+    pub(crate) fn items(&self) -> ItemsService {
+        ItemsService::new(
+            self.pool().clone(),
+            Arc::new(kernel::SystemClock),
+            self.engine.clone(),
+        )
+    }
+
+    pub(crate) fn permissions(&self) -> PermissionService<ItemsAccessContext> {
         self.engine.permissions()
     }
 
