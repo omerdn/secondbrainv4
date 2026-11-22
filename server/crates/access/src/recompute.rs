@@ -18,7 +18,7 @@ use uuid::Uuid;
 use crate::affected::{Change, affected_items, changed_team, compute_inputs};
 use crate::compute::{AccessGraph, ItemAttrs, RolePolicy, compute_access};
 use crate::events::AccessRevoked;
-use crate::model::{ObjectType, Perms, Relation, RelationTuple};
+use crate::model::{ObjectType, Perms, Relation, RelationTuple, SubjectType};
 use crate::repo::{self, AccessEntry};
 
 /// Facts other modules own that `compute_access` needs: item attributes (`items`) and team role
@@ -227,6 +227,21 @@ impl<C: AccessContext> AccessEngine<C> {
         self.run(conn, Change::Relation(tuple), Direction::Narrow)
             .await?;
         Ok(true)
+    }
+
+    /// Removes every relation of a permanently deleted item, as object or subject, and
+    /// recomputes what depended on it (pages linked to it, pages in it). Its former viewers are
+    /// announced with `access.revoked`. Call it inside the transaction that deletes the item.
+    ///
+    /// # Errors
+    /// Database errors.
+    pub async fn remove_item(&self, conn: &mut PgConnection, item: Uuid) -> sqlx::Result<()> {
+        let mut tuples = repo::relations_of_object(&mut *conn, ObjectType::Item, item).await?;
+        tuples.extend(repo::relations_of_subject(&mut *conn, SubjectType::Item, item, None).await?);
+        for tuple in tuples {
+            self.revoke(conn, tuple).await?;
+        }
+        Ok(())
     }
 
     /// Recomputes the items affected by a change that is not a relation: [`Change::Item`]

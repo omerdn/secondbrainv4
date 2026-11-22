@@ -127,9 +127,13 @@ where
         .map_err(RunError::Schedule)?;
     identity::cleanup::register(identity.clone(), &mut worker, &mut scheduler)
         .map_err(RunError::Schedule)?;
-    // Access engine (T1.1.3, T1.1.4): defaults until `items` and `teams` provide their context.
-    let access_engine = access::AccessEngine::new(access::DefaultAccessContext, config.access);
+    // Access engine (T1.1.3, T1.1.4) with item facts from `items`; team policies are defaults
+    // until `teams` provides them (T5.1.2).
+    let access_engine = access::AccessEngine::new(items::ItemsAccessContext, config.access);
     access_engine.register(&mut worker, pool.clone());
+    let items = items::ItemsService::new(pool.clone(), clock.clone(), access_engine.clone());
+    items::purge::register(items.clone(), clock.clone(), &mut worker, &mut scheduler)
+        .map_err(RunError::Schedule)?;
     let (stop_jobs, jobs_stopped) = tokio::sync::watch::channel(false);
     let jobs_task = {
         let pool = pool.clone();
@@ -174,7 +178,13 @@ where
         config: realtime::RealtimeConfig::new(config.cors_origins.clone()),
     });
     let mut modules = identity::http::rate_limited_router(identity.clone(), limits)
-        .merge(idempotency::protect(profile, idempotency))
+        .merge(idempotency::protect(
+            profile.merge(items::http::router(items::http::ItemsHttpState {
+                items,
+                identity: identity.clone(),
+            })),
+            idempotency,
+        ))
         .merge(ws)
         .merge(access::http::router(access::http::AccessHttpState {
             permissions: access_engine.permissions(),

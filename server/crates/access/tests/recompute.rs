@@ -415,3 +415,34 @@ async fn losing_view_access_publishes_access_revoked() {
     tx.rollback().await.unwrap();
     assert_eq!(revoked_events(db.pool()).await.len(), 2);
 }
+
+#[tokio::test]
+async fn removing_an_item_clears_its_relations_and_dependents() {
+    let db = TestDb::new().await;
+    let (ali, ayse, page, task) = (id(), id(), id(), id());
+    for tuple in [
+        t(page, R::Owner, ali),
+        t(task, R::Owner, ali),
+        t(task, R::Watcher, ayse),
+        t(page, R::LinkedTo, task),
+    ] {
+        granted(db.pool(), tuple, &engine()).await;
+    }
+    let mut tx = db.pool().begin().await.unwrap();
+    engine().remove_item(&mut tx, task).await.unwrap();
+    tx.commit().await.unwrap();
+    assert!(access_of(db.pool(), task).await.is_empty());
+    // The page lost the inherited viewer but keeps its owner.
+    assert_eq!(
+        access_of(db.pool(), page).await,
+        BTreeMap::from([(ali, ALL)])
+    );
+    let left: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM access_relations WHERE object_id = $1 OR subject_id = $1",
+    )
+    .bind(task)
+    .fetch_one(db.pool())
+    .await
+    .unwrap();
+    assert_eq!(left, 0);
+}
