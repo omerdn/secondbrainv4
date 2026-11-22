@@ -73,8 +73,8 @@ fn internal(err: impl std::error::Error + Send + Sync + 'static) -> AppError {
 /// Shared handle; cheap to clone.
 #[derive(Clone)]
 pub struct ItemsService {
-    pool: PgPool,
-    clock: SharedClock,
+    pub(crate) pool: PgPool,
+    pub(crate) clock: SharedClock,
     access: AccessEngine<ItemsAccessContext>,
 }
 
@@ -134,6 +134,17 @@ impl ItemsService {
     /// # Errors
     /// [`AppError::Internal`] on database errors.
     pub async fn list(&self, actor: Uuid, state: ListState) -> Result<Vec<Item>, AppError> {
+        self.list_where(actor, state, None).await
+    }
+
+    /// [`Self::list`], optionally limited to items carrying `tag`. The caller checks that the
+    /// tag is visible to `actor`.
+    pub(crate) async fn list_where(
+        &self,
+        actor: Uuid,
+        state: ListState,
+        tag: Option<Uuid>,
+    ) -> Result<Vec<Item>, AppError> {
         let (required, filter) = match state {
             ListState::Active => (Perms::VIEW, "deleted_at IS NULL AND archived_at IS NULL"),
             ListState::Archived => (
@@ -150,10 +161,13 @@ impl ItemsService {
             .map_err(internal)?;
         let rows = sqlx::query_as::<_, ItemRow>(sqlx::AssertSqlSafe(format!(
             "SELECT {COLUMNS} FROM items WHERE id = ANY($1) AND {filter}
+               AND ($3::uuid IS NULL
+                    OR id IN (SELECT item_id FROM item_tags WHERE tag_id = $3))
              ORDER BY created_at DESC, id DESC LIMIT $2"
         )))
         .bind(&ids)
         .bind(LIST_LIMIT)
+        .bind(tag)
         .fetch_all(&self.pool)
         .await
         .map_err(internal)?;
@@ -287,14 +301,19 @@ impl ItemsService {
         }
     }
 
-    async fn require(&self, actor: Uuid, id: Uuid, perms: Perms) -> Result<(), AppError> {
+    pub(crate) async fn require(
+        &self,
+        actor: Uuid,
+        id: Uuid,
+        perms: Perms,
+    ) -> Result<(), AppError> {
         self.access
             .permissions()
             .require(&self.pool, actor, id, perms)
             .await
     }
 
-    async fn load(&self, id: Uuid) -> Result<Option<Item>, AppError> {
+    pub(crate) async fn load(&self, id: Uuid) -> Result<Option<Item>, AppError> {
         let row = sqlx::query_as::<_, ItemRow>(sqlx::AssertSqlSafe(format!(
             "SELECT {COLUMNS} FROM items WHERE id = $1"
         )))

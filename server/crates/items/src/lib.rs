@@ -6,6 +6,7 @@ pub mod http;
 mod model;
 pub mod purge;
 mod service;
+mod tags;
 
 pub use context::ItemsAccessContext;
 pub use model::{
@@ -13,3 +14,6 @@ pub use model::{
     Owner, TITLE_MAX_CHARS, UpdateItemRequest, valid_kind,
 };
 pub use service::{ItemsService, LIST_LIMIT, TRASH_RETENTION};
+pub use tags::{
+    CreateTagRequest, NewTag, TAG_LIST_LIMIT, TAG_NAME_MAX_CHARS, Tag, TagChanges, UpdateTagRequest,
+};
