@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 chrono.workspace = true
+chrono-tz.workspace = true
 kernel = { path = "../kernel" }
 rust_decimal.workspace = true
 sqlx.workspace = true
@@ -21,4 +22,6 @@ uuid.workspace = true
 access = { path = "../access" }
 db = { path = "../db", features = ["testing"] }
 items = { path = "../items" }
+proptest.workspace = true
+recurrence = { path = "../recurrence" }
 tokio.workspace = true
