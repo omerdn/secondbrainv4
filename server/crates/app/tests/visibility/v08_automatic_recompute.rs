@@ -1,14 +1,31 @@
 //! `V8` Access is recomputed on every relevant change; access that came through a removed link
 //! drops automatically.
 
-use crate::support::pending;
+use access::Relation as R;
+use kernel::AppError;
+
+use crate::support::{World, id, pending, t};
 
 /// Ayşe sees page P only through its link to task T. After Ali unlinks P from T she can no longer
 /// see P.
 #[tokio::test]
-#[ignore = "T1.2.3: item links"]
 async fn unlinking_drops_inherited_access() {
-    pending()
+    let world = World::new().await;
+    let (ali, ayse) = (id(), id());
+    let items = world.items();
+    let page = world.item(ali, "page", "P").await;
+    let task = world.item(ali, "task", "T").await;
+    world.grant(&[t(task.id, R::Watcher, ayse)]).await;
+    items.link(ali, page.id, task.id).await.unwrap();
+    assert_eq!(items.get(ayse, page.id).await.unwrap().id, page.id);
+
+    items.unlink(ali, page.id, task.id).await.unwrap();
+
+    assert!(matches!(
+        items.get(ayse, page.id).await,
+        Err(AppError::NotFound)
+    ));
+    assert_eq!(items.get(ayse, task.id).await.unwrap().id, task.id);
 }
 
 /// Removing Ayşe from task T removes her access to T and to the pages linked to it.
