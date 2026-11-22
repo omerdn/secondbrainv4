@@ -1,0 +1,337 @@
+//! Synchronous recompute of `item_access` for every V8 trigger (T1.1.3, ARCHITECTURE §6.4)
+//! against a real Postgres 17. Requires Docker (or `TEST_DATABASE_URL`).
+
+// Integration-test file: panics are the failure mechanism, including in helpers.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Mutex;
+
+use access::{
+    AccessContext, Change, DefaultAccessContext, ItemAttrs, Relation as R, RelationTuple,
+    RolePolicy, TeamVisibility, grant, recompute, revoke,
+};
+use db::PgPool;
+use db::testing::TestDb;
+use sqlx::PgConnection;
+use uuid::Uuid;
+
+const VIEW: i32 = 1;
+const VE: i32 = 3;
+const ALL: i32 = 63;
+
+fn id() -> Uuid {
+    Uuid::now_v7()
+}
+
+fn t(object: Uuid, relation: R, subject: Uuid) -> RelationTuple {
+    RelationTuple::new(object, relation, subject)
+}
+
+/// `item_access` rows of `item`: user -> perms bits.
+async fn access_of(pool: &PgPool, item: Uuid) -> BTreeMap<Uuid, i32> {
+    sqlx::query_as::<_, (Uuid, i32)>("SELECT user_id, perms FROM item_access WHERE item_id = $1")
+        .bind(item)
+        .fetch_all(pool)
+        .await
+        .unwrap()
+        .into_iter()
+        .collect()
+}
+
+async fn reasons_of(pool: &PgPool, item: Uuid, user: Uuid) -> serde_json::Value {
+    sqlx::query_scalar("SELECT reasons FROM item_access WHERE item_id = $1 AND user_id = $2")
+        .bind(item)
+        .bind(user)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Commits a grant in its own transaction.
+async fn granted(pool: &PgPool, tuple: RelationTuple, ctx: &impl AccessContext) {
+    let mut tx = pool.begin().await.unwrap();
+    assert!(grant(&mut tx, tuple, ctx).await.unwrap());
+    tx.commit().await.unwrap();
+}
+
+async fn revoked(pool: &PgPool, tuple: RelationTuple, ctx: &impl AccessContext) {
+    let mut tx = pool.begin().await.unwrap();
+    assert!(revoke(&mut tx, tuple, ctx).await.unwrap());
+    tx.commit().await.unwrap();
+}
+
+/// Item attributes and team policies the test controls, standing in for `items` and `teams`.
+#[derive(Default)]
+struct TestContext {
+    attrs: Mutex<HashMap<Uuid, ItemAttrs>>,
+    policies: Mutex<HashMap<Uuid, RolePolicy>>,
+}
+
+impl AccessContext for TestContext {
+    async fn item_attrs(
+        &self,
+        _conn: &mut PgConnection,
+        items: &[Uuid],
+    ) -> sqlx::Result<HashMap<Uuid, ItemAttrs>> {
+        let attrs = self.attrs.lock().unwrap();
+        Ok(items
+            .iter()
+            .filter_map(|i| attrs.get(i).map(|a| (*i, *a)))
+            .collect())
+    }
+
+    async fn team_policies(
+        &self,
+        _conn: &mut PgConnection,
+        teams: &[Uuid],
+    ) -> sqlx::Result<HashMap<Uuid, RolePolicy>> {
+        let policies = self.policies.lock().unwrap();
+        Ok(teams
+            .iter()
+            .filter_map(|t| policies.get(t).map(|p| (*t, *p)))
+            .collect())
+    }
+}
+
+const CTX: DefaultAccessContext = DefaultAccessContext;
+
+#[tokio::test]
+async fn linking_and_unlinking_a_page() {
+    let db = TestDb::new().await;
+    let (ali, ayse, page, task) = (id(), id(), id(), id());
+    granted(db.pool(), t(page, R::Owner, ali), &CTX).await;
+    granted(db.pool(), t(task, R::Owner, ayse), &CTX).await;
+    assert_eq!(
+        access_of(db.pool(), page).await,
+        BTreeMap::from([(ali, ALL)])
+    );
+
+    granted(db.pool(), t(page, R::LinkedTo, task), &CTX).await;
+    assert_eq!(
+        access_of(db.pool(), page).await,
+        BTreeMap::from([(ali, ALL), (ayse, VE)])
+    );
+    assert_eq!(
+        reasons_of(db.pool(), page, ayse).await,
+        serde_json::json!([{ "kind": "linked", "item_id": task }])
+    );
+
+    // V8: access that came through the link drops with it.
+    revoked(db.pool(), t(page, R::LinkedTo, task), &CTX).await;
+    assert_eq!(
+        access_of(db.pool(), page).await,
+        BTreeMap::from([(ali, ALL)])
+    );
+}
+
+#[tokio::test]
+async fn adding_and_removing_a_member_reaches_linked_pages() {
+    let db = TestDb::new().await;
+    let (ali, can, page, page2, task) = (id(), id(), id(), id(), id());
+    for tuple in [
+        t(task, R::Owner, ali),
+        t(page, R::Owner, ali),
+        t(page, R::LinkedTo, task),
+        t(page2, R::Owner, ali),
+        t(page2, R::LinkedTo, page),
+    ] {
+        granted(db.pool(), tuple, &CTX).await;
+    }
+
+    let mut tx = db.pool().begin().await.unwrap();
+    assert!(
+        grant(&mut tx, t(task, R::Assignee, can), &CTX)
+            .await
+            .unwrap()
+    );
+    tx.commit().await.unwrap();
+    assert_eq!(access_of(db.pool(), task).await[&can], VE);
+    assert_eq!(access_of(db.pool(), page).await[&can], VE);
+    assert_eq!(access_of(db.pool(), page2).await[&can], VE);
+
+    revoked(db.pool(), t(task, R::Assignee, can), &CTX).await;
+    for item in [task, page, page2] {
+        assert!(!access_of(db.pool(), item).await.contains_key(&can));
+    }
+}
+
+#[tokio::test]
+async fn notebook_membership_change() {
+    let db = TestDb::new().await;
+    let (ali, ayse, notebook, page) = (id(), id(), id(), id());
+    granted(db.pool(), t(notebook, R::Owner, ali), &CTX).await;
+    granted(db.pool(), t(page, R::Owner, ali), &CTX).await;
+    granted(db.pool(), t(page, R::InNotebook, notebook), &CTX).await;
+
+    granted(db.pool(), t(notebook, R::Viewer, ayse), &CTX).await;
+    assert_eq!(access_of(db.pool(), notebook).await[&ayse], VIEW);
+    assert_eq!(access_of(db.pool(), page).await[&ayse], VIEW);
+
+    revoked(db.pool(), t(notebook, R::Viewer, ayse), &CTX).await;
+    assert!(!access_of(db.pool(), page).await.contains_key(&ayse));
+}
+
+#[tokio::test]
+async fn team_role_change() {
+    let db = TestDb::new().await;
+    let ctx = TestContext::default();
+    let (ali, ayse, team, task, page) = (id(), id(), id(), id(), id());
+    ctx.attrs.lock().unwrap().insert(
+        task,
+        ItemAttrs {
+            team_visibility: TeamVisibility::Assignees,
+            created_by: Some(ali),
+        },
+    );
+    granted(db.pool(), t(team, R::TeamAdmin, ali), &ctx).await;
+    granted(db.pool(), t(team, R::TeamMember, ayse), &ctx).await;
+    granted(db.pool(), t(task, R::OwnedBy, team), &ctx).await;
+    granted(db.pool(), t(page, R::Owner, ali), &ctx).await;
+    granted(db.pool(), t(page, R::LinkedTo, task), &ctx).await;
+    // Assignee-only team task: the member does not see it, nor the page linked to it.
+    assert_eq!(
+        access_of(db.pool(), task).await,
+        BTreeMap::from([(ali, ALL)])
+    );
+    assert!(!access_of(db.pool(), page).await.contains_key(&ayse));
+
+    // Promotion to manager: managers see every team item (V12), and the linked page follows.
+    let mut tx = db.pool().begin().await.unwrap();
+    grant(&mut tx, t(team, R::TeamManager, ayse), &ctx)
+        .await
+        .unwrap();
+    let affected = recompute(
+        &mut tx,
+        Change::Relation(t(team, R::TeamManager, ayse)),
+        &ctx,
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let mut expected = vec![task, page];
+    expected.sort();
+    assert_eq!(affected, expected);
+    assert_eq!(access_of(db.pool(), task).await[&ayse], 31);
+    assert_eq!(access_of(db.pool(), page).await[&ayse], VE);
+
+    revoked(db.pool(), t(team, R::TeamManager, ayse), &ctx).await;
+    assert!(!access_of(db.pool(), task).await.contains_key(&ayse));
+    assert!(!access_of(db.pool(), page).await.contains_key(&ayse));
+}
+
+#[tokio::test]
+async fn visibility_mode_and_role_matrix_changes() {
+    let db = TestDb::new().await;
+    let ctx = TestContext::default();
+    let (ali, ayse, team, task) = (id(), id(), id(), id());
+    granted(db.pool(), t(team, R::TeamAdmin, ali), &ctx).await;
+    granted(db.pool(), t(team, R::TeamGuest, ayse), &ctx).await;
+    granted(db.pool(), t(task, R::OwnedBy, team), &ctx).await;
+    assert_eq!(access_of(db.pool(), task).await[&ayse], VIEW);
+
+    // V12: switching to "assignees only" removes the guest.
+    ctx.attrs.lock().unwrap().insert(
+        task,
+        ItemAttrs {
+            team_visibility: TeamVisibility::Assignees,
+            created_by: Some(ali),
+        },
+    );
+    let mut tx = db.pool().begin().await.unwrap();
+    assert_eq!(
+        recompute(&mut tx, Change::Item(task), &ctx).await.unwrap(),
+        [task]
+    );
+    tx.commit().await.unwrap();
+    assert_eq!(
+        access_of(db.pool(), task).await,
+        BTreeMap::from([(ali, ALL)])
+    );
+
+    // Back to "all team", then the admin lets guests edit (TK3).
+    ctx.attrs.lock().unwrap().clear();
+    ctx.policies.lock().unwrap().insert(
+        team,
+        RolePolicy {
+            guest: access::Perms::VIEW | access::Perms::EDIT,
+            ..RolePolicy::default()
+        },
+    );
+    let mut tx = db.pool().begin().await.unwrap();
+    assert_eq!(
+        recompute(&mut tx, Change::Team(team), &ctx).await.unwrap(),
+        [task]
+    );
+    tx.commit().await.unwrap();
+    assert_eq!(access_of(db.pool(), task).await[&ayse], VE);
+}
+
+#[tokio::test]
+async fn recompute_is_part_of_the_callers_transaction() {
+    let db = TestDb::new().await;
+    let (ali, ayse, task) = (id(), id(), id());
+    granted(db.pool(), t(task, R::Owner, ali), &CTX).await;
+
+    // Rolled back: neither the relation nor the access survives.
+    let mut tx = db.pool().begin().await.unwrap();
+    grant(&mut tx, t(task, R::Watcher, ayse), &CTX)
+        .await
+        .unwrap();
+    let inside: Option<i32> =
+        sqlx::query_scalar("SELECT perms FROM item_access WHERE item_id = $1 AND user_id = $2")
+            .bind(task)
+            .bind(ayse)
+            .fetch_optional(&mut *tx)
+            .await
+            .unwrap();
+    assert_eq!(inside, Some(VIEW), "visible inside the transaction");
+    tx.rollback().await.unwrap();
+    assert_eq!(
+        access_of(db.pool(), task).await,
+        BTreeMap::from([(ali, ALL)])
+    );
+}
+
+#[tokio::test]
+async fn repeated_grants_and_missing_revokes_are_no_ops() {
+    let db = TestDb::new().await;
+    let (ali, task) = (id(), id());
+    let mut tx = db.pool().begin().await.unwrap();
+    assert!(grant(&mut tx, t(task, R::Owner, ali), &CTX).await.unwrap());
+    assert!(!grant(&mut tx, t(task, R::Owner, ali), &CTX).await.unwrap());
+    assert!(
+        !revoke(&mut tx, t(task, R::Watcher, ali), &CTX)
+            .await
+            .unwrap()
+    );
+    assert!(revoke(&mut tx, t(task, R::Owner, ali), &CTX).await.unwrap());
+    tx.commit().await.unwrap();
+    assert!(access_of(db.pool(), task).await.is_empty());
+}
+
+#[tokio::test]
+async fn concurrent_changes_leave_no_stale_access() {
+    // Two transactions change relations that affect the same page; whichever commits last must
+    // see the other's committed change (recomputes are serialized).
+    let db = TestDb::new().await;
+    let (ali, ayse, can, page, t1, t2) = (id(), id(), id(), id(), id(), id());
+    for tuple in [
+        t(page, R::Owner, ali),
+        t(t1, R::Owner, ayse),
+        t(t2, R::Owner, can),
+    ] {
+        granted(db.pool(), tuple, &CTX).await;
+    }
+    let link = move |target| t(page, R::LinkedTo, target);
+    let pool_a = db.pool().clone();
+    let pool_b = db.pool().clone();
+    let a = tokio::spawn(async move { granted(&pool_a, link(t1), &CTX).await });
+    let b = tokio::spawn(async move { granted(&pool_b, link(t2), &CTX).await });
+    a.await.unwrap();
+    b.await.unwrap();
+    assert_eq!(
+        access_of(db.pool(), page).await,
+        BTreeMap::from([(ali, ALL), (ayse, VE), (can, VE)])
+    );
+}

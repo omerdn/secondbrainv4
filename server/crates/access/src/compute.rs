@@ -148,6 +148,9 @@ impl Access {
 #[derive(Debug, Clone, Default)]
 pub struct AccessGraph {
     relations: HashMap<(ObjectType, Uuid), Vec<(Relation, Uuid)>>,
+    /// Reverse index of the edges whose access flows from subject to object: `linked_to` and
+    /// `in_notebook` (item -> dependent pages) and `owned_by` (team -> its items).
+    dependents: HashMap<Uuid, Vec<Uuid>>,
     items: HashMap<Uuid, ItemAttrs>,
     policies: HashMap<Uuid, RolePolicy>,
 }
@@ -165,8 +168,18 @@ impl AccessGraph {
             .entry((tuple.object_type(), tuple.object_id()))
             .or_default();
         let edge = (tuple.relation(), tuple.subject_id());
-        if !edges.contains(&edge) {
-            edges.push(edge);
+        if edges.contains(&edge) {
+            return;
+        }
+        edges.push(edge);
+        if matches!(
+            tuple.relation(),
+            Relation::LinkedTo | Relation::InNotebook | Relation::OwnedBy
+        ) {
+            self.dependents
+                .entry(tuple.subject_id())
+                .or_default()
+                .push(tuple.object_id());
         }
     }
 
@@ -180,10 +193,15 @@ impl AccessGraph {
         self.policies.insert(team_id, policy);
     }
 
-    fn edges(&self, object_type: ObjectType, id: Uuid) -> &[(Relation, Uuid)] {
+    pub(crate) fn edges(&self, object_type: ObjectType, id: Uuid) -> &[(Relation, Uuid)] {
         self.relations
             .get(&(object_type, id))
             .map_or(&[], Vec::as_slice)
+    }
+
+    /// Items whose access derives from `subject` (an item or a team) through one edge.
+    pub(crate) fn dependents(&self, subject: Uuid) -> &[Uuid] {
+        self.dependents.get(&subject).map_or(&[], Vec::as_slice)
     }
 }
 

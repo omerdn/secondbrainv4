@@ -47,6 +47,20 @@ dispatcher.subscribe("search-index", |event: ItemCreated, stored| async move { /
 - Hatalı teslimler üstel bekleme (backoff) ile tekrar denenir; maskelenmiş hata `outbox.last_error` alanında tutulur.
 - Katı sıra garantisi yoktur: tekrar denenen bir olay daha yenilerinden sonra gelebilir.
 
+## Yetki ilişkileri (`access`)
+Erişimi etkileyen her değişiklik (sahiplik, sorumlu/izleyici, defter üyeliği, takım rolü, bağlantı) `access` üzerinden, domain değişikliğiyle **aynı transaction içinde** yazılır (ARCHITECTURE §6.1, §6.4):
+
+```rust
+let mut tx = pool.begin().await?;
+/* INSERT INTO items ... */
+access::grant(&mut tx, RelationTuple::new(item_id, Relation::Owner, user_id), &ctx).await?;
+tx.commit().await?;
+```
+
+- `grant` / `revoke` ilişkiyi yazar ve etkilenen nesnelerin `item_access` satırlarını yeniden hesaplar. İlişki olmayan değişikliklerde (görünürlük modu, rol matrisi) `access::recompute(&mut tx, Change::Item(id) | Change::Team(id), &ctx)` çağrılır.
+- `ctx: impl AccessContext`, başka modüllerin sahip olduğu bilgileri (nesne öznitelikleri, takım rol matrisi) servis arayüzüyle verir. `items` ve `teams` kendi context'lerini sağlayana kadar `DefaultAccessContext` kullanılır.
+- Yeniden hesaplamalar şema başına bir advisory lock ile sıraya girer; bu yüzden transaction'ı gereksiz uzun tutmayın.
+
 ## Arka plan işleri (`jobs`)
 ```rust
 #[derive(Serialize, Deserialize, Clone)]
