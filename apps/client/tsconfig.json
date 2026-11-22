@@ -28,6 +28,7 @@
     "jest.config.mjs",
     "babel.config.js",
     "metro.config.js",
+    "editor-web/vite.config.mts",
     "nativewind-env.d.ts"
   ],
   "exclude": ["node_modules", "dist"]

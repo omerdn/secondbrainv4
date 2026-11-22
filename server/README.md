@@ -156,3 +156,8 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
+
+## Ortak düzenleme spike'ı (`/collab/{page_id}`, T0.6.2)
+- `notebooks::collab`: yrs ile y-sync (ADR-0019). Sayfa başına bellekte bir belge; yetki ve kalıcılık **yok** (E2.5).
+- Sadece `COLLAB_SPIKE_ENABLED=true` iken bağlanır (varsayılan kapalı; açılınca açılışta uyarı loglanır). Staging ve üretimde açmayın.
+- İstemci: web'de `y-websocket` doğrudan; mobilde React Native soketi açar, WebView'daki editöre çerçeveleri aktarır (`apps/client/src/lib/editor`). Mobil editör paketi: `pnpm --filter @secondbrain/client editor:build`.

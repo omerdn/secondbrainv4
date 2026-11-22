@@ -24,3 +24,7 @@ target/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# 10tap editor bundle (built by `pnpm --filter @secondbrain/client editor:build`)
+apps/client/editor-web/dist/
+apps/client/src/lib/editor/native/editorHtml.js
