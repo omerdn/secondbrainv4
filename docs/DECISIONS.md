@@ -242,3 +242,37 @@
   - `react-native-sortables`: tek konteyner içinde güçlü, ama sütunlar arası taşıma o sürümde birinci sınıf desteklenmiyordu.
   - `react-native-draggable-flatlist`: yalnızca tek dikey liste.
   - `@dnd-kit` ve benzerleri: yalnızca DOM (ADR-0012 gereği reddedildi).
+
+## ADR-0019 · Ortak düzenleme: y-sync sunucusu yrs'te, web'de TipTap, mobilde 10tap + soket aktarımı
+**Durum:** Kabul · 2026-11-22 (spike T0.6.2; ADR-0005'i uygular)
+
+- **Bağlam:** Defter sayfaları gerçek zamanlı ve kayıpsız ortak düzenlenecek (PRD `Y3`, ADR-0005). Mobilde editörün WebView içinde çalışması bilinen bir riskti (ARCHITECTURE §18). Spike'ta üç şey denendi: sunucu tarafında yrs ile y-sync, web'de iki tarayıcı, iOS'ta 10tap-editor.
+- **Karar:**
+  - **Sunucu** (`notebooks::collab`, `GET /collab/{page_id}`):
+    - yrs 0.28 (`sync` özelliği) ile y-sync protokolü konuşulur: sync step 1/2, update ve awareness (canlı imleçler). Her sayfa için bellekte bir `Awareness` (Yjs belgesi) tutulur.
+    - Belge ve awareness değişiklikleri gözlemcilerle o sayfanın tüm bağlantılarına yayınlanır.
+    - Bağlantı kapanınca o bağlantının imleçleri silinir.
+    - El sıkışma `/ws` gibi doğrulanır: bearer token, ya da web'de çerez ve izinli Origin.
+    - İstemci tarafında standart `y-websocket` sağlayıcısı değişiklik yapmadan çalışır.
+  - **Web:** TipTap (DOM) + `@tiptap/extension-collaboration` + `collaboration-caret`, `y-websocket` ile. Kod `CollabEditor.web.tsx` platform dosyasındadır. ADR-0012'deki "sadece DOM kütüphanesi yok" kuralının bilinçli istisnası budur: editör web'de DOM'da, mobilde WebView'da DOM'dadır; uygulamanın geri kalanı React Native bileşenleriyle kalır.
+  - **Mobil:** 10tap-editor'ın "advanced setup"ı. `apps/client/editor-web/`, TenTap köprüleri ile TipTap Collaboration'ı tek bir HTML dosyasına derler (Vite + singlefile; `pnpm editor:build`). Bu dosya WebView'a `customSource` olarak verilir.
+    - **Kimlik doğrulama sorunu:** WebView soketi kendisi doğrulayamaz: çerezi yoktur, Authorization başlığı gönderemez, Origin'i `null`'dır. Oturum token'ı WebView'a da girmemelidir.
+    - **Çözüm: soket aktarımı.** WebView'daki y-websocket, 10tap köprüsü üzerinden çerçeveleri aktaran sahte bir soket kullanır (base64, JSON mesajlar). Gerçek `/collab` bağlantısını React Native bearer token ile açar. Her aktarılan bağlantının WebView'ın seçtiği bir kimliği vardır; eski kimliğe ait mesajlar yok sayılır. Bu, sayfa açılışta değiştiğinde eski soketin kapanışının yeni bağlantıyı düşürmesini engelliyor.
+  - **10tap'in web paketi kaynaktan derlenir:** `@10play/tentap-editor/web` kendi TipTap kopyasını içinde taşıyor; Collaboration eklentisi farklı bir `@tiptap/core` görünce çöküyor (`editor.utils` undefined). Vite'ta `@10play/tentap-editor/src/webEditorUtils`'e alias verilip `@tiptap/core`, `@tiptap/pm`, `yjs` ve React tekilleştirilir. TenTap'in geçmiş (undo/redo) köprüsü kullanılmaz; geçmişi Yjs tutar.
+- **Sonuçlar:**
+  - Uçtan uca çalıştı: iki tarayıcı aynı sayfayı düzenledi; sonradan katılan güncel içeriği aldı; canlı imleçler göründü. iOS simülatörü ile tarayıcı arasında iki yönlü canlı düzenleme ve imleçler çalıştı.
+  - Mobil editör paketi yaklaşık 1 MB (gzip ~310 KB). Üretilen `editorHtml.js` repoya girmez; derleme betiği EAS/üretim yapılarında çalıştırılmalı (E2.5 / dağıtım işi).
+  - Web ↔ iOS gecikmesi simülatörde 1–2 saniyenin altında gözlemlendi; köprüde base64 ve JSON maliyeti var. Gerçek cihazda ölçülmesi E2.5'te.
+  - **Spike'ta olmayan, E2.5'te yapılacaklar:**
+    - sayfa yetkisi (VIEW/EDIT, salt okunur mod) ve `PermissionService`,
+    - kalıcılık (`page_updates`, snapshot, sürüm geçmişi; ADR-0005),
+    - odaların bellekten atılması,
+    - `AccessRevoked` ile bağlantı kapatma (V10),
+    - mobilde araç çubuğunun klavyeyle birlikte görünmesi (spike'ta klavye araç çubuğunu kapatıyor),
+    - BP4: kopma sonrası yerel değişikliklerin gönderilmesi; y-websocket ve Yjs bunu doğal olarak yapar, kilit katmanıyla birlikte doğrulanmalı.
+  - Uç nokta şu an sadece `COLLAB_SPIKE_ENABLED=true` iken bağlanır (varsayılan kapalı). Staging ve üretimde açılmaz.
+- **Alternatifler:**
+  - Token'ı URL'de ya da `Sec-WebSocket-Protocol` başlığında WebView'a vermek: token WebView'a ve loglara sızar; reddedildi.
+  - Yjs'i React Native tarafında çalıştırıp WebView'a sadece ProseMirror adımlarını göndermek: iki taraflı ProseMirror ↔ Yjs eşlemesini yeniden yazmak gerekir; reddedildi.
+  - Mobilde yerel (native) bir zengin metin editörü: TipTap şemasıyla uyum ve Yjs bağlaması yok; reddedildi.
+  - Hazır y-sync sunucusu (Hocuspocus, Node): ikinci bir dil ve süreç demek, yetki ve kalıcılığın Rust tarafında olması gerekiyor (ADR-0005, ADR-0007); reddedildi.

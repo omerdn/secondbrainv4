@@ -49,6 +49,7 @@ sqlx = { version = "0.9.1", default-features = false, features = ["runtime-tokio
 testcontainers = { version = "0.28.0", features = ["reusable-containers"] }
 thiserror = "2.0.21"
 tokio-tungstenite = "0.30.0"
+yrs = { version = "0.28.2", features = ["sync"] }
 tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
 tower = { version = "0.5.3", features = ["util"] }
 tower_governor = "0.8.0"

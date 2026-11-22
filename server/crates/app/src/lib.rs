@@ -161,9 +161,18 @@ where
         clock: clock.clone(),
         config: realtime::RealtimeConfig::new(config.cors_origins.clone()),
     });
-    let modules = identity::http::rate_limited_router(identity, limits)
+    let mut modules = identity::http::rate_limited_router(identity.clone(), limits)
         .merge(idempotency::protect(profile, idempotency))
         .merge(ws);
+    if config.collab_spike_enabled {
+        // Spike T0.6.2: no page permissions or persistence yet (E2.5).
+        tracing::warn!("collab spike enabled: /collab/{{page_id}} has no page permissions");
+        modules = modules.merge(notebooks::collab::router(notebooks::collab::CollabState {
+            collab: notebooks::collab::Collab::new(),
+            identity,
+            allowed_origins: config.cors_origins.clone(),
+        }));
+    }
     let result = server::serve(
         listener,
         http::router_with(modules, &config.cors_origins),

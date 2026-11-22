@@ -393,7 +393,7 @@ Kapsam beklentisi: `access`, `tracking`, `recurrence` ve `goals` crate'lerinde d
 | Risk | Etki | Önlem |
 |---|---|---|
 | react-native-web'de sürükle-bırak (kanban) | Kullanıcı deneyimi | Spike T0.6.1 tamamlandı: Gesture Handler + Reanimated üzerinde ince katman (ADR-0018). |
-| Mobilde WebView içinde çalışan editörün performansı | Kullanıcı deneyimi | Faz 0'da teknik keşif; gerekirse sadeleştirilmiş bir mobil araç çubuğu. |
+| Mobilde WebView içinde çalışan editörün performansı | Kullanıcı deneyimi | Spike T0.6.2: 10tap + soket aktarımı ile web ↔ iOS ortak düzenleme çalıştı (ADR-0019). Gerçek cihazda gecikme ölçümü ve mobil araç çubuğu E2.5'te. |
 | Yjs belge şemasının evrimi | Veri | Şema sürümleme ve dönüştürme testleri. |
 | Takımlarda büyük ölçekte erişim yeniden hesaplama | Performans | Asenkron genişleme (§6.4); ölçek gerektirirse Zanzibar'a geçiş. |
 | Rust'ta hazır paket eksikliği (kimlik doğrulama, iş kuyruğu) | Geliştirme hızı | Kapsamı dar tutulmuş kendi implementasyonlarımız. Gerekirse harici kimlik doğrulama servisi. |

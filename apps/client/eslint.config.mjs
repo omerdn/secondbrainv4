@@ -5,6 +5,8 @@ import { defineConfig } from "eslint/config";
 import globals from "globals";
 
 export default defineConfig(
+  // Generated 10tap editor bundle (`pnpm editor:build`).
+  { ignores: ["src/lib/editor/native/editorHtml.js", "editor-web/dist/**"] },
   baseConfig({ tsconfigRootDir: import.meta.dirname }),
   // features/x may only use features/y's public index; src/lib imports no feature
   // (ARCHITECTURE §4.6). Tests are exempt: they exercise internals on purpose.
