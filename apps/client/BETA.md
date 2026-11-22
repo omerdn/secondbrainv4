@@ -36,3 +36,11 @@ Release'ler ön sürüm olarak yayınlanır, çünkü `releases/latest` her zama
 - Android imza anahtarı GitHub secrets'ta durur: `ROUTUNE_KEYSTORE_BASE64`, `ROUTUNE_KEYSTORE_PASSWORD`, `ROUTUNE_KEY_ALIAS`, `ROUTUNE_KEY_PASSWORD`. Yedeği sahibin Mac'inde, `~/.routune-android/` klasöründe. **Anahtar kaybolursa** yeni APK eskisinin üstüne kurulamaz; herkesin eski uygulamayı silip yeniden kurması gerekir.
 - İmzalama `plugins/with-release-signing.js` ile yapılır. `ROUTUNE_KEYSTORE_FILE` tanımlı değilse (yerel derlemeler) şablonun debug imzası kullanılır.
 - Sürüm `APP_VERSION` (etiketten) ve derleme numarası `APP_BUILD_NUMBER` (CI çalışma numarası) ile `app.config.ts`'e girer. Android, yeni bir APK'yı eskinin üstüne ancak derleme numarası daha büyükse kurar.
+
+## Uzaktan (OTA) güncellemeler (T4.2.6)
+
+- Kurulu uygulamalar her açılışta `https://api.routune.dev/updates/manifest` adresine sorar (`expo-updates`). Yeni bir JS paketi varsa indirir ve **bir sonraki açılışta** uygular. Yani arayüz ve iş mantığı değişiklikleri yeni APK/IPA kurulmadan kullanıcıya ulaşır.
+- `main`'e her merge'de deploy, o commit'in JS paketini iOS ve Android için dışa aktarıp sunucuya yükler (`.github/workflows/deploy.yml`, `server/crates/updates`).
+- Güncellemeler **runtime sürümüne** bağlıdır. Bu sürüm native katmanın parmak izidir (`runtimeVersion.policy: fingerprint`). Native bir değişiklik (yeni native kütüphane, izin, ikon, Expo SDK) parmak izini değiştirir; eski uygulamalar o güncellemeyi hiç görmez. Bu durumda yeni bir `mobile-v*` sürümü (yeni APK/IPA) gerekir.
+- Sunucu her runtime için son 3 güncellemeyi tutar. Güncelleme yoksa 204 döner ve uygulama elindekiyle devam eder.
+- Kod imzalama kullanılmıyor; güvenliği HTTPS sağlıyor (ADR-0023).

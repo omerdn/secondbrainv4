@@ -53,6 +53,32 @@ jobs:
       - name: Compress images
         run: gzip -1 "$RUNNER_TEMP/server.tar" "$RUNNER_TEMP/web.tar"
 
+      # Mobile OTA updates (T4.2.6, ADR-0023): the JS of this commit, keyed by the native
+      # fingerprint (runtime version). Installed apps with exactly that runtime pick it up on
+      # their next launch; apps built from other native code never see it.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Export OTA updates
+        working-directory: apps/client
+        env:
+          EXPO_PUBLIC_API_URL: ${{ env.API_URL }}
+        run: |
+          pnpm install --frozen-lockfile --filter "@secondbrain/client..."
+          id="$(date -u +%Y%m%dT%H%M%SZ)"
+          for platform in ios android; do
+            runtime="$(npx expo-updates runtimeversion:resolve --platform "$platform" | tail -n 1 \
+              | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).runtimeVersion))')"
+            out="$RUNNER_TEMP/updates/$platform/$runtime/$id"
+            npx expo export --platform "$platform" --output-dir "$out"
+            echo "$platform runtime $runtime"
+          done
+          tar -C "$RUNNER_TEMP/updates" -czf "$RUNNER_TEMP/updates.tar.gz" .
+
       - name: SSH setup
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -73,6 +99,8 @@ jobs:
             infra/production/site.caddy.template "deploy@$HOST:/opt/routune/"
           scp -i ~/.ssh/deploy_key "$RUNNER_TEMP/server.tar.gz" "$RUNNER_TEMP/web.tar.gz" \
             "deploy@$HOST:/opt/routune/images/"
+          ssh -i ~/.ssh/deploy_key "deploy@$HOST" "mkdir -p /opt/routune/updates && tar -xzf - -C /opt/routune/updates" \
+            < "$RUNNER_TEMP/updates.tar.gz"
 
       - name: Roll out
         env:

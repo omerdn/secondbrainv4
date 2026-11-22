@@ -20,6 +20,7 @@ jobs = { path = "../jobs" }
 kernel = { path = "../kernel" }
 notebooks = { path = "../notebooks" }
 realtime = { path = "../realtime" }
+updates = { path = "../updates" }
 sentry.workspace = true
 serde.workspace = true
 sha2.workspace = true

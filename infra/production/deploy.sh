@@ -31,6 +31,7 @@ echo "==> edge proxy"
 docker compose -f "$EDGE_DIR/compose.yaml" up -d --wait
 
 echo "==> app"
+mkdir -p updates
 docker compose up -d --wait --remove-orphans
 
 echo "==> edge site"
@@ -57,5 +58,13 @@ for repo in routune-server routune-web; do
 		| while read -r old; do docker image rm "$repo:$old" > /dev/null || true; done
 done
 docker image prune -f > /dev/null
+
+echo "==> pruning old OTA updates (keeping $KEEP_IMAGES per runtime)"
+for runtime_dir in updates/*/*/; do
+	[ -d "$runtime_dir" ] || continue
+	ls -1 "$runtime_dir" | sort -r | awk "NR>$KEEP_IMAGES" | while read -r old; do
+		rm -rf "${runtime_dir}${old}"
+	done
+done
 
 echo "==> deployed $TAG"
