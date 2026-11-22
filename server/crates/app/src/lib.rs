@@ -126,6 +126,9 @@ where
         .map_err(RunError::Schedule)?;
     identity::cleanup::register(identity.clone(), &mut worker, &mut scheduler)
         .map_err(RunError::Schedule)?;
+    // Access engine (T1.1.3, T1.1.4): defaults until `items` and `teams` provide their context.
+    access::AccessEngine::new(access::DefaultAccessContext, config.access)
+        .register(&mut worker, pool.clone());
     let (stop_jobs, jobs_stopped) = tokio::sync::watch::channel(false);
     let jobs_task = {
         let pool = pool.clone();

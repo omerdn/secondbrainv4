@@ -53,12 +53,13 @@ Erişimi etkileyen her değişiklik (sahiplik, sorumlu/izleyici, defter üyeliğ
 ```rust
 let mut tx = pool.begin().await?;
 /* INSERT INTO items ... */
-access::grant(&mut tx, RelationTuple::new(item_id, Relation::Owner, user_id), &ctx).await?;
+engine.grant(&mut tx, RelationTuple::new(item_id, Relation::Owner, user_id)).await?;
 tx.commit().await?;
 ```
 
-- `grant` / `revoke` ilişkiyi yazar ve etkilenen nesnelerin `item_access` satırlarını yeniden hesaplar. İlişki olmayan değişikliklerde (görünürlük modu, rol matrisi) `access::recompute(&mut tx, Change::Item(id) | Change::Team(id), &ctx)` çağrılır.
-- `ctx: impl AccessContext`, başka modüllerin sahip olduğu bilgileri (nesne öznitelikleri, takım rol matrisi) servis arayüzüyle verir. `items` ve `teams` kendi context'lerini sağlayana kadar `DefaultAccessContext` kullanılır.
+- `engine: access::AccessEngine<C>`; `C: AccessContext` başka modüllerin sahip olduğu bilgileri (nesne öznitelikleri, takım rol matrisi) servis arayüzüyle verir. `items` ve `teams` kendi context'lerini sağlayana kadar `DefaultAccessContext` kullanılır.
+- `grant` / `revoke` ilişkiyi yazar ve etkilenen nesnelerin `item_access` satırlarını yeniden hesaplar. İlişki olmayan değişikliklerde (görünürlük modu, rol matrisi) `engine.recompute(&mut tx, Change::Item(id) | Change::Team(id))` çağrılır.
+- Etkilenen küme `ACCESS_SYNC_LIMIT`'i (varsayılan 500) aşarsa **genişleme** `access.expand` işine bırakılır; **kaldırma** her zaman senkron uygulanır (karışık değişikliklerde önce kaldırmalar yazılır). İş, çalıştığı andaki duruma göre tam hesaplar; idempotenttir.
 - Yeniden hesaplamalar şema başına bir advisory lock ile sıraya girer; bu yüzden transaction'ı gereksiz uzun tutmayın.
 
 ## Arka plan işleri (`jobs`)

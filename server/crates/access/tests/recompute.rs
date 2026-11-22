@@ -8,8 +8,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
 
 use access::{
-    AccessContext, Change, DefaultAccessContext, ItemAttrs, Relation as R, RelationTuple,
-    RolePolicy, TeamVisibility, grant, recompute, revoke,
+    AccessConfig, AccessContext, AccessEngine, Change, DefaultAccessContext, ItemAttrs,
+    Relation as R, RelationTuple, RolePolicy, TeamVisibility,
 };
 use db::PgPool;
 use db::testing::TestDb;
@@ -49,15 +49,15 @@ async fn reasons_of(pool: &PgPool, item: Uuid, user: Uuid) -> serde_json::Value 
 }
 
 /// Commits a grant in its own transaction.
-async fn granted(pool: &PgPool, tuple: RelationTuple, ctx: &impl AccessContext) {
+async fn granted(pool: &PgPool, tuple: RelationTuple, engine: &AccessEngine<impl AccessContext>) {
     let mut tx = pool.begin().await.unwrap();
-    assert!(grant(&mut tx, tuple, ctx).await.unwrap());
+    assert!(engine.grant(&mut tx, tuple).await.unwrap());
     tx.commit().await.unwrap();
 }
 
-async fn revoked(pool: &PgPool, tuple: RelationTuple, ctx: &impl AccessContext) {
+async fn revoked(pool: &PgPool, tuple: RelationTuple, engine: &AccessEngine<impl AccessContext>) {
     let mut tx = pool.begin().await.unwrap();
-    assert!(revoke(&mut tx, tuple, ctx).await.unwrap());
+    assert!(engine.revoke(&mut tx, tuple).await.unwrap());
     tx.commit().await.unwrap();
 }
 
@@ -94,20 +94,22 @@ impl AccessContext for TestContext {
     }
 }
 
-const CTX: DefaultAccessContext = DefaultAccessContext;
+fn engine() -> AccessEngine<DefaultAccessContext> {
+    AccessEngine::new(DefaultAccessContext, AccessConfig::default())
+}
 
 #[tokio::test]
 async fn linking_and_unlinking_a_page() {
     let db = TestDb::new().await;
     let (ali, ayse, page, task) = (id(), id(), id(), id());
-    granted(db.pool(), t(page, R::Owner, ali), &CTX).await;
-    granted(db.pool(), t(task, R::Owner, ayse), &CTX).await;
+    granted(db.pool(), t(page, R::Owner, ali), &engine()).await;
+    granted(db.pool(), t(task, R::Owner, ayse), &engine()).await;
     assert_eq!(
         access_of(db.pool(), page).await,
         BTreeMap::from([(ali, ALL)])
     );
 
-    granted(db.pool(), t(page, R::LinkedTo, task), &CTX).await;
+    granted(db.pool(), t(page, R::LinkedTo, task), &engine()).await;
     assert_eq!(
         access_of(db.pool(), page).await,
         BTreeMap::from([(ali, ALL), (ayse, VE)])
@@ -118,7 +120,7 @@ async fn linking_and_unlinking_a_page() {
     );
 
     // V8: access that came through the link drops with it.
-    revoked(db.pool(), t(page, R::LinkedTo, task), &CTX).await;
+    revoked(db.pool(), t(page, R::LinkedTo, task), &engine()).await;
     assert_eq!(
         access_of(db.pool(), page).await,
         BTreeMap::from([(ali, ALL)])
@@ -136,12 +138,13 @@ async fn adding_and_removing_a_member_reaches_linked_pages() {
         t(page2, R::Owner, ali),
         t(page2, R::LinkedTo, page),
     ] {
-        granted(db.pool(), tuple, &CTX).await;
+        granted(db.pool(), tuple, &engine()).await;
     }
 
     let mut tx = db.pool().begin().await.unwrap();
     assert!(
-        grant(&mut tx, t(task, R::Assignee, can), &CTX)
+        engine()
+            .grant(&mut tx, t(task, R::Assignee, can))
             .await
             .unwrap()
     );
@@ -150,7 +153,7 @@ async fn adding_and_removing_a_member_reaches_linked_pages() {
     assert_eq!(access_of(db.pool(), page).await[&can], VE);
     assert_eq!(access_of(db.pool(), page2).await[&can], VE);
 
-    revoked(db.pool(), t(task, R::Assignee, can), &CTX).await;
+    revoked(db.pool(), t(task, R::Assignee, can), &engine()).await;
     for item in [task, page, page2] {
         assert!(!access_of(db.pool(), item).await.contains_key(&can));
     }
@@ -160,22 +163,23 @@ async fn adding_and_removing_a_member_reaches_linked_pages() {
 async fn notebook_membership_change() {
     let db = TestDb::new().await;
     let (ali, ayse, notebook, page) = (id(), id(), id(), id());
-    granted(db.pool(), t(notebook, R::Owner, ali), &CTX).await;
-    granted(db.pool(), t(page, R::Owner, ali), &CTX).await;
-    granted(db.pool(), t(page, R::InNotebook, notebook), &CTX).await;
+    granted(db.pool(), t(notebook, R::Owner, ali), &engine()).await;
+    granted(db.pool(), t(page, R::Owner, ali), &engine()).await;
+    granted(db.pool(), t(page, R::InNotebook, notebook), &engine()).await;
 
-    granted(db.pool(), t(notebook, R::Viewer, ayse), &CTX).await;
+    granted(db.pool(), t(notebook, R::Viewer, ayse), &engine()).await;
     assert_eq!(access_of(db.pool(), notebook).await[&ayse], VIEW);
     assert_eq!(access_of(db.pool(), page).await[&ayse], VIEW);
 
-    revoked(db.pool(), t(notebook, R::Viewer, ayse), &CTX).await;
+    revoked(db.pool(), t(notebook, R::Viewer, ayse), &engine()).await;
     assert!(!access_of(db.pool(), page).await.contains_key(&ayse));
 }
 
 #[tokio::test]
 async fn team_role_change() {
     let db = TestDb::new().await;
-    let ctx = TestContext::default();
+    let engine = AccessEngine::new(TestContext::default(), AccessConfig::default());
+    let ctx = engine.context();
     let (ali, ayse, team, task, page) = (id(), id(), id(), id(), id());
     ctx.attrs.lock().unwrap().insert(
         task,
@@ -184,11 +188,11 @@ async fn team_role_change() {
             created_by: Some(ali),
         },
     );
-    granted(db.pool(), t(team, R::TeamAdmin, ali), &ctx).await;
-    granted(db.pool(), t(team, R::TeamMember, ayse), &ctx).await;
-    granted(db.pool(), t(task, R::OwnedBy, team), &ctx).await;
-    granted(db.pool(), t(page, R::Owner, ali), &ctx).await;
-    granted(db.pool(), t(page, R::LinkedTo, task), &ctx).await;
+    granted(db.pool(), t(team, R::TeamAdmin, ali), &engine).await;
+    granted(db.pool(), t(team, R::TeamMember, ayse), &engine).await;
+    granted(db.pool(), t(task, R::OwnedBy, team), &engine).await;
+    granted(db.pool(), t(page, R::Owner, ali), &engine).await;
+    granted(db.pool(), t(page, R::LinkedTo, task), &engine).await;
     // Assignee-only team task: the member does not see it, nor the page linked to it.
     assert_eq!(
         access_of(db.pool(), task).await,
@@ -198,16 +202,15 @@ async fn team_role_change() {
 
     // Promotion to manager: managers see every team item (V12), and the linked page follows.
     let mut tx = db.pool().begin().await.unwrap();
-    grant(&mut tx, t(team, R::TeamManager, ayse), &ctx)
+    engine
+        .grant(&mut tx, t(team, R::TeamManager, ayse))
         .await
         .unwrap();
-    let affected = recompute(
-        &mut tx,
-        Change::Relation(t(team, R::TeamManager, ayse)),
-        &ctx,
-    )
-    .await
-    .unwrap();
+    let affected = engine
+        .recompute(&mut tx, Change::Relation(t(team, R::TeamManager, ayse)))
+        .await
+        .unwrap()
+        .affected;
     tx.commit().await.unwrap();
     let mut expected = vec![task, page];
     expected.sort();
@@ -215,7 +218,7 @@ async fn team_role_change() {
     assert_eq!(access_of(db.pool(), task).await[&ayse], 31);
     assert_eq!(access_of(db.pool(), page).await[&ayse], VE);
 
-    revoked(db.pool(), t(team, R::TeamManager, ayse), &ctx).await;
+    revoked(db.pool(), t(team, R::TeamManager, ayse), &engine).await;
     assert!(!access_of(db.pool(), task).await.contains_key(&ayse));
     assert!(!access_of(db.pool(), page).await.contains_key(&ayse));
 }
@@ -223,11 +226,12 @@ async fn team_role_change() {
 #[tokio::test]
 async fn visibility_mode_and_role_matrix_changes() {
     let db = TestDb::new().await;
-    let ctx = TestContext::default();
+    let engine = AccessEngine::new(TestContext::default(), AccessConfig::default());
+    let ctx = engine.context();
     let (ali, ayse, team, task) = (id(), id(), id(), id());
-    granted(db.pool(), t(team, R::TeamAdmin, ali), &ctx).await;
-    granted(db.pool(), t(team, R::TeamGuest, ayse), &ctx).await;
-    granted(db.pool(), t(task, R::OwnedBy, team), &ctx).await;
+    granted(db.pool(), t(team, R::TeamAdmin, ali), &engine).await;
+    granted(db.pool(), t(team, R::TeamGuest, ayse), &engine).await;
+    granted(db.pool(), t(task, R::OwnedBy, team), &engine).await;
     assert_eq!(access_of(db.pool(), task).await[&ayse], VIEW);
 
     // V12: switching to "assignees only" removes the guest.
@@ -240,7 +244,11 @@ async fn visibility_mode_and_role_matrix_changes() {
     );
     let mut tx = db.pool().begin().await.unwrap();
     assert_eq!(
-        recompute(&mut tx, Change::Item(task), &ctx).await.unwrap(),
+        engine
+            .recompute(&mut tx, Change::Item(task))
+            .await
+            .unwrap()
+            .affected,
         [task]
     );
     tx.commit().await.unwrap();
@@ -260,7 +268,11 @@ async fn visibility_mode_and_role_matrix_changes() {
     );
     let mut tx = db.pool().begin().await.unwrap();
     assert_eq!(
-        recompute(&mut tx, Change::Team(team), &ctx).await.unwrap(),
+        engine
+            .recompute(&mut tx, Change::Team(team))
+            .await
+            .unwrap()
+            .affected,
         [task]
     );
     tx.commit().await.unwrap();
@@ -271,11 +283,12 @@ async fn visibility_mode_and_role_matrix_changes() {
 async fn recompute_is_part_of_the_callers_transaction() {
     let db = TestDb::new().await;
     let (ali, ayse, task) = (id(), id(), id());
-    granted(db.pool(), t(task, R::Owner, ali), &CTX).await;
+    granted(db.pool(), t(task, R::Owner, ali), &engine()).await;
 
     // Rolled back: neither the relation nor the access survives.
     let mut tx = db.pool().begin().await.unwrap();
-    grant(&mut tx, t(task, R::Watcher, ayse), &CTX)
+    engine()
+        .grant(&mut tx, t(task, R::Watcher, ayse))
         .await
         .unwrap();
     let inside: Option<i32> =
@@ -298,14 +311,30 @@ async fn repeated_grants_and_missing_revokes_are_no_ops() {
     let db = TestDb::new().await;
     let (ali, task) = (id(), id());
     let mut tx = db.pool().begin().await.unwrap();
-    assert!(grant(&mut tx, t(task, R::Owner, ali), &CTX).await.unwrap());
-    assert!(!grant(&mut tx, t(task, R::Owner, ali), &CTX).await.unwrap());
     assert!(
-        !revoke(&mut tx, t(task, R::Watcher, ali), &CTX)
+        engine()
+            .grant(&mut tx, t(task, R::Owner, ali))
             .await
             .unwrap()
     );
-    assert!(revoke(&mut tx, t(task, R::Owner, ali), &CTX).await.unwrap());
+    assert!(
+        !engine()
+            .grant(&mut tx, t(task, R::Owner, ali))
+            .await
+            .unwrap()
+    );
+    assert!(
+        !engine()
+            .revoke(&mut tx, t(task, R::Watcher, ali))
+            .await
+            .unwrap()
+    );
+    assert!(
+        engine()
+            .revoke(&mut tx, t(task, R::Owner, ali))
+            .await
+            .unwrap()
+    );
     tx.commit().await.unwrap();
     assert!(access_of(db.pool(), task).await.is_empty());
 }
@@ -321,13 +350,13 @@ async fn concurrent_changes_leave_no_stale_access() {
         t(t1, R::Owner, ayse),
         t(t2, R::Owner, can),
     ] {
-        granted(db.pool(), tuple, &CTX).await;
+        granted(db.pool(), tuple, &engine()).await;
     }
     let link = move |target| t(page, R::LinkedTo, target);
     let pool_a = db.pool().clone();
     let pool_b = db.pool().clone();
-    let a = tokio::spawn(async move { granted(&pool_a, link(t1), &CTX).await });
-    let b = tokio::spawn(async move { granted(&pool_b, link(t2), &CTX).await });
+    let a = tokio::spawn(async move { granted(&pool_a, link(t1), &engine()).await });
+    let b = tokio::spawn(async move { granted(&pool_b, link(t2), &engine()).await });
     a.await.unwrap();
     b.await.unwrap();
     assert_eq!(

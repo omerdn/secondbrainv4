@@ -206,6 +206,42 @@ pub(crate) async fn replace_item_access(
     Ok(())
 }
 
+/// Narrows the cached access of `item_id` to `entries` without widening it: rows of users not in
+/// `entries` are deleted and the others keep only the bits in both (with the new reasons). Used
+/// when the widening part of a recompute is deferred (§6.4 step 3).
+pub(crate) async fn restrict_item_access(
+    conn: &mut PgConnection,
+    item_id: Uuid,
+    entries: &[AccessEntry],
+) -> sqlx::Result<()> {
+    let users: Vec<Uuid> = entries.iter().map(|e| e.user_id).collect();
+    let perms: Vec<i32> = entries.iter().map(|e| i32::from(e.perms.bits())).collect();
+    let reasons: Vec<Value> = entries.iter().map(|e| e.reasons.clone()).collect();
+    sqlx::query(
+        "WITH n AS (SELECT * FROM unnest($2::uuid[], $3::int[]) AS t(u, p))
+         DELETE FROM item_access a
+         WHERE a.item_id = $1
+           AND NOT EXISTS (SELECT 1 FROM n WHERE n.u = a.user_id AND (n.p & a.perms) <> 0)",
+    )
+    .bind(item_id)
+    .bind(&users)
+    .bind(&perms)
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query(
+        "UPDATE item_access a SET perms = a.perms & n.p, reasons = n.r, updated_at = now()
+         FROM unnest($2::uuid[], $3::int[], $4::jsonb[]) AS n(u, p, r)
+         WHERE a.item_id = $1 AND a.user_id = n.u",
+    )
+    .bind(item_id)
+    .bind(&users)
+    .bind(&perms)
+    .bind(&reasons)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
 /// The cached access of `user_id` on `item_id`, if any.
 #[cfg_attr(
     not(test),

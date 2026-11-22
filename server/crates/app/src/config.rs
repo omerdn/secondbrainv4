@@ -52,6 +52,8 @@ pub struct Config {
     /// Mounts the collaborative editing spike `/collab/{page_id}` (`COLLAB_SPIKE_ENABLED`).
     /// It has no page permissions yet (T0.6.2, E2.5): development only, never in production.
     pub collab_spike_enabled: bool,
+    /// Access recompute tuning (`ACCESS_SYNC_LIMIT`, T1.1.4).
+    pub access: access::AccessConfig,
 }
 
 /// Sign in with Apple (`APPLE_*`).
@@ -346,6 +348,13 @@ impl Config {
 
         let trust_proxy_headers: bool = parse(&lookup, "TRUST_PROXY_HEADERS", false)?;
         let collab_spike_enabled: bool = parse(&lookup, "COLLAB_SPIKE_ENABLED", false)?;
+        let access = access::AccessConfig {
+            sync_limit: parse(
+                &lookup,
+                "ACCESS_SYNC_LIMIT",
+                access::AccessConfig::DEFAULT_SYNC_LIMIT,
+            )?,
+        };
 
         let mut cors_origins = vec![origin_of(&public_web_url, "PUBLIC_WEB_URL", WEB_SCHEMES)?];
         for extra in comma_list(non_empty("CORS_EXTRA_ORIGINS")) {
@@ -370,6 +379,7 @@ impl Config {
             cors_origins,
             trust_proxy_headers,
             collab_spike_enabled,
+            access,
             apple,
             public_api_url,
             google,
@@ -974,6 +984,19 @@ mod tests {
                 .unwrap()
                 .collab_spike_enabled
         );
+    }
+
+    #[test]
+    fn access_sync_limit_defaults_and_parses() {
+        assert_eq!(config(&[]).unwrap().access.sync_limit, 500);
+        assert_eq!(
+            config(&[("ACCESS_SYNC_LIMIT", "50")])
+                .unwrap()
+                .access
+                .sync_limit,
+            50
+        );
+        assert!(config(&[("ACCESS_SYNC_LIMIT", "-1")]).is_err());
     }
 
     #[test]
