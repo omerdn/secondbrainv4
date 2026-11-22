@@ -254,6 +254,8 @@ async fn a2_activity_is_limited_to_visible_items_and_link_ends() {
     let page = w.items.create(ali, of_kind("page", "Notes")).await.unwrap();
     let hidden = w.items.create(ali, World::task("Secret")).await.unwrap();
     let own = w.items.create(can, World::task("Own")).await.unwrap();
+    // Events in the same millisecond have no defined order.
+    w.clock.set(start() + Duration::minutes(1));
     w.items.link(ali, page.id, hidden.id).await.unwrap();
     w.grant(RelationTuple::new(page.id, R::Watcher, can)).await;
 
