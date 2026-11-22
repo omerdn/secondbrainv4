@@ -362,7 +362,7 @@ struct ModuleManifest {
 - Şifreler argon2id ile hash'lenir. E-posta doğrulaması ve şifre sıfırlama vardır.
 - Oturum token'ı 256 bit rastgele bir değerdir; veritabanında SHA-256 hash'i saklanır.
   - Web: `HttpOnly`, `Secure`, `SameSite=Lax` cookie. Cookie kullanıldığı için CSRF token gerekir.
-  - Mobil ve masaüstü: `Authorization: Bearer`. Token cihazda güvenli depoda saklanır.
+  - Mobil ve masaüstü: `Authorization: Bearer`. Token cihazda güvenli depoda saklanır. Masaüstünde WebSocket bağlantıları Tauri'nin Rust eklentisiyle açılır (ADR-0020).
 - Hız sınırları: giriş, arkadaşlık isteği, dürtme ve davet uç noktalarında (`tower-governor`).
 - Tüm yetki kontrolleri `PermissionService` üzerinden yapılır. Her uç nokta için hem yetkili hem yetkisiz senaryo test edilir.
 - Kişisel veriler loglara yazılmaz.

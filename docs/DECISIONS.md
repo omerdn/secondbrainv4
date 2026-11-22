@@ -276,3 +276,31 @@
   - Yjs'i React Native tarafında çalıştırıp WebView'a sadece ProseMirror adımlarını göndermek: iki taraflı ProseMirror ↔ Yjs eşlemesini yeniden yazmak gerekir; reddedildi.
   - Mobilde yerel (native) bir zengin metin editörü: TipTap şemasıyla uyum ve Yjs bağlaması yok; reddedildi.
   - Hazır y-sync sunucusu (Hocuspocus, Node): ikinci bir dil ve süreç demek, yetki ve kalıcılığın Rust tarafında olması gerekiyor (ADR-0005, ADR-0007); reddedildi.
+
+## ADR-0020 · Masaüstü: Tauri 2 paketlenmiş web çıktısı, bearer oturum, WebSocket Rust eklentisinden
+**Durum:** Kabul · 2026-11-22 (spike T0.6.3; ADR-0002'yi uygular)
+
+- **Bağlam:** Masaüstü uygulaması web çıktısını Tauri 2 ile paketleyecek (ADR-0002). Web istemcisi oturumu `HttpOnly; Secure; SameSite=Lax` bir çerezle, `/ws` el sıkışmasını da çerez ve izinli Origin ile doğruluyor. Paketlenmiş uygulama kendi origin'inden çalıştığı için bu yaklaşımın masaüstünde çalışıp çalışmadığı belirsizdi.
+- **Ölçüm** (`apps/desktop`, macOS, Tauri 2.12, WKWebView; `app/dev/desktop.tsx` tanılama ekranı sonuçları stdout'a raporlar):
+  - Uygulama macOS'ta açılıyor; sayfa `tauri://localhost/...` origin'inden yükleniyor.
+  - Sunucu CORS listesi `tauri://localhost`'u kabul etmediği için tüm istekler engellendi ve uygulama "Bağlantı yok" ekranında kaldı. Bu yüzden #97 açıldı.
+  - API ve uygulama aynı sitedeyken (`http://localhost:8080`) çerez de bearer da çalıştı: WebKit `tauri://localhost` ile `http://localhost`'u aynı site sayıyor.
+  - **Üretimdeki gibi farklı sitede** (API `http://127.0.0.1:8080`):
+    - çerez modu: kayıt 201, `/me` **401**, `/ws` **reddedildi** (çerez siteler arası isteklerde gönderilmiyor),
+    - bearer modu: `/me` **200**,
+    - WebView'ın kendi WebSocket'i Authorization header gönderemediği için reddedildi,
+    - Tauri'nin WebSocket eklentisi (Rust, `tauri-plugin-websocket`) header ile bağlandı ve `hello` aldı.
+- **Karar:**
+  - Masaüstü, web çıktısını **paketler** (uzaktaki web adresini yüklemez) ve oturumu **bearer token** ile taşır. ARCHITECTURE §15'teki "mobil ve masaüstü: Authorization: Bearer" kuralı ölçümle doğrulandı. Çerez yaklaşımı masaüstünde kullanılmaz.
+  - `/ws` ve `/collab` bağlantıları masaüstünde `tauri-plugin-websocket` ile Rust tarafından açılır. Bağlantı katmanındaki `SocketFactory` soyutlamasına bir Tauri uyarlaması yazılır.
+  - Token işletim sisteminin güvenli deposunda saklanır (macOS Keychain, Windows Credential Manager, Linux Secret Service); E4.1'de bir Tauri komutuyla yapılır.
+  - Sunucu Tauri origin'lerini (`tauri://localhost`, `http(s)://tauri.localhost`) CORS'ta kabul eder (#97). Bearer istekleri çerez taşımadığı için bu origin'lerin çerezli istek yetkisi kazanması risk oluşturmaz.
+- **Sonuçlar:**
+  - İstemcide oturum taşıma seçimi üç platforma çıkar: web için çerez, iOS/Android için bearer (secure-store), masaüstü için bearer (Keychain) ve Rust WebSocket. Tauri ortamı `__TAURI_INTERNALS__` ile algılanır.
+  - Debug `.app` yaklaşık 38 MB; release boyutu ve imzalama/notarization E4.1'de.
+  - Spike iskeleti `apps/desktop` (Tauri 2 kabuğu, ikonlar, WebSocket izni) E4.1'in başlangıç noktasıdır. `spike_report` komutu ve `/dev/desktop` tanılama ekranı yalnızca geliştirme içindir ve E4.1'de kaldırılır.
+- **Alternatifler:**
+  - Tauri penceresinde uzaktaki web uygulamasını yüklemek: çerezler birinci taraf olur ve istemci değişmez. Ama Tauri IPC'si uzak içeriğe açılır ve sürüm masaüstü yayınından kopar; güvenlik nedeniyle reddedildi.
+  - Çerezi `SameSite=None` yapmak: WebKit'in üçüncü taraf çerez engeli (ITP) yine engeller; web'in CSRF korumasını da zayıflatır. Reddedildi.
+  - Token'ı WebSocket URL'sinde ya da `Sec-WebSocket-Protocol` başlığında göndermek: token loglara sızabilir; Rust eklentisi header gönderebildiği için gerek yok. Reddedildi.
+  - Electron: ADR-0002'de reddedildi; spike bu kararı değiştirecek bir sorun göstermedi.
