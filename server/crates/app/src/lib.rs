@@ -18,7 +18,7 @@ pub mod telemetry;
 pub use config::{Config, ConfigError};
 
 /// Starts the application: connects to the database, applies migrations (unless disabled),
-/// starts the outbox dispatcher, job worker and scheduler, then serves HTTP on `listener` until `shutdown` resolves.
+/// starts the realtime bridge, the outbox dispatcher, job worker and scheduler, then serves HTTP on `listener` until `shutdown` resolves.
 pub async fn run<S>(config: Config, listener: TcpListener, shutdown: S) -> Result<(), RunError>
 where
     S: Future<Output = ()> + Send + 'static,
@@ -31,6 +31,13 @@ where
         db::migrate(&pool).await.map_err(RunError::Migrate)?;
         tracing::info!("database migrations applied");
     }
+
+    // Domain modules publish "something changed" events with `realtime::Notifier` (Postgres
+    // NOTIFY); the bridge delivers them, from every instance, to this instance's connections.
+    let hub = realtime::Hub::new();
+    let bridge = realtime::Bridge::start(&pool, realtime::DEFAULT_NOTIFY_CHANNEL, hub.clone())
+        .await
+        .map_err(RunError::Realtime)?;
 
     // Domain modules register their subscribers here as they are implemented.
     let dispatcher = db::outbox::Dispatcher::new(db::outbox::DispatchConfig::default());
@@ -147,9 +154,6 @@ where
         ..identity::rate_limit::RateLimits::default()
     };
     let profile = identity::http::profile_router(identity.clone());
-    // Domain modules publish "something changed" events through the hub (T0.5.1); the
-    // LISTEN/NOTIFY bridge (T0.5.2) will feed it from other instances.
-    let hub = realtime::Hub::new();
     let ws = realtime::router(realtime::RealtimeState {
         hub,
         identity: identity.clone(),
@@ -169,6 +173,7 @@ where
     .map_err(RunError::Serve);
 
     // Let background tasks finish their current batch before closing the pool.
+    bridge.stop().await;
     let _ = stop_dispatcher.send(());
     let _ = stop_jobs.send(true);
     for (name, task) in [
@@ -204,6 +209,8 @@ pub enum RunError {
     Google(String),
     /// Sign in with Apple could not be set up (e.g. invalid private key).
     Apple(String),
+    /// The realtime LISTEN/NOTIFY bridge could not start listening.
+    Realtime(db::DbError),
     /// A built-in recurring job has an invalid schedule.
     Schedule(jobs::ScheduleError),
     /// The HTTP server failed or could not drain within the shutdown timeout.
@@ -217,6 +224,7 @@ impl fmt::Display for RunError {
             Self::Migrate(err) => write!(f, "database migration failed: {err}"),
             Self::Google(err) => write!(f, "google sign-in setup failed: {err}"),
             Self::Apple(err) => write!(f, "sign in with apple setup failed: {err}"),
+            Self::Realtime(err) => write!(f, "realtime bridge failed to start: {err}"),
             Self::Schedule(err) => write!(f, "invalid job schedule: {err}"),
             Self::Serve(err) => write!(f, "server error: {err}"),
         }
@@ -229,6 +237,7 @@ impl std::error::Error for RunError {
             Self::Database(err) => Some(err),
             Self::Migrate(err) => Some(err),
             Self::Google(_) | Self::Apple(_) => None,
+            Self::Realtime(err) => Some(err),
             Self::Schedule(err) => Some(err),
             Self::Serve(err) => Some(err),
         }

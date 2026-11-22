@@ -59,7 +59,7 @@ pub enum ClientMessage {
 }
 
 /// An event on a channel: a name such as `item.changed` and a small JSON payload of ids.
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, rename = "WsEvent")]
 pub struct Event {
     pub name: String,
