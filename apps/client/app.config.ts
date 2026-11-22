@@ -19,7 +19,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   ];
   return {
     ...config,
-    name: config.name ?? "Second Brain",
+    name: config.name ?? "Routune",
     slug: config.slug ?? "secondbrain",
     scheme: schemes,
     ios: { ...config.ios, ...(apple ? { usesAppleSignIn: true } : {}) },
