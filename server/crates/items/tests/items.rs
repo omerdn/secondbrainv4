@@ -136,6 +136,221 @@ fn ids(items: &[items::Item]) -> Vec<Uuid> {
     items.iter().map(|i| i.id).collect()
 }
 
+// --- links (T1.2.3, B1-B3, V3, V4, V8, V9) --------------------------------------------------
+
+fn of_kind(kind: &str, title: &str) -> NewItem {
+    NewItem {
+        kind: kind.into(),
+        title: title.into(),
+        description: None,
+    }
+}
+
+#[tokio::test]
+async fn v4_only_the_page_owner_links_and_must_see_the_target() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    let page = w.items.create(ali, of_kind("page", "Notes")).await.unwrap();
+    let alis_task = w.items.create(ali, World::task("Ali's")).await.unwrap();
+    let ayses_task = w.items.create(ayse, World::task("Ayse's")).await.unwrap();
+    w.grant(RelationTuple::new(page.id, R::Assignee, ayse))
+        .await;
+
+    // An editor of the page may not link it.
+    assert!(matches!(
+        w.items.link(ayse, page.id, ayses_task.id).await,
+        Err(AppError::Forbidden)
+    ));
+    // The owner may not link to something they cannot see, and learns nothing about it.
+    assert!(matches!(
+        w.items.link(ali, page.id, ayses_task.id).await,
+        Err(AppError::NotFound)
+    ));
+    let link = w.items.link(ali, page.id, alis_task.id).await.unwrap();
+    assert_eq!(link.item.id, alis_task.id);
+    // Linking twice returns the same link.
+    let again = w.items.link(ali, page.id, alis_task.id).await.unwrap();
+    assert_eq!(again.id, link.id);
+}
+
+#[tokio::test]
+async fn b1_rejects_kinds_that_cannot_be_linked() {
+    let w = World::new().await;
+    let ali = Uuid::now_v7();
+    let page = w.items.create(ali, of_kind("page", "A")).await.unwrap();
+    let other = w.items.create(ali, of_kind("page", "B")).await.unwrap();
+    let goal = w.items.create(ali, of_kind("goal", "G")).await.unwrap();
+    let task = w.items.create(ali, World::task("T")).await.unwrap();
+    for (source, target) in [(page.id, other.id), (goal.id, task.id), (task.id, page.id)] {
+        assert!(matches!(
+            w.items.link(ali, source, target).await,
+            Err(AppError::Validation(_))
+        ));
+    }
+    w.items.link(ali, task.id, goal.id).await.unwrap();
+    w.items.link(ali, page.id, goal.id).await.unwrap();
+}
+
+#[tokio::test]
+async fn v8_linking_grants_and_unlinking_drops_page_access() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    let page = w.items.create(ali, of_kind("page", "Notes")).await.unwrap();
+    let task = w.items.create(ali, World::task("Task")).await.unwrap();
+    w.grant(RelationTuple::new(task.id, R::Watcher, ayse)).await;
+    assert!(matches!(
+        w.items.get(ayse, page.id).await,
+        Err(AppError::NotFound)
+    ));
+
+    w.items.link(ali, page.id, task.id).await.unwrap();
+    assert_eq!(w.items.get(ayse, page.id).await.unwrap().id, page.id);
+    // V3: inherited access cannot link or delete.
+    assert!(matches!(
+        w.items.unlink(ayse, page.id, task.id).await,
+        Err(AppError::Forbidden)
+    ));
+
+    w.items.unlink(ali, page.id, task.id).await.unwrap();
+    assert!(matches!(
+        w.items.get(ayse, page.id).await,
+        Err(AppError::NotFound)
+    ));
+    assert!(w.items.links(ali, page.id).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn v9_hidden_links_do_not_leak_in_any_form() {
+    let w = World::new().await;
+    let (ali, can) = (Uuid::now_v7(), Uuid::now_v7());
+    let page = w.items.create(ali, of_kind("page", "Notes")).await.unwrap();
+    let hidden = w
+        .items
+        .create(ali, World::task("Secret title"))
+        .await
+        .unwrap();
+    let open = w.items.create(ali, World::task("Open")).await.unwrap();
+    w.items.link(ali, page.id, hidden.id).await.unwrap();
+    w.items.link(ali, page.id, open.id).await.unwrap();
+    w.grant(RelationTuple::new(page.id, R::Watcher, can)).await;
+    w.grant(RelationTuple::new(open.id, R::Watcher, can)).await;
+
+    let seen = w.items.links(can, page.id).await.unwrap();
+    assert_eq!(seen.len(), 1, "the hidden link is not even counted");
+    assert_eq!(seen[0].item.id, open.id);
+    assert!(!serde_json::to_string(&seen).unwrap().contains("Secret"));
+    assert_eq!(w.items.links(ali, page.id).await.unwrap().len(), 2);
+    // The hidden end answers exactly like an item that does not exist.
+    assert!(matches!(
+        w.items.links(can, hidden.id).await,
+        Err(AppError::NotFound)
+    ));
+    assert!(matches!(
+        w.items.unlink(can, page.id, hidden.id).await,
+        Err(AppError::Forbidden)
+    ));
+}
+
+#[tokio::test]
+async fn b3_a_text_mention_is_not_a_link() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    let task = w.items.create(ali, World::task("Task")).await.unwrap();
+    w.grant(RelationTuple::new(task.id, R::Watcher, ayse)).await;
+    let page = w
+        .items
+        .create(
+            ali,
+            NewItem {
+                kind: "page".into(),
+                title: "Notes".into(),
+                description: Some(format!("See @{} and @Task", task.id)),
+            },
+        )
+        .await
+        .unwrap();
+    assert!(w.items.links(ali, page.id).await.unwrap().is_empty());
+    assert!(matches!(
+        w.items.get(ayse, page.id).await,
+        Err(AppError::NotFound)
+    ));
+}
+
+#[tokio::test]
+async fn a_task_to_goal_link_grants_no_access() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    let task = w.items.create(ali, World::task("Task")).await.unwrap();
+    let goal = w.items.create(ali, of_kind("goal", "Goal")).await.unwrap();
+    w.grant(RelationTuple::new(goal.id, R::Watcher, ayse)).await;
+    w.items.link(ali, task.id, goal.id).await.unwrap();
+    assert!(matches!(
+        w.items.get(ayse, task.id).await,
+        Err(AppError::NotFound)
+    ));
+    assert!(w.items.links(ayse, goal.id).await.unwrap().is_empty());
+    let incoming = w.items.links(ali, goal.id).await.unwrap();
+    assert_eq!(incoming[0].direction, items::LinkDirection::Incoming);
+}
+
+#[tokio::test]
+async fn trashed_items_cannot_be_linked_and_drop_out_of_link_lists() {
+    let w = World::new().await;
+    let ali = Uuid::now_v7();
+    let page = w.items.create(ali, of_kind("page", "Notes")).await.unwrap();
+    let task = w.items.create(ali, World::task("Task")).await.unwrap();
+    let other = w.items.create(ali, World::task("Other")).await.unwrap();
+    w.items.link(ali, page.id, task.id).await.unwrap();
+    w.items.set_trashed(ali, task.id, true).await.unwrap();
+    w.items.set_trashed(ali, other.id, true).await.unwrap();
+    assert!(w.items.links(ali, page.id).await.unwrap().is_empty());
+    assert!(matches!(
+        w.items.link(ali, page.id, other.id).await,
+        Err(AppError::Conflict(_))
+    ));
+    w.items.set_trashed(ali, task.id, false).await.unwrap();
+    assert_eq!(w.items.links(ali, page.id).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn link_endpoints() {
+    let w = World::new().await;
+    let (_, token) = w.user("links@example.com").await;
+    let (_, other) = w.user("links2@example.com").await;
+    let mut ids_by_kind = Vec::new();
+    for kind in ["page", "task"] {
+        let response = w
+            .call(
+                Method::POST,
+                "/items",
+                &token,
+                Some(json!({"kind": kind, "title": kind})),
+            )
+            .await;
+        let id = json_body(response).await["id"].as_str().unwrap().to_owned();
+        ids_by_kind.push(id);
+    }
+    let (page, task) = (&ids_by_kind[0], &ids_by_kind[1]);
+    let uri = format!("/items/{page}/links/{task}");
+    let response = w.call(Method::PUT, &uri, &other, None).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let response = w.call(Method::PUT, &uri, &token, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["direction"], "outgoing");
+    assert_eq!(body["item"]["id"], task.as_str());
+
+    let list = format!("/items/{task}/links");
+    let body = json_body(w.call(Method::GET, &list, &token, None).await).await;
+    assert_eq!(body[0]["direction"], "incoming");
+    assert_eq!(body[0]["item"]["id"], page.as_str());
+
+    let response = w.call(Method::DELETE, &uri, &token, None).await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    let body = json_body(w.call(Method::GET, &list, &token, None).await).await;
+    assert_eq!(body, json!([]));
+}
+
 // --- tags (T1.2.2, E1, E2, E4) -----------------------------------------------------------------
 
 fn tag(name: &str) -> items::NewTag {

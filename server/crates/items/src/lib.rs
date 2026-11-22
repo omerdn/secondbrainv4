@@ -3,12 +3,14 @@
 
 mod context;
 pub mod http;
+mod links;
 mod model;
 pub mod purge;
 mod service;
 mod tags;
 
 pub use context::ItemsAccessContext;
+pub use links::{ItemLink, LinkDirection, link_allowed};
 pub use model::{
     CreateItemRequest, DESCRIPTION_MAX_CHARS, Item, ItemChanges, ListQuery, ListState, NewItem,
     Owner, TITLE_MAX_CHARS, UpdateItemRequest, valid_kind,

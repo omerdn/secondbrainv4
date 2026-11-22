@@ -19,6 +19,9 @@
 //! | PATCH  | `/tags/{id}` | 200 [`Tag`]; body [`UpdateTagRequest`]; 404 if not theirs |
 //! | DELETE | `/tags/{id}` | 204; 404 if not theirs |
 //! | GET    | `/tags/{id}/items?state=…` | 200 `Item[]`: accessible items with the tag (E4) |
+//! | GET    | `/items/{id}/links` | 200 `ItemLink[]`; hidden ends are left out (V9) |
+//! | PUT    | `/items/{id}/links/{target_id}` | 200 [`ItemLink`]; LINK + target VIEW (V4) |
+//! | DELETE | `/items/{id}/links/{target_id}` | 204; LINK + target VIEW |
 
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::StatusCode;
@@ -29,6 +32,7 @@ use identity::http::Authenticated;
 use kernel::AppError;
 use uuid::Uuid;
 
+use crate::links::ItemLink;
 use crate::model::{CreateItemRequest, Item, ListQuery, UpdateItemRequest};
 use crate::service::ItemsService;
 use crate::tags::{CreateTagRequest, Tag, UpdateTagRequest};
@@ -62,7 +66,48 @@ pub fn router(state: ItemsHttpState) -> Router {
         .route("/tags", post(create_tag).get(list_tags))
         .route("/tags/{id}", patch(update_tag).delete(delete_tag))
         .route("/tags/{id}/items", get(items_by_tag))
+        .route("/items/{id}/links", get(item_links))
+        .route(
+            "/items/{id}/links/{target_id}",
+            put(link_item).delete(unlink_item),
+        )
         .with_state(state)
+}
+
+async fn item_links(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<ItemLink>>, AppError> {
+    state
+        .items
+        .links(auth.user_id.as_uuid(), id)
+        .await
+        .map(Json)
+}
+
+async fn link_item(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path((id, target_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<ItemLink>, AppError> {
+    state
+        .items
+        .link(auth.user_id.as_uuid(), id, target_id)
+        .await
+        .map(Json)
+}
+
+async fn unlink_item(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path((id, target_id)): Path<(Uuid, Uuid)>,
+) -> Result<StatusCode, AppError> {
+    state
+        .items
+        .unlink(auth.user_id.as_uuid(), id, target_id)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn item_tags(
