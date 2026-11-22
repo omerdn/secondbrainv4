@@ -44,3 +44,7 @@ Release'ler ön sürüm olarak yayınlanır, çünkü `releases/latest` her zama
 - Güncellemeler **runtime sürümüne** bağlıdır. Bu sürüm native katmanın parmak izidir (`runtimeVersion.policy: fingerprint`). Native bir değişiklik (yeni native kütüphane, izin, ikon, Expo SDK) parmak izini değiştirir; eski uygulamalar o güncellemeyi hiç görmez. Bu durumda yeni bir `mobile-v*` sürümü (yeni APK/IPA) gerekir.
 - Sunucu her runtime için son 3 güncellemeyi tutar. Güncelleme yoksa 204 döner ve uygulama elindekiyle devam eder.
 - Kod imzalama kullanılmıyor; güvenliği HTTPS sağlıyor (ADR-0023).
+
+## En düşük desteklenen sürüm (T4.2.7)
+
+Native ya da protokol değişikliği eski kurulumları uyumsuz bırakırsa, sunucudaki `.env`'de ilgili `MIN_VERSION_DESKTOP` / `MIN_VERSION_IOS` / `MIN_VERSION_ANDROID` değeri yükseltilir (ör. `0.2.0`) ve sunucu yeniden başlatılır. Daha eski uygulamalar açılışta "Yeni sürüm gerekli" ekranında kalır; ekrandaki düğme `DOWNLOAD_URL_*` adresini açar. Kontrol başarısız olursa uygulama engellenmez.

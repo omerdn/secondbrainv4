@@ -22,6 +22,12 @@ export const en: Catalog = {
     },
     notFound: { title: "Page not found", home: "Go home" },
   },
+  updateRequired: {
+    title: "Update required",
+    description:
+      "This version is no longer supported. Install the new version of Routune to continue.",
+    download: "Download the new version",
+  },
   desktopUpdate: {
     downloading: "Updating Routune ({{version}})",
     progress: "{{percent}}% downloaded",

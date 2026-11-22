@@ -24,6 +24,11 @@ export const tr = {
     },
     notFound: { title: "Sayfa bulunamadı", home: "Ana sayfaya dön" },
   },
+  updateRequired: {
+    title: "Yeni sürüm gerekli",
+    description: "Bu sürüm artık desteklenmiyor. Devam etmek için Routune'un yeni sürümünü kur.",
+    download: "Yeni sürümü indir",
+  },
   desktopUpdate: {
     downloading: "Routune güncelleniyor ({{version}})",
     progress: "%{{percent}} indirildi",
