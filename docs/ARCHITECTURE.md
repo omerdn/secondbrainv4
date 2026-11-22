@@ -392,7 +392,7 @@ Kapsam beklentisi: `access`, `tracking`, `recurrence` ve `goals` crate'lerinde d
 ## 18. Bilinen riskler
 | Risk | Etki | Önlem |
 |---|---|---|
-| react-native-web'de sürükle-bırak (kanban) | Kullanıcı deneyimi | Faz 0'da teknik keşif (spike); Reanimated ve Gesture Handler tabanlı çözüm. |
+| react-native-web'de sürükle-bırak (kanban) | Kullanıcı deneyimi | Spike T0.6.1 tamamlandı: Gesture Handler + Reanimated üzerinde ince katman (ADR-0018). |
 | Mobilde WebView içinde çalışan editörün performansı | Kullanıcı deneyimi | Faz 0'da teknik keşif; gerekirse sadeleştirilmiş bir mobil araç çubuğu. |
 | Yjs belge şemasının evrimi | Veri | Şema sürümleme ve dönüştürme testleri. |
 | Takımlarda büyük ölçekte erişim yeniden hesaplama | Performans | Asenkron genişleme (§6.4); ölçek gerektirirse Zanzibar'a geçiş. |
