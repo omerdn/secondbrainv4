@@ -15,6 +15,8 @@ pub enum TouchAction {
     Viewed,
     Edited,
     Completed,
+    /// A value was entered on a tracker.
+    EntryLogged,
     /// Someone accepted an invitation and joined.
     MemberJoined,
     Unarchived,
@@ -35,6 +37,7 @@ impl TouchAction {
         match self {
             Self::Edited
             | Self::Completed
+            | Self::EntryLogged
             | Self::MemberJoined
             | Self::Unarchived
             | Self::Restored => true,
@@ -97,10 +100,11 @@ mod tests {
     use super::*;
     use TouchAction as A;
 
-    const ALL: [TouchAction; 13] = [
+    const ALL: [TouchAction; 14] = [
         A::Viewed,
         A::Edited,
         A::Completed,
+        A::EntryLogged,
         A::MemberJoined,
         A::Unarchived,
         A::Restored,
@@ -125,6 +129,7 @@ mod tests {
             [
                 A::Edited,
                 A::Completed,
+                A::EntryLogged,
                 A::MemberJoined,
                 A::Unarchived,
                 A::Restored

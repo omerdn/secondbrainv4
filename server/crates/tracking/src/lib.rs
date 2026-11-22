@@ -4,9 +4,11 @@
 //! (T1.3.3) and the API (T1.3.4) build on it.
 
 mod aggregate;
+pub mod http;
 mod model;
 mod progress;
 pub mod repo;
+mod service;
 
 pub use aggregate::{DateWindow, aggregate, aggregate_period, start_of_day, window_for};
 pub use model::{
@@ -15,4 +17,7 @@ pub use model::{
 pub use progress::{
     DateRange, MAX_RANGE_DAYS, Progress, ProgressFuture, ProgressProvider, TrackerProgress,
     TrackerStatus, tracker_status,
+};
+pub use service::{
+    CreateEntryRequest, EntryView, ListEntriesQuery, NOTE_MAX_CHARS, TrackerEntries,
 };

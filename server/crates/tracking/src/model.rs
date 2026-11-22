@@ -156,6 +156,8 @@ pub struct TrackerEntry {
     pub local_date: NaiveDate,
     /// The entry's note is this line of the process page, its only copy (T3).
     pub note_block_id: Option<Uuid>,
+    /// Interim home of the note, until process pages exist (E2.5).
+    pub note: Option<String>,
     pub created_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
 }
@@ -169,6 +171,7 @@ pub struct NewEntry {
     pub occurred_at: DateTime<Utc>,
     pub local_date: NaiveDate,
     pub note_block_id: Option<Uuid>,
+    pub note: Option<String>,
 }
 
 #[cfg(test)]

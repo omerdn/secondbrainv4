@@ -181,10 +181,21 @@ where
     });
     let mut modules = identity::http::rate_limited_router(identity.clone(), limits)
         .merge(idempotency::protect(
-            profile.merge(items::http::router(items::http::ItemsHttpState {
-                items,
-                identity: identity.clone(),
-            })),
+            profile
+                .merge(items::http::router(items::http::ItemsHttpState {
+                    items: items.clone(),
+                    identity: identity.clone(),
+                }))
+                .merge(tracking::http::router(tracking::http::TrackingHttpState {
+                    entries: tracking::TrackerEntries::new(
+                        pool.clone(),
+                        clock.clone(),
+                        access_engine.permissions(),
+                        items,
+                        identity.clone(),
+                    ),
+                    identity: identity.clone(),
+                })),
             idempotency,
         ))
         .merge(ws)

@@ -11,17 +11,21 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+access = { path = "../access" }
+axum.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true
+identity = { path = "../identity" }
+items = { path = "../items" }
 kernel = { path = "../kernel" }
+recurrence = { path = "../recurrence" }
 rust_decimal.workspace = true
+serde.workspace = true
 sqlx.workspace = true
+ts-rs.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-access = { path = "../access" }
 db = { path = "../db", features = ["testing"] }
-items = { path = "../items" }
 proptest.workspace = true
-recurrence = { path = "../recurrence" }
 tokio.workspace = true

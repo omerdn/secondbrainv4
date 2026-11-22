@@ -22,6 +22,7 @@ jobs = { path = "../jobs" }
 kernel = { path = "../kernel" }
 notebooks = { path = "../notebooks" }
 realtime = { path = "../realtime" }
+tracking = { path = "../tracking" }
 updates = { path = "../updates" }
 sentry.workspace = true
 serde.workspace = true
@@ -38,6 +39,7 @@ uuid.workspace = true
 [dev-dependencies]
 db = { path = "../db", features = ["testing"] }
 http-body-util.workspace = true
+rust_decimal.workspace = true
 sentry = { workspace = true, features = ["test"] }
 serde_json.workspace = true
 sqlx.workspace = true

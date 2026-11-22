@@ -85,6 +85,7 @@ dependencies = [
  "kernel",
  "notebooks",
  "realtime",
+ "rust_decimal",
  "sentry",
  "serde",
  "serde_json",
@@ -95,6 +96,7 @@ dependencies = [
  "tower-http 0.7.1",
  "tracing",
  "tracing-subscriber",
+ "tracking",
  "ts-rs",
  "updates",
  "uuid",
@@ -4607,16 +4609,20 @@ name = "tracking"
 version = "0.0.0"
 dependencies = [
  "access",
+ "axum",
  "chrono",
  "chrono-tz",
  "db",
+ "identity",
  "items",
  "kernel",
  "proptest",
  "recurrence",
  "rust_decimal",
+ "serde",
  "sqlx",
  "tokio",
+ "ts-rs",
  "uuid",
 ]
 
@@ -4897,6 +4903,7 @@ checksum = "a0181c14ddd6c7b8b0b0132a5f1ea2f32be0d893cd3ea97b6e3b28886b8a3d1c"
 dependencies = [
  "cfg-if",
  "rustversion",
+ "serde",
  "wasm-bindgen-macro",
  "wasm-bindgen-shared",
 ]

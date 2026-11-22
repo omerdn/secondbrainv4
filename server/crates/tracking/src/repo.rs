@@ -13,7 +13,7 @@ use crate::model::{
 const TRACKER_COLUMNS: &str = "item_id, unit, target_value, period, range_start, range_end, \
                                aggregation, direction, owner_kind, created_at, updated_at";
 const ENTRY_COLUMNS: &str = "id, tracker_item_id, user_id, value, occurred_at, local_date, \
-                             note_block_id, created_at, deleted_at";
+                             note_block_id, note, created_at, deleted_at";
 
 #[derive(FromRow)]
 struct TrackerRow {
@@ -64,6 +64,7 @@ struct EntryRow {
     occurred_at: DateTime<Utc>,
     local_date: NaiveDate,
     note_block_id: Option<Uuid>,
+    note: Option<String>,
     created_at: DateTime<Utc>,
     deleted_at: Option<DateTime<Utc>>,
 }
@@ -78,6 +79,7 @@ impl From<EntryRow> for TrackerEntry {
             occurred_at: row.occurred_at,
             local_date: row.local_date,
             note_block_id: row.note_block_id,
+            note: row.note,
             created_at: row.created_at,
             deleted_at: row.deleted_at,
         }
@@ -143,8 +145,8 @@ pub async fn insert_entry(
 ) -> sqlx::Result<TrackerEntry> {
     let row = sqlx::query_as::<_, EntryRow>(sqlx::AssertSqlSafe(format!(
         "INSERT INTO tracker_entries (id, tracker_item_id, user_id, value, occurred_at, local_date,
-                                      note_block_id, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                                      note_block_id, note, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING {ENTRY_COLUMNS}"
     )))
     .bind(kernel::Id::<()>::new_at(now).as_uuid())
@@ -154,10 +156,63 @@ pub async fn insert_entry(
     .bind(new.occurred_at)
     .bind(new.local_date)
     .bind(new.note_block_id)
+    .bind(&new.note)
     .bind(now)
     .fetch_one(conn)
     .await?;
     Ok(row.into())
+}
+
+/// A live entry of a tracker.
+///
+/// # Errors
+/// Database errors.
+pub async fn get_entry(
+    conn: impl PgExecutor<'_>,
+    tracker_item_id: Uuid,
+    entry_id: Uuid,
+) -> sqlx::Result<Option<TrackerEntry>> {
+    let row = sqlx::query_as::<_, EntryRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {ENTRY_COLUMNS} FROM tracker_entries
+         WHERE id = $1 AND tracker_item_id = $2 AND deleted_at IS NULL"
+    )))
+    .bind(entry_id)
+    .bind(tracker_item_id)
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.map(TrackerEntry::from))
+}
+
+/// One page of a tracker's live entries, newest first, within `days` (local, both included) and
+/// after the `(occurred_at, id)` of the previous page.
+///
+/// # Errors
+/// Database errors.
+pub async fn page_entries(
+    conn: impl PgExecutor<'_>,
+    tracker_item_id: Uuid,
+    (from, to): (Option<NaiveDate>, Option<NaiveDate>),
+    after: Option<(DateTime<Utc>, Uuid)>,
+    limit: i64,
+) -> sqlx::Result<Vec<TrackerEntry>> {
+    let rows = sqlx::query_as::<_, EntryRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {ENTRY_COLUMNS} FROM tracker_entries
+         WHERE tracker_item_id = $1 AND deleted_at IS NULL
+           AND ($2::date IS NULL OR local_date >= $2)
+           AND ($3::date IS NULL OR local_date <= $3)
+           AND ($4::timestamptz IS NULL OR (occurred_at, id) < ($4, $5))
+         ORDER BY occurred_at DESC, id DESC
+         LIMIT $6"
+    )))
+    .bind(tracker_item_id)
+    .bind(from)
+    .bind(to)
+    .bind(after.map(|(at, _)| at))
+    .bind(after.map(|(_, id)| id))
+    .bind(limit)
+    .fetch_all(conn)
+    .await?;
+    Ok(rows.into_iter().map(TrackerEntry::from).collect())
 }
 
 /// A tracker's live entries, oldest first, optionally within `from..=to` local days.
