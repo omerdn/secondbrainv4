@@ -89,6 +89,7 @@ export function ItemDetailScreen({ id }: { id: string }) {
         item={item.data}
         ownedByMe={ownedByMe}
         roles={loadable(access, (data) => roleLabels(data.reasons))}
+        explanation={loadable(access, (data) => data)}
         tags={loadable(tags, (data) => data)}
         links={loadable(links, (data) => data)}
         onOpenItem={(target) => {

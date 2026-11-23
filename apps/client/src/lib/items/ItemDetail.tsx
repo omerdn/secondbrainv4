@@ -1,4 +1,4 @@
-import type { Item, ItemLink, Tag } from "@secondbrain/api-types";
+import type { AccessExplanation, Item, ItemLink, Tag } from "@secondbrain/api-types";
 import { Button, TagChip, Text } from "@secondbrain/ui";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -6,6 +6,7 @@ import { View } from "react-native";
 
 import { ItemCard } from "./ItemCard";
 import { kindLabel, type RoleLabel } from "./labels";
+import { WhyPanel } from "./WhyPanel";
 
 /** A section's data: still loading, failed (with a retry), or ready. */
 export type Loadable<T> =
@@ -16,6 +17,8 @@ export interface ItemDetailProps {
   /** Whether the signed-in user owns the item personally. */
   ownedByMe: boolean;
   roles: Loadable<readonly RoleLabel[]>;
+  /** Why the viewer has access (V11); omit to hide the panel. */
+  explanation?: Loadable<AccessExplanation>;
   tags: Loadable<readonly Tag[]>;
   /** Only links whose other end the viewer can see; the server leaves out the rest (V9). */
   links: Loadable<readonly ItemLink[]>;
@@ -67,6 +70,7 @@ export function ItemDetail({
   item,
   ownedByMe,
   roles,
+  explanation,
   tags,
   links,
   onOpenItem,
@@ -104,6 +108,19 @@ export function ItemDetail({
         <SectionBody data={roles} empty={t("items.detail.noRoles")}>
           {(value) => <Text>{value.map((role) => t(`items.roles.${role}`)).join(", ")}</Text>}
         </SectionBody>
+        {explanation !== undefined ? (
+          <WhyPanel
+            explanation={explanation}
+            titles={
+              new Map(
+                links.status === "ready"
+                  ? links.value.map((link) => [link.item.id, link.item.title])
+                  : [],
+              )
+            }
+            onOpenItem={onOpenItem}
+          />
+        ) : null}
       </Section>
       <Section title={t("items.detail.tags")}>
         <SectionBody data={tags} empty={t("items.detail.noTags")}>
