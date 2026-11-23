@@ -1,5 +1,5 @@
-import { PlaceholderScreen } from "@/features/shell";
+import { TrackersScreen } from "@/features/trackers";
 
 export default function Page() {
-  return <PlaceholderScreen section="trackers" />;
+  return <TrackersScreen />;
 }
