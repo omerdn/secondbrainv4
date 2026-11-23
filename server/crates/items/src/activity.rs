@@ -225,6 +225,23 @@ impl ItemsService {
         record(conn, now, event).await
     }
 
+    /// Records that `actor` became an assignee of an item (A1), for the modules that own
+    /// assignment. Call it inside the transaction of the change.
+    ///
+    /// # Errors
+    /// Database errors.
+    pub async fn record_assigned(
+        &self,
+        conn: &mut PgConnection,
+        actor: Uuid,
+        item: Uuid,
+    ) -> sqlx::Result<()> {
+        let now = self.clock.now();
+        touch::apply(&mut *conn, item, TouchAction::Edited, now).await?;
+        let event = NewActivity::new(Some(actor), item, ActivityKind::Assigned);
+        record(conn, now, event).await
+    }
+
     /// The history of one item `actor` can view, newest first (A2).
     ///
     /// # Errors
