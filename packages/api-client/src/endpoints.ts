@@ -11,6 +11,8 @@ import type {
   AppleNativeRequest,
   CreateSavedViewRequest,
   CreateTagRequest,
+  CreateTrackerEntryRequest,
+  CreateTrackerRequest,
   AuthResponse,
   CsrfResponse,
   CurrentUser,
@@ -28,6 +30,9 @@ import type {
   SavedView,
   SessionInfo,
   Tag,
+  Tracker,
+  TrackerEntry,
+  TrackerSummary,
   UpdateProfileRequest,
   UpdateSavedViewRequest,
   VerifyEmailRequest,
@@ -100,6 +105,21 @@ export function endpoints(api: ApiClient) {
         api.post<Tag>("/tags", body, options),
       /** Accessible items carrying the tag. */
       items: (id: string) => api.get<Item[]>(`/tags/${encodeURIComponent(id)}/items`),
+    },
+    trackers: {
+      create: (body: CreateTrackerRequest, options?: MutationOptions) =>
+        api.post<Tracker>("/trackers", body, options),
+      get: (id: string) => api.get<Tracker>(`/trackers/${encodeURIComponent(id)}`),
+      /** The current period: use, what is left and any overrun (PRD K2). */
+      summary: (id: string) =>
+        api.get<TrackerSummary>(`/trackers/${encodeURIComponent(id)}/summary`),
+      /** Entries newest first; `from` and `to` are local days, both included. */
+      entries: (
+        id: string,
+        query: { from?: string; to?: string; limit?: number; cursor?: string } = {},
+      ) => api.get<Page<TrackerEntry>>(`/trackers/${encodeURIComponent(id)}/entries`, { query }),
+      addEntry: (id: string, body: CreateTrackerEntryRequest, options?: MutationOptions) =>
+        api.post<TrackerEntry>(`/trackers/${encodeURIComponent(id)}/entries`, body, options),
     },
     views: {
       /** The caller's saved views, pinned first (PRD F2). */
