@@ -406,7 +406,7 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 **Amaç:** Arkadaşlarla ortak görev, rutin, defter ve çalışma oturumu kullanılabilmesi. Tüm görünürlük kurallarının testle güvence altına alınması.
 
 **Çıkış kriteri:**
-- V1–V12 entegrasyon testlerinin tamamı aktif ve yeşil.
+- Takımlara bağlı olmayan V1–V12 senaryoları aktif ve yeşil. Takım senaryoları (`T5.1.x`) F5'te açılır.
 - İki arkadaş ortak tüm akışları kullanabiliyor.
 
 ### E3.1 · Arkadaşlık · bağımlılık: F2
@@ -430,8 +430,8 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 - **T3.2.5** · İstemci: üye yönetimi · client · M
   - Davet bildirimleri
   - Kabul ve red
-- **T3.2.6** · V1–V12 entegrasyon test paketinin tamamlanması · test · M
-  - `#[ignore]` ile işaretli tüm testler aktif
+- **T3.2.6** · Takım dışı görünürlük testlerinin tamamlanması · test · M
+  - `T3.x` etiketli `#[ignore]` testlerin tamamı aktif; takımlara bağlı `T5.1.x` senaryoları F5'e kalır
 
 ### E3.3 · Ortak rutinler · bağımlılık: E3.2
 - **T3.3.1** · Tamamlama modları · backend · M
@@ -545,7 +545,7 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 
 **Amaç:** Takımların rol ve yetkilerle birlikte görev, rutin, hedef ve defter kullanabilmesi.
 
-**Çıkış kriteri:** Bir takım rol matrisiyle birlikte tüm çekirdek özellikleri kullanabiliyor. Büyük takım performans testi geçiyor.
+**Çıkış kriteri:** Bir takım rol matrisiyle birlikte tüm çekirdek özellikleri kullanabiliyor. Büyük takım performans testi geçiyor. Kalan `T5.1.x` görünürlük senaryoları açıldı; V1–V12 paketinin tamamı aktif ve yeşil.
 
 ### E5.1 · Takım temeli · bağımlılık: F3
 - **T5.1.1** · Takım ve üyelik · backend · M
