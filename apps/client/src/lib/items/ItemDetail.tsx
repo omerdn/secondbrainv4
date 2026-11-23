@@ -20,6 +20,8 @@ export interface ItemDetailProps {
   /** Only links whose other end the viewer can see; the server leaves out the rest (V9). */
   links: Loadable<readonly ItemLink[]>;
   onOpenItem: (id: string) => void;
+  /** Opens the tag picker; omit when tags cannot be changed. */
+  onEditTags?: () => void;
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -61,7 +63,15 @@ function SectionBody<T>({
  * The skeleton every item kind's detail screen builds on: kind, state, description, owner, the
  * viewer's roles, tags and links. It only displays what it is given.
  */
-export function ItemDetail({ item, ownedByMe, roles, tags, links, onOpenItem }: ItemDetailProps) {
+export function ItemDetail({
+  item,
+  ownedByMe,
+  roles,
+  tags,
+  links,
+  onOpenItem,
+  onEditTags,
+}: ItemDetailProps) {
   const { t } = useTranslation();
   const owner =
     item.owner.type === "team"
@@ -105,6 +115,11 @@ export function ItemDetail({ item, ownedByMe, roles, tags, links, onOpenItem }: 
             </View>
           )}
         </SectionBody>
+        {onEditTags !== undefined ? (
+          <View className="self-start">
+            <Button title={t("tags.edit")} variant="secondary" size="sm" onPress={onEditTags} />
+          </View>
+        ) : null}
       </Section>
       <Section title={t("items.detail.links")}>
         <SectionBody data={links} empty={t("items.detail.noLinks")}>

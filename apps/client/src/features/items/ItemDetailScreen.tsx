@@ -3,10 +3,12 @@ import { useApi } from "@secondbrain/api-client/react";
 import { EmptyState } from "@secondbrain/ui";
 import { type UseQueryResult, useQuery } from "@tanstack/react-query";
 import { type Href, useRouter } from "expo-router";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useSession } from "@/features/auth";
 import { Screen } from "@/features/shell";
+import { TagPicker } from "@/features/tags";
 import { ItemDetail, type Loadable, roleLabels } from "@/lib/items";
 
 function loadable<T, V>(query: UseQueryResult<T>, select: (data: T) => V): Loadable<V> {
@@ -30,6 +32,7 @@ export function ItemDetailScreen({ id }: { id: string }) {
   const api = useApi();
   const router = useRouter();
   const { state } = useSession();
+  const [picking, setPicking] = useState(false);
 
   const item = useQuery({ queryKey: ["item", id], queryFn: () => api.items.get(id) });
   const enabled = item.isSuccess;
@@ -91,6 +94,20 @@ export function ItemDetailScreen({ id }: { id: string }) {
         onOpenItem={(target) => {
           const href = `/items/${encodeURIComponent(target)}` as Href;
           router.push(href);
+        }}
+        onEditTags={
+          item.data.deleted_at === null
+            ? () => {
+                setPicking(true);
+              }
+            : undefined
+        }
+      />
+      <TagPicker
+        itemId={id}
+        visible={picking}
+        onClose={() => {
+          setPicking(false);
         }}
       />
     </Screen>
