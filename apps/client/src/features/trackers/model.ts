@@ -6,6 +6,10 @@ import type {
   TrackerPeriod,
 } from "@secondbrain/api-types";
 
+import { addDays, isDay } from "@/lib/dates";
+
+export { addDays, isDay };
+
 export const PERIODS = ["day", "week", "month", "total", "range"] as const;
 export const AGGREGATIONS = ["sum", "count", "last", "max"] as const;
 export const DIRECTIONS = ["increase", "limit"] as const;
@@ -21,22 +25,6 @@ const DECIMAL = /^-?\d{1,16}(\.\d{1,4})?$/;
 export function normalizeDecimal(raw: string): string | null {
   const value = raw.trim().replace(",", ".");
   return DECIMAL.test(value) ? value : null;
-}
-
-/** Whether `raw` is a real calendar day as `YYYY-MM-DD`. */
-export function isDay(raw: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-    return false;
-  }
-  const parsed = new Date(`${raw}T00:00:00Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === raw;
-}
-
-/** `day` moved by `delta` calendar days. Works in UTC, so no time zone can shift the date. */
-export function addDays(day: string, delta: number): string {
-  const parsed = new Date(`${day}T00:00:00Z`);
-  parsed.setUTCDate(parsed.getUTCDate() + delta);
-  return parsed.toISOString().slice(0, 10);
 }
 
 export interface TrackerForm {

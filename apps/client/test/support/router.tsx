@@ -15,6 +15,7 @@ import Routines from "../../app/(app)/routines";
 import Settings from "../../app/(app)/settings";
 import Tags from "../../app/(app)/tags";
 import Tasks from "../../app/(app)/tasks";
+import TaskDetail from "../../app/(app)/tasks/[id]";
 import Trackers from "../../app/(app)/trackers";
 import TrackerDetail from "../../app/(app)/trackers/[id]";
 import Trash from "../../app/(app)/trash";
@@ -50,6 +51,7 @@ export function renderApp(
       "(app)/_layout": AppLayout,
       "(app)/index": Today,
       "(app)/tasks": Tasks,
+      "(app)/tasks/[id]": TaskDetail,
       "(app)/routines": Routines,
       "(app)/goals": Goals,
       "(app)/trackers": Trackers,

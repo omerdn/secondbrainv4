@@ -10,7 +10,9 @@ import type {
   AccessPreviewRequest,
   AppleNativeRequest,
   CreateSavedViewRequest,
+  CreateSubtaskRequest,
   CreateTagRequest,
+  CreateTaskRequest,
   CreateTrackerEntryRequest,
   CreateTrackerRequest,
   AuthResponse,
@@ -29,12 +31,17 @@ import type {
   ResetPasswordRequest,
   SavedView,
   SessionInfo,
+  Subtask,
   Tag,
+  Task,
   Tracker,
   TrackerEntry,
   TrackerSummary,
+  UpdateItemRequest,
   UpdateProfileRequest,
   UpdateSavedViewRequest,
+  UpdateSubtaskRequest,
+  UpdateTaskRequest,
   VerifyEmailRequest,
 } from "@secondbrain/api-types";
 
@@ -75,6 +82,9 @@ export function endpoints(api: ApiClient) {
     items: {
       get: (id: string) => api.get<Item>(`/items/${encodeURIComponent(id)}`),
       list: (state: ItemListState) => api.get<Item[]>("/items", { query: { state } }),
+      /** Title and description; an empty description clears it. */
+      update: (id: string, body: UpdateItemRequest, options?: MutationOptions) =>
+        api.patch<Item>(`/items/${encodeURIComponent(id)}`, body, options),
       /** Back from the trash; owner only (PRD N4, V6). */
       restore: (id: string, options?: MutationOptions) =>
         api.post<Item>(`/items/${encodeURIComponent(id)}/restore`, undefined, options),
@@ -105,6 +115,45 @@ export function endpoints(api: ApiClient) {
         api.post<Tag>("/tags", body, options),
       /** Accessible items carrying the tag. */
       items: (id: string) => api.get<Item[]>(`/tags/${encodeURIComponent(id)}/items`),
+    },
+    tasks: {
+      create: (body: CreateTaskRequest, options?: MutationOptions) =>
+        api.post<Task>("/tasks", body, options),
+      get: (id: string) => api.get<Task>(`/tasks/${encodeURIComponent(id)}`),
+      /** Dates only; the title and description belong to the item. */
+      update: (id: string, body: UpdateTaskRequest, options?: MutationOptions) =>
+        api.patch<Task>(`/tasks/${encodeURIComponent(id)}`, body, options),
+      addSubtask: (id: string, body: CreateSubtaskRequest, options?: MutationOptions) =>
+        api.post<Subtask>(`/tasks/${encodeURIComponent(id)}/subtasks`, body, options),
+      renameSubtask: (
+        id: string,
+        subtaskId: string,
+        body: UpdateSubtaskRequest,
+        options?: MutationOptions,
+      ) =>
+        api.patch<Subtask>(
+          `/tasks/${encodeURIComponent(id)}/subtasks/${encodeURIComponent(subtaskId)}`,
+          body,
+          options,
+        ),
+      /** The last subtask cannot be deleted (PRD G2). */
+      deleteSubtask: (id: string, subtaskId: string, options?: MutationOptions) =>
+        api.delete(
+          `/tasks/${encodeURIComponent(id)}/subtasks/${encodeURIComponent(subtaskId)}`,
+          options,
+        ),
+      completeSubtask: (id: string, subtaskId: string, options?: MutationOptions) =>
+        api.post<Subtask>(
+          `/tasks/${encodeURIComponent(id)}/subtasks/${encodeURIComponent(subtaskId)}/complete`,
+          undefined,
+          options,
+        ),
+      reopenSubtask: (id: string, subtaskId: string, options?: MutationOptions) =>
+        api.post<Subtask>(
+          `/tasks/${encodeURIComponent(id)}/subtasks/${encodeURIComponent(subtaskId)}/reopen`,
+          undefined,
+          options,
+        ),
     },
     trackers: {
       create: (body: CreateTrackerRequest, options?: MutationOptions) =>
