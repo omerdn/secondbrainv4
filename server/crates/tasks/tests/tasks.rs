@@ -12,9 +12,10 @@ use db::testing::TestDb;
 use items::{ActivityKind, ItemsAccessContext, ItemsService, NewItem};
 use kernel::{AppError, FixedClock, PageParams, PageRequest};
 use tasks::{
-    CreateSubtaskRequest, CreateTaskRequest, TaskView, TasksService, UpdateSubtaskRequest,
-    UpdateTaskRequest, repo,
+    CreateSubtaskRequest, CreateTaskRequest, TaskProgress, TaskView, TasksService,
+    UpdateSubtaskRequest, UpdateTaskRequest, repo,
 };
+use tracking::{DateRange, ProgressProvider};
 use uuid::Uuid;
 
 fn now() -> DateTime<Utc> {
@@ -495,5 +496,46 @@ async fn invalid_requests_are_refused() {
     assert!(matches!(
         w.tasks.create(w.owner, too_many).await,
         Err(AppError::Validation(_))
+    ));
+}
+
+#[tokio::test]
+async fn g3_the_provider_reads_done_over_total_and_the_task_dates() {
+    let w = World::new().await;
+    let task = w
+        .tasks
+        .create(
+            w.owner,
+            CreateTaskRequest {
+                start_date: Some(day(1)),
+                due_date: Some(day(10)),
+                subtasks: Some(vec![subtask("a"), subtask("b"), subtask("c"), subtask("d")]),
+                ..request("Ship")
+            },
+        )
+        .await
+        .unwrap();
+    let id = task.item.id;
+    w.tasks
+        .complete_subtask(w.owner, id, task.subtasks[0].id)
+        .await
+        .unwrap();
+    let provider = TaskProgress::new(w.db.pool().clone());
+    let range = DateRange::new(day(1), day(30)).unwrap();
+    let progress = provider.progress(id, range, day(5)).await.unwrap();
+    assert!((progress.done - 1.0).abs() < f64::EPSILON);
+    assert!((progress.total - 4.0).abs() < f64::EPSILON);
+    assert!((progress.expected_to_date - 2.0).abs() < 1e-9);
+    assert!((tasks::completion(1, 4) - progress.done / progress.total).abs() < f64::EPSILON);
+}
+
+#[tokio::test]
+async fn the_provider_does_not_know_other_items() {
+    let w = World::new().await;
+    let provider = TaskProgress::new(w.db.pool().clone());
+    let range = DateRange::new(day(1), day(30)).unwrap();
+    assert!(matches!(
+        provider.progress(Uuid::now_v7(), range, day(5)).await,
+        Err(AppError::NotFound)
     ));
 }

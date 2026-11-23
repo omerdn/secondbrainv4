@@ -186,6 +186,21 @@ pub async fn count_subtasks(conn: &mut PgConnection, task_id: Uuid) -> sqlx::Res
         .await
 }
 
+/// How many subtasks are done, and how many there are.
+///
+/// # Errors
+/// Database errors.
+pub async fn subtask_counts(pool: &PgPool, task_id: Uuid) -> sqlx::Result<(u32, u32)> {
+    let (done, total): (i32, i32) = sqlx::query_as(
+        "SELECT (count(*) FILTER (WHERE done_at IS NOT NULL))::int4, count(*)::int4
+         FROM subtasks WHERE task_id = $1",
+    )
+    .bind(task_id)
+    .fetch_one(pool)
+    .await?;
+    Ok((done.unsigned_abs(), total.unsigned_abs()))
+}
+
 /// Whether every subtask of the task is done.
 ///
 /// # Errors

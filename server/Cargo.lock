@@ -4163,10 +4163,12 @@ dependencies = [
  "identity",
  "items",
  "kernel",
+ "proptest",
  "serde",
  "serde_json",
  "sqlx",
  "tokio",
+ "tracking",
  "ts-rs",
  "uuid",
 ]

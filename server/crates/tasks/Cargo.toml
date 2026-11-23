@@ -19,10 +19,12 @@ items = { path = "../items" }
 kernel = { path = "../kernel" }
 serde.workspace = true
 sqlx.workspace = true
+tracking = { path = "../tracking" }
 ts-rs.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
 db = { path = "../db", features = ["testing"] }
+proptest.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

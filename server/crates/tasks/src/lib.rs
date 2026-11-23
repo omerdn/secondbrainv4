@@ -5,6 +5,7 @@
 
 pub mod http;
 mod model;
+mod progress;
 pub mod repo;
 mod service;
 
@@ -12,4 +13,5 @@ pub use model::{
     CreateSubtaskRequest, CreateTaskRequest, SUBTASK_LIMIT, SubtaskView, TaskView,
     UpdateSubtaskRequest, UpdateTaskRequest, may_mark, subtask_titles,
 };
+pub use progress::{TaskProgress, completion, task_progress};
 pub use service::TasksService;
