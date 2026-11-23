@@ -7,6 +7,7 @@ import AppLayout from "../../app/(app)/_layout";
 import Calendar from "../../app/(app)/calendar";
 import Goals from "../../app/(app)/goals";
 import Today from "../../app/(app)/index";
+import ItemDetail from "../../app/(app)/items/[id]";
 import More from "../../app/(app)/more";
 import Notebooks from "../../app/(app)/notebooks";
 import Routines from "../../app/(app)/routines";
@@ -51,6 +52,7 @@ export function renderApp(
       "(app)/calendar": Calendar,
       "(app)/settings": Settings,
       "(app)/more": More,
+      "(app)/items/[id]": ItemDetail,
       "(auth)/_layout": AuthLayout,
       "(auth)/login": Login,
       "(auth)/register": Register,

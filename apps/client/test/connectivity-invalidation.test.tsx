@@ -13,7 +13,7 @@ describe("invalidation rules (ARCHITECTURE §10.1)", () => {
   it("item.changed invalidates every query of that kind", () => {
     expect(
       invalidationsFor(event("item.changed", { id: "1", kind: "task" }), defaultRules),
-    ).toEqual([["task"]]);
+    ).toEqual([["task"], ["item", "1"]]);
   });
 
   it("notification.new invalidates notifications", () => {
