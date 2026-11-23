@@ -296,6 +296,8 @@ Her spike'ın sonucu bir ADR olarak yazılır.
   - Sürükle-bırak (T0.6.1'in sonucuna göre)
   - Sütun özelleştirme
 - **T2.1.6** · İstemci: görev liste görünümü · client · S
+- **T2.1.7** · İstemci: kanban otomatik kaydırma ve uzun sütun sanallaştırması · client · M
+  - ADR-0018'den kalan işler
 
 ### E2.2 · Rutinler · bağımlılık: F1
 - **T2.2.1** · Rutin ve plan sürümleri: şema ve API · backend · M

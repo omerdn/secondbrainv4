@@ -9,6 +9,8 @@ import type {
   AccessPreview,
   AccessPreviewRequest,
   AppleNativeRequest,
+  Board,
+  CreateBoardColumnRequest,
   CreateSavedViewRequest,
   CreateSubtaskRequest,
   CreateTagRequest,
@@ -26,6 +28,7 @@ import type {
   ItemLink,
   ItemListState,
   LoginRequest,
+  MoveBoardTaskRequest,
   Page,
   RegisterRequest,
   ResetPasswordRequest,
@@ -37,6 +40,7 @@ import type {
   Tracker,
   TrackerEntry,
   TrackerSummary,
+  UpdateBoardColumnRequest,
   UpdateItemRequest,
   UpdateProfileRequest,
   UpdateSavedViewRequest,
@@ -154,6 +158,19 @@ export function endpoints(api: ApiClient) {
           undefined,
           options,
         ),
+    },
+    board: {
+      /** The caller's personal kanban (PRD G6). */
+      get: () => api.get<Board>("/board"),
+      createColumn: (body: CreateBoardColumnRequest, options?: MutationOptions) =>
+        api.post<Board>("/board/columns", body, options),
+      updateColumn: (id: string, body: UpdateBoardColumnRequest, options?: MutationOptions) =>
+        api.patch<Board>(`/board/columns/${encodeURIComponent(id)}`, body, options),
+      /** Its cards move to the inbox. */
+      deleteColumn: (id: string, options?: MutationOptions) =>
+        api.delete(`/board/columns/${encodeURIComponent(id)}`, options),
+      moveTask: (taskId: string, body: MoveBoardTaskRequest, options?: MutationOptions) =>
+        api.put<Board>(`/board/tasks/${encodeURIComponent(taskId)}`, body, options),
     },
     trackers: {
       create: (body: CreateTrackerRequest, options?: MutationOptions) =>
