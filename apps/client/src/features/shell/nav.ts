@@ -31,6 +31,8 @@ export const destinations: readonly Destination[] = [
   { key: "calendar", href: "/calendar", icon: "calendar-outline", tab: false },
   { key: "tags", href: "/tags", icon: "pricetags-outline", tab: false },
   { key: "views", href: "/views", icon: "funnel-outline", tab: false },
+  { key: "archive", href: "/archive", icon: "archive-outline", tab: false },
+  { key: "trash", href: "/trash", icon: "trash-outline", tab: false },
 ];
 
 export const settings: Destination = {

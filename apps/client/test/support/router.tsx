@@ -4,6 +4,7 @@ import { renderRouter } from "expo-router/testing-library";
 import type { TokenStore, Transport } from "@/features/auth/session";
 
 import AppLayout from "../../app/(app)/_layout";
+import Archive from "../../app/(app)/archive";
 import Calendar from "../../app/(app)/calendar";
 import Goals from "../../app/(app)/goals";
 import Today from "../../app/(app)/index";
@@ -15,6 +16,7 @@ import Settings from "../../app/(app)/settings";
 import Tags from "../../app/(app)/tags";
 import Tasks from "../../app/(app)/tasks";
 import Trackers from "../../app/(app)/trackers";
+import Trash from "../../app/(app)/trash";
 import Views from "../../app/(app)/views";
 import AuthLayout from "../../app/(auth)/_layout";
 import ForgotPassword from "../../app/(auth)/forgot-password";
@@ -54,6 +56,8 @@ export function renderApp(
       "(app)/calendar": Calendar,
       "(app)/tags": Tags,
       "(app)/views": Views,
+      "(app)/archive": Archive,
+      "(app)/trash": Trash,
       "(app)/settings": Settings,
       "(app)/more": More,
       "(app)/items/[id]": ItemDetail,
