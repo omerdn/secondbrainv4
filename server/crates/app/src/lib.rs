@@ -186,6 +186,15 @@ where
                     items: items.clone(),
                     identity: identity.clone(),
                 }))
+                .merge(tasks::http::router(tasks::http::TasksHttpState {
+                    tasks: tasks::TasksService::new(
+                        pool.clone(),
+                        clock.clone(),
+                        access_engine.permissions(),
+                        items.clone(),
+                    ),
+                    identity: identity.clone(),
+                }))
                 .merge(tracking::http::router(tracking::http::TrackingHttpState {
                     entries: tracking::TrackerEntries::new(
                         pool.clone(),
