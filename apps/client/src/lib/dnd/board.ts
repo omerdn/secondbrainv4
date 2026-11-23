@@ -118,3 +118,91 @@ export function indicatorPosition(
   const before = others[targetIndex];
   return before === undefined ? cardIds.length : cardIds.indexOf(before);
 }
+
+/** Distance from a scroll area's edge at which dragging starts to scroll it. */
+export const AUTO_SCROLL_EDGE = 56;
+/** Fastest auto-scroll, in points per tick. */
+export const AUTO_SCROLL_MAX_STEP = 18;
+
+/**
+ * How far to scroll this tick for a pointer at `pointer` over an area from `start` spanning
+ * `size`: negative near the start, positive near the end, faster closer to the edge, and 0 in
+ * the middle.
+ */
+export function autoScrollStep(pointer: number, start: number, size: number): number {
+  if (size <= 0) return 0;
+  const edge = Math.min(AUTO_SCROLL_EDGE, size / 2);
+  const fromStart = pointer - start;
+  const fromEnd = start + size - pointer;
+  if (fromStart < edge) {
+    const depth = Math.min(1, (edge - fromStart) / edge);
+    return -Math.ceil(depth * AUTO_SCROLL_MAX_STEP);
+  }
+  if (fromEnd < edge) {
+    const depth = Math.min(1, (edge - fromEnd) / edge);
+    return Math.ceil(depth * AUTO_SCROLL_MAX_STEP);
+  }
+  return 0;
+}
+
+/** A card's place inside its column's scrolled content. */
+export interface CardOffset {
+  id: string;
+  top: number;
+  height: number;
+}
+
+/** Where each card sits, using measured heights and `estimate` for cards not yet rendered. */
+export function cardOffsets(
+  ids: readonly string[],
+  heights: ReadonlyMap<string, number>,
+  estimate: number,
+  gap: number,
+): { offsets: CardOffset[]; total: number } {
+  let top = 0;
+  const offsets = ids.map((id) => {
+    const height = heights.get(id) ?? estimate;
+    const offset = { id, top, height };
+    top += height + gap;
+    return offset;
+  });
+  return { offsets, total: offsets.length === 0 ? 0 : top - gap };
+}
+
+/**
+ * The cards to render for a scroll position: those overlapping the viewport plus `overscan` on
+ * each side. `last` is exclusive.
+ */
+export function visibleWindow(
+  offsets: readonly CardOffset[],
+  scrollTop: number,
+  viewport: number,
+  overscan: number,
+): { first: number; last: number } {
+  if (offsets.length === 0) return { first: 0, last: 0 };
+  const bottom = scrollTop + viewport;
+  let first = offsets.findIndex((card) => card.top + card.height > scrollTop);
+  if (first === -1) first = offsets.length - 1;
+  let last = first;
+  while (last < offsets.length && (offsets[last]?.top ?? 0) < bottom) last += 1;
+  return {
+    first: Math.max(0, first - overscan),
+    last: Math.min(offsets.length, Math.max(last, first + 1) + overscan),
+  };
+}
+
+/**
+ * Window rectangles for every card of a column, rendered or not, so a drop lands correctly in a
+ * virtualized list. `contentY` is the window position of the scrolled content's top.
+ */
+export function virtualCardLayouts(
+  offsets: readonly CardOffset[],
+  contentY: number,
+  x: number,
+  width: number,
+): CardLayout[] {
+  return offsets.map((card) => ({
+    id: card.id,
+    rect: { x, y: contentY + card.top, width, height: card.height },
+  }));
+}

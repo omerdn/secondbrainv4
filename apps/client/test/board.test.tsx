@@ -25,6 +25,7 @@ import { renderApp } from "./support/router";
 // decisions are pure functions tested in `dnd-board.test.ts`.
 jest.mock("@/features/tasks/dragLayer", () => ({
   useDragOffset: () => ({ x: { value: 0 }, y: { value: 0 } }),
+  useWebPointer: () => undefined,
   DragHandle: ({ children }: { children: unknown }) => children,
   DragOverlay: ({ children }: { children: unknown }) => children,
 }));
@@ -207,6 +208,24 @@ describe("kanban screen (G6)", () => {
     await waitFor(() => {
       expect(mutations(server)[2]?.method).toBe("DELETE");
     });
+  });
+
+  it("renders only part of a very long column", async () => {
+    const long: Board = {
+      columns: [
+        {
+          id: "inbox",
+          name: "Inbox",
+          is_inbox: true,
+          cards: Array.from({ length: 200 }, (_, i) => card(`k${i}`)),
+        },
+      ],
+    };
+    await open(fakeServer({ ...routes, "GET /board": () => json(200, long) }));
+    expect(await screen.findByRole("header", { name: "Gelen kutusu (200)" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Görevi aç: k0" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Görevi aç: k199" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: /^Görevi aç/ }).length).toBeLessThan(20);
   });
 
   it("offers a retry when the board fails to load", async () => {

@@ -9,17 +9,22 @@ import type {
 import { Button, EmptyState, Input, Sheet, Text } from "@secondbrain/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type Href, useRouter } from "expo-router";
-import { useCallback, useRef, useState } from "react";
+import { type ComponentRef, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type HostInstance, Pressable, ScrollView, View } from "react-native";
 
 import {
+  autoScrollStep,
+  type CardLayout,
+  cardOffsets,
   type ColumnLayout,
   type DropTarget,
   dropTarget,
   indicatorPosition,
   isNoOp,
   type Rect,
+  virtualCardLayouts,
+  visibleWindow,
 } from "@/lib/dnd/board";
 
 import {
@@ -30,10 +35,25 @@ import {
   pressOpensCard,
   toDndBoard,
 } from "./boardModel";
-import { DragHandle, type DragOffset, DragOverlay, useDragOffset } from "./dragLayer";
+import {
+  DragHandle,
+  type DragOffset,
+  DragOverlay,
+  useDragOffset,
+  useWebPointer,
+} from "./dragLayer";
 
 const BOARD_KEY = ["board"];
 const COLUMN_WIDTH = 256;
+const COLUMN_MAX_HEIGHT = 480;
+/** A card with its "move" button, until it is measured. */
+const CARD_HEIGHT_ESTIMATE = 106;
+const CARD_GAP = 8;
+/** Cards kept rendered beyond each edge of a column's viewport. */
+const OVERSCAN = 4;
+const AUTO_SCROLL_TICK_MS = 16;
+/** Ticks between re-measuring the board while it auto-scrolls. */
+const REMEASURE_TICKS = 4;
 
 function measure(view: HostInstance | null): Promise<Rect | null> {
   return new Promise((resolve) => {
@@ -122,6 +142,167 @@ function DraggableCard({
           onPress={onMenu}
         />
       </View>
+    </View>
+  );
+}
+
+/** What the board needs from a column while dragging. */
+interface ColumnHandle {
+  /** Every card's window rectangle, rendered or not. */
+  cards: () => Promise<CardLayout[]>;
+  viewport: () => Promise<Rect | null>;
+  /** Scrolls by `delta`; returns whether the position changed. */
+  scrollBy: (delta: number) => boolean;
+}
+
+/**
+ * A column's cards, rendering only those near the viewport (T2.1.7). Rows are positioned
+ * absolutely from measured heights, so the card being dragged can stay mounted (its gesture
+ * lives on it) even after auto-scroll carries it out of the window.
+ */
+function ColumnCards({
+  cards,
+  draggedId,
+  indicator,
+  emptyLabel,
+  register,
+  renderCard,
+}: {
+  cards: readonly BoardCard[];
+  draggedId: string;
+  /** Display position of the drop indicator in this column. */
+  indicator: number | null;
+  emptyLabel: string;
+  register: (handle: ColumnHandle | null) => void;
+  renderCard: (card: BoardCard) => ReactNode;
+}) {
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  const viewportRef = useRef<HostInstance>(null);
+  const heights = useRef(new Map<string, number>());
+  const scrollTop = useRef(0);
+  const viewportHeight = useRef(COLUMN_MAX_HEIGHT);
+  const idsRef = useRef<string[]>([]);
+  const [, rerender] = useState(0);
+  const [windowTop, setWindowTop] = useState(0);
+
+  const ids = cards.map((card) => card.task_id);
+  idsRef.current = ids;
+  const layout = () => cardOffsets(idsRef.current, heights.current, CARD_HEIGHT_ESTIMATE, CARD_GAP);
+  const { offsets, total } = layout();
+  const range = visibleWindow(offsets, windowTop, COLUMN_MAX_HEIGHT, OVERSCAN);
+  const draggedIndex = ids.indexOf(draggedId);
+  const shown = offsets.filter(
+    (_, index) => (index >= range.first && index < range.last) || index === draggedIndex,
+  );
+  const byId = new Map(cards.map((card) => [card.task_id, card]));
+
+  const follow = (top: number) => {
+    scrollTop.current = top;
+    // Re-render only when the set of cards could change.
+    setWindowTop((current) =>
+      Math.abs(current - top) >= CARD_HEIGHT_ESTIMATE / 2 ? top : current,
+    );
+  };
+
+  useEffect(() => {
+    register({
+      cards: async () => {
+        const viewport = await measure(viewportRef.current);
+        if (viewport === null) {
+          return [];
+        }
+        const { offsets: current } = cardOffsets(
+          idsRef.current,
+          heights.current,
+          CARD_HEIGHT_ESTIMATE,
+          CARD_GAP,
+        );
+        return virtualCardLayouts(
+          current,
+          viewport.y - scrollTop.current,
+          viewport.x,
+          viewport.width,
+        );
+      },
+      viewport: () => measure(viewportRef.current),
+      scrollBy: (delta) => {
+        const { total: height } = cardOffsets(
+          idsRef.current,
+          heights.current,
+          CARD_HEIGHT_ESTIMATE,
+          CARD_GAP,
+        );
+        const limit = Math.max(0, height - viewportHeight.current);
+        const next = Math.max(0, Math.min(limit, scrollTop.current + delta));
+        if (next === scrollTop.current) {
+          return false;
+        }
+        scrollRef.current?.scrollTo({ y: next, animated: false });
+        follow(next);
+        return true;
+      },
+    });
+    return () => {
+      register(null);
+    };
+    // `register` is recreated by the parent; the handle reads everything through refs.
+  }, []);
+
+  if (cards.length === 0) {
+    return (
+      <View ref={viewportRef} collapsable={false} className="gap-2">
+        {indicator !== null ? <Indicator /> : null}
+        <Text variant="caption" tone="muted">
+          {emptyLabel}
+        </Text>
+      </View>
+    );
+  }
+  const indicatorTop =
+    indicator === null
+      ? null
+      : indicator >= offsets.length
+        ? total + 2
+        : Math.max(0, (offsets[indicator]?.top ?? 0) - CARD_GAP / 2 - 2);
+  return (
+    <View ref={viewportRef} collapsable={false}>
+      <ScrollView
+        ref={scrollRef}
+        style={{ maxHeight: COLUMN_MAX_HEIGHT }}
+        scrollEventThrottle={16}
+        onLayout={(event) => {
+          viewportHeight.current = event.nativeEvent.layout.height;
+        }}
+        onScroll={(event) => {
+          follow(event.nativeEvent.contentOffset.y);
+        }}
+      >
+        <View style={{ height: total + (indicator === offsets.length ? CARD_GAP : 0) }}>
+          {shown.map((row) => {
+            const card = byId.get(row.id);
+            return card === undefined ? null : (
+              <View
+                key={row.id}
+                style={{ position: "absolute", top: row.top, left: 0, right: 0 }}
+                onLayout={(event) => {
+                  const height = event.nativeEvent.layout.height;
+                  if (heights.current.get(row.id) !== height) {
+                    heights.current.set(row.id, height);
+                    rerender((version) => version + 1);
+                  }
+                }}
+              >
+                {renderCard(card)}
+              </View>
+            );
+          })}
+          {indicatorTop !== null ? (
+            <View style={{ position: "absolute", top: indicatorTop, left: 0, right: 0 }}>
+              <Indicator />
+            </View>
+          ) : null}
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -289,6 +470,13 @@ function BoardColumns({ board }: { board: Board }) {
   const [failed, setFailed] = useState(false);
 
   const rootRef = useRef<HostInstance>(null);
+  const boardScrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  const boardViewportRef = useRef<HostInstance>(null);
+  const boardScrollX = useRef(0);
+  const boardContentWidth = useRef(0);
+  const boardWidth = useRef(0);
+  const pointer = useRef<{ x: number; y: number } | null>(null);
+  const columnHandles = useRef(new Map<string, ColumnHandle>());
   const columnRefs = useRef(new Map<string, HostInstance>());
   const cardRefs = useRef(new Map<string, HostInstance>());
   const layouts = useRef<ColumnLayout[]>([]);
@@ -298,6 +486,7 @@ function BoardColumns({ board }: { board: Board }) {
   const measuring = useRef<Promise<void>>(Promise.resolve());
   const offset = useDragOffset();
   const dragging = useRef(false);
+  const dragIdRef = useRef("");
   const lastDropAt = useRef<number | null>(null);
 
   const move = useIdempotentMutation<Board, { taskId: string; body: MoveBoardTaskRequest }>(
@@ -355,50 +544,46 @@ function BoardColumns({ board }: { board: Board }) {
     [client, move],
   );
 
-  const measureBoard = useCallback(async (cardId: string) => {
-    const root = await measure(rootRef.current);
+  const refreshLayouts = useCallback(async () => {
     const measured = await Promise.all(
       boardRef.current.columns.map(async (column) => ({
         id: column.id,
         rect: await measure(columnRefs.current.get(column.id) ?? null),
-        cards: await Promise.all(
-          column.cards.map(async (card) => ({
-            id: card.task_id,
-            rect: await measure(cardRefs.current.get(card.task_id) ?? null),
-          })),
-        ),
+        cards: (await columnHandles.current.get(column.id)?.cards()) ?? [],
       })),
     );
     layouts.current = measured.flatMap((column) =>
-      column.rect === null
-        ? []
-        : [
-            {
-              id: column.id,
-              rect: column.rect,
-              cards: column.cards.flatMap((card) =>
-                card.rect === null ? [] : [{ id: card.id, rect: card.rect }],
-              ),
-            },
-          ],
+      column.rect === null ? [] : [{ id: column.id, rect: column.rect, cards: column.cards }],
     );
-    const rect = layouts.current.flatMap((c) => c.cards).find((c) => c.id === cardId)?.rect;
-    const card = boardRef.current.columns.flatMap((c) => c.cards).find((c) => c.task_id === cardId);
-    if (root === null || rect === undefined || card === undefined) {
-      return;
-    }
-    setDrag({ card, origin: { ...rect, x: rect.x - root.x, y: rect.y - root.y } });
   }, []);
+
+  const measureBoard = useCallback(
+    async (cardId: string) => {
+      const root = await measure(rootRef.current);
+      await refreshLayouts();
+      const rect = await measure(cardRefs.current.get(cardId) ?? null);
+      const card = boardRef.current.columns
+        .flatMap((c) => c.cards)
+        .find((c) => c.task_id === cardId);
+      if (root === null || rect === null || card === undefined) {
+        return;
+      }
+      setDrag({ card, origin: { ...rect, x: rect.x - root.x, y: rect.y - root.y } });
+    },
+    [refreshLayouts],
+  );
 
   const start = useCallback(
     (cardId: string) => {
       dragging.current = true;
+      pointer.current = null;
       measuring.current = measureBoard(cardId);
       return measuring.current;
     },
     [measureBoard],
   );
   const hover = useCallback((cardId: string, x: number, y: number) => {
+    pointer.current = { x, y };
     const next = dropTarget({ x, y }, layouts.current, cardId);
     const current = targetRef.current;
     if (next?.columnId !== current?.columnId || next?.index !== current?.index) {
@@ -410,7 +595,12 @@ function BoardColumns({ board }: { board: Board }) {
     async (cardId: string, canceled: boolean, x: number, y: number) => {
       // A quick drag can end before the rectangles measured at lift are known.
       await measuring.current;
-      const final = dropTarget({ x, y }, layouts.current, cardId);
+      // The end event can repeat an older position than the last move the card followed.
+      const at = pointer.current ?? { x, y };
+      pointer.current = null;
+      // Auto-scroll may have moved everything since the last measurement.
+      await refreshLayouts();
+      const final = dropTarget(at, layouts.current, cardId);
       if (!canceled && final !== null) {
         place(cardId, final);
       }
@@ -420,7 +610,7 @@ function BoardColumns({ board }: { board: Board }) {
       dragging.current = false;
       lastDropAt.current = Date.now();
     },
-    [place],
+    [place, refreshLayouts],
   );
 
   const columnName = (column: BoardColumn) => (column.is_inbox ? t("board.inbox") : column.name);
@@ -428,48 +618,135 @@ function BoardColumns({ board }: { board: Board }) {
     board.columns.flatMap((c) => c.cards).find((c) => c.task_id === menuCardId) ?? null;
   const editingColumn = board.columns.find((c) => c.id === editingColumnId) ?? null;
   const draggedId = drag?.card.task_id ?? "";
+  dragIdRef.current = draggedId;
+
+  const followPointer = useCallback(
+    (x: number, y: number) => {
+      if (!dragging.current) {
+        return;
+      }
+      pointer.current = { x, y };
+      const id = dragIdRef.current;
+      if (id !== "") {
+        hover(id, x, y);
+      }
+    },
+    [hover],
+  );
+  useWebPointer(draggedId !== "", followPointer);
+
+  // Near an edge, the board scrolls sideways and the column under the card scrolls up or down.
+  useEffect(() => {
+    if (draggedId === "") {
+      return;
+    }
+    let ticks = 0;
+    let boardRect: Rect | null = null;
+    void measure(boardViewportRef.current).then((rect) => {
+      boardRect = rect;
+    });
+    const timer = setInterval(() => {
+      const at = pointer.current;
+      if (at === null || boardRect === null) {
+        return;
+      }
+      let moved = false;
+      const dx = autoScrollStep(at.x, boardRect.x, boardRect.width);
+      if (dx !== 0) {
+        const limit = Math.max(0, boardContentWidth.current - boardWidth.current);
+        const next = Math.max(0, Math.min(limit, boardScrollX.current + dx));
+        if (next !== boardScrollX.current) {
+          boardScrollX.current = next;
+          boardScrollRef.current?.scrollTo({ x: next, animated: false });
+          moved = true;
+        }
+      }
+      const columnId = targetRef.current?.columnId;
+      const handle = columnId === undefined ? undefined : columnHandles.current.get(columnId);
+      const column = layouts.current.find((c) => c.id === columnId);
+      if (handle !== undefined && column !== undefined) {
+        const dy = autoScrollStep(at.y, column.rect.y, column.rect.height);
+        if (dy !== 0 && handle.scrollBy(dy)) {
+          moved = true;
+        }
+      }
+      ticks += 1;
+      if (moved && ticks % REMEASURE_TICKS === 0) {
+        void refreshLayouts().then(() => {
+          const latest = pointer.current;
+          if (latest !== null) {
+            hover(draggedId, latest.x, latest.y);
+          }
+        });
+      }
+    }, AUTO_SCROLL_TICK_MS);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [draggedId, hover, refreshLayouts]);
 
   return (
     <View ref={rootRef} collapsable={false} className="gap-3">
-      <ScrollView horizontal contentContainerClassName="gap-3 pb-2">
-        {board.columns.map((column) => {
-          const cardIds = column.cards.map((card) => card.task_id);
-          const indicator =
-            target?.columnId === column.id
-              ? indicatorPosition(cardIds, draggedId, target.index)
-              : null;
-          return (
-            <View
-              key={column.id}
-              ref={(view) => {
-                if (view === null) columnRefs.current.delete(column.id);
-                else columnRefs.current.set(column.id, view);
-              }}
-              collapsable={false}
-              testID={`column-${column.id}`}
-              className="gap-2 self-start rounded-lg border border-border bg-surface p-3"
-              style={{ width: COLUMN_WIDTH }}
-            >
-              <View className="min-h-8 flex-row items-center justify-between gap-2">
-                <Text variant="label" accessibilityRole="header" className="flex-1">
-                  {columnName(column)} ({column.cards.length})
-                </Text>
-                {column.is_inbox ? null : (
-                  <Button
-                    title={t("board.editColumn")}
-                    accessibilityLabel={t("board.editColumnNamed", { name: column.name })}
-                    variant="ghost"
-                    size="sm"
-                    onPress={() => {
-                      setEditingColumnId(column.id);
-                    }}
-                  />
-                )}
-              </View>
-              <ScrollView className="max-h-[480px]" contentContainerClassName="gap-2">
-                {column.cards.map((card, index) => (
-                  <View key={card.task_id} className="gap-2">
-                    {indicator === index ? <Indicator /> : null}
+      <View ref={boardViewportRef} collapsable={false}>
+        <ScrollView
+          ref={boardScrollRef}
+          horizontal
+          contentContainerClassName="gap-3 pb-2"
+          scrollEventThrottle={16}
+          onLayout={(event) => {
+            boardWidth.current = event.nativeEvent.layout.width;
+          }}
+          onContentSizeChange={(width) => {
+            boardContentWidth.current = width;
+          }}
+          onScroll={(event) => {
+            boardScrollX.current = event.nativeEvent.contentOffset.x;
+          }}
+        >
+          {board.columns.map((column) => {
+            const cardIds = column.cards.map((card) => card.task_id);
+            const indicator =
+              target?.columnId === column.id
+                ? indicatorPosition(cardIds, draggedId, target.index)
+                : null;
+            return (
+              <View
+                key={column.id}
+                ref={(view) => {
+                  if (view === null) columnRefs.current.delete(column.id);
+                  else columnRefs.current.set(column.id, view);
+                }}
+                collapsable={false}
+                testID={`column-${column.id}`}
+                className="gap-2 self-start rounded-lg border border-border bg-surface p-3"
+                style={{ width: COLUMN_WIDTH }}
+              >
+                <View className="min-h-8 flex-row items-center justify-between gap-2">
+                  <Text variant="label" accessibilityRole="header" className="flex-1">
+                    {columnName(column)} ({column.cards.length})
+                  </Text>
+                  {column.is_inbox ? null : (
+                    <Button
+                      title={t("board.editColumn")}
+                      accessibilityLabel={t("board.editColumnNamed", { name: column.name })}
+                      variant="ghost"
+                      size="sm"
+                      onPress={() => {
+                        setEditingColumnId(column.id);
+                      }}
+                    />
+                  )}
+                </View>
+                <ColumnCards
+                  cards={column.cards}
+                  draggedId={draggedId}
+                  indicator={indicator}
+                  emptyLabel={t("board.emptyColumn")}
+                  register={(handle) => {
+                    if (handle === null) columnHandles.current.delete(column.id);
+                    else columnHandles.current.set(column.id, handle);
+                  }}
+                  renderCard={(card) => (
                     <DraggableCard
                       card={card}
                       lifted={draggedId === card.task_id}
@@ -492,36 +769,30 @@ function BoardColumns({ board }: { board: Board }) {
                         setMenuCardId(card.task_id);
                       }}
                     />
-                  </View>
-                ))}
-                {indicator === column.cards.length ? <Indicator /> : null}
-                {column.cards.length === 0 ? (
-                  <Text variant="caption" tone="muted">
-                    {t("board.emptyColumn")}
-                  </Text>
-                ) : null}
-              </ScrollView>
-            </View>
-          );
-        })}
-        <View className="gap-2 self-start" style={{ width: COLUMN_WIDTH }}>
-          <Input
-            label={t("board.newColumn")}
-            value={newColumn}
-            maxLength={60}
-            onChangeText={setNewColumn}
-          />
-          <Button
-            title={t("board.addColumn")}
-            variant="secondary"
-            size="sm"
-            disabled={columnChange.isPending || newColumn.trim() === ""}
-            onPress={() => {
-              columnChange.mutate({ type: "create", name: newColumn.trim() });
-            }}
-          />
-        </View>
-      </ScrollView>
+                  )}
+                />
+              </View>
+            );
+          })}
+          <View className="gap-2 self-start" style={{ width: COLUMN_WIDTH }}>
+            <Input
+              label={t("board.newColumn")}
+              value={newColumn}
+              maxLength={60}
+              onChangeText={setNewColumn}
+            />
+            <Button
+              title={t("board.addColumn")}
+              variant="secondary"
+              size="sm"
+              disabled={columnChange.isPending || newColumn.trim() === ""}
+              onPress={() => {
+                columnChange.mutate({ type: "create", name: newColumn.trim() });
+              }}
+            />
+          </View>
+        </ScrollView>
+      </View>
       {failed ? (
         <Text tone="danger" accessibilityRole="alert">
           {t("board.failed")}

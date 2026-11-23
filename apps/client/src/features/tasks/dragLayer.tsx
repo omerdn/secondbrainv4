@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { Platform } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import Animated, {
@@ -22,6 +22,27 @@ export interface DragOffset {
 
 export function useDragOffset(): DragOffset {
   return { x: useSharedValue(0), y: useSharedValue(0) };
+}
+
+/**
+ * On web, reports the real pointer position while a drag is active. The gesture's events trail
+ * the pointer by one move, so after a fast flick they would drop the card in the wrong place.
+ */
+export function useWebPointer(active: boolean, onPointer: (x: number, y: number) => void): void {
+  useEffect(() => {
+    if (!active || !IS_WEB) {
+      return;
+    }
+    const listener = (event: PointerEvent) => {
+      onPointer(event.clientX, event.clientY);
+    };
+    window.addEventListener("pointermove", listener, true);
+    window.addEventListener("pointerup", listener, true);
+    return () => {
+      window.removeEventListener("pointermove", listener, true);
+      window.removeEventListener("pointerup", listener, true);
+    };
+  }, [active, onPointer]);
 }
 
 /** Makes its child draggable: a mouse drag on web, a long press and drag on touch. */
