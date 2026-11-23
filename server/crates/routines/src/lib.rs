@@ -1,3 +1,16 @@
 //! `routines`: Routines, completion modes, rotation and streaks.
 //!
-//! Empty crate skeleton (T0.1.2). See ARCHITECTURE §3–§4 for module boundaries.
+//! See ARCHITECTURE §5.6 and PRD R1–R13. A routine is an `items` row plus a detail row here;
+//! `items` is only reached through [`items::ItemsService`] (ADR-0007). Occurrences are computed by
+//! `recurrence` and never stored (ADR-0008).
+
+pub mod http;
+mod model;
+pub mod repo;
+mod service;
+
+pub use model::{
+    ChangePlanRequest, CreateRoutineRequest, DAILY_TARGET_MAX, PlanVersionView, REMINDER_LIMIT,
+    RoutineView, UpdateRoutineRequest, parse_reminders, parse_rules, parse_timezone, target_on,
+};
+pub use service::RoutinesService;

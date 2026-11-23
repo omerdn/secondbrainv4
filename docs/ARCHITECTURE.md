@@ -163,8 +163,9 @@ Her türün kendi detay tablosu vardır: `tasks`, `routines`, `goals`, `trackers
   - `note_block_id`: kaydın notunu süreç sayfasındaki satıra bağlar (T3).
 
 ### 5.6 Rutinler
-- `routines(item_id, timezone, daily_target int default 1, completion_mode[pool|individual], assignment_mode[fixed|rotation], start_date, end_date, reminder_times time[])`
-- `routine_schedules(id, routine_id, rrule text, valid_from date, valid_to date NULL)`: Plan sürümleri (R11).
+- `routines(item_id, timezone, completion_mode[pool|individual], assignment_mode[fixed|rotation], start_date, end_date, reminder_times time[])`
+  - `completion_mode` ve `assignment_mode`, ortak rutin görevleriyle (R5, R6) eklenir.
+- `routine_schedules(id, routine_id, rrule text, daily_target int default 1, valid_from date, valid_to date NULL)`: Plan sürümleri (R11). Günlük hedef sürümle saklanır; hedef değişince geçmiş günlerin oranı ve ısı haritası değişmez.
 - `routine_rotation(routine_id, user_id, position)` · `routine_rotation_overrides(routine_id, occurrence_date, user_id)`: Takaslar.
 - Tamamlamalar `tracker_entries` tablosunda tutulur. Rutinin bir takibi vardır (`owner_kind = routine`). Bir tekrar, `local_date` ile eşleştirilir.
 
