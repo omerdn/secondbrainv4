@@ -12,6 +12,7 @@ import More from "../../app/(app)/more";
 import Notebooks from "../../app/(app)/notebooks";
 import Routines from "../../app/(app)/routines";
 import Settings from "../../app/(app)/settings";
+import Tags from "../../app/(app)/tags";
 import Tasks from "../../app/(app)/tasks";
 import Trackers from "../../app/(app)/trackers";
 import AuthLayout from "../../app/(auth)/_layout";
@@ -50,6 +51,7 @@ export function renderApp(
       "(app)/trackers": Trackers,
       "(app)/notebooks": Notebooks,
       "(app)/calendar": Calendar,
+      "(app)/tags": Tags,
       "(app)/settings": Settings,
       "(app)/more": More,
       "(app)/items/[id]": ItemDetail,

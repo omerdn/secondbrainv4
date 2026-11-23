@@ -7,6 +7,7 @@
 import type {
   AccessExplanation,
   AppleNativeRequest,
+  CreateTagRequest,
   AuthResponse,
   CsrfResponse,
   CurrentUser,
@@ -64,6 +65,22 @@ export function endpoints(api: ApiClient) {
       tags: (id: string) => api.get<Tag[]>(`/items/${encodeURIComponent(id)}/tags`),
       /** Links whose other end the caller can see (PRD V9). */
       links: (id: string) => api.get<ItemLink[]>(`/items/${encodeURIComponent(id)}/links`),
+      attachTag: (id: string, tagId: string, options?: MutationOptions) =>
+        api.put<void>(
+          `/items/${encodeURIComponent(id)}/tags/${encodeURIComponent(tagId)}`,
+          undefined,
+          options,
+        ),
+      detachTag: (id: string, tagId: string, options?: MutationOptions) =>
+        api.delete(`/items/${encodeURIComponent(id)}/tags/${encodeURIComponent(tagId)}`, options),
+    },
+    tags: {
+      /** The tags the caller can see (PRD E4). */
+      list: () => api.get<Tag[]>("/tags"),
+      create: (body: CreateTagRequest, options?: MutationOptions) =>
+        api.post<Tag>("/tags", body, options),
+      /** Accessible items carrying the tag. */
+      items: (id: string) => api.get<Item[]>(`/tags/${encodeURIComponent(id)}/items`),
     },
     access: {
       /** "Why am I seeing this?" (PRD V11). */

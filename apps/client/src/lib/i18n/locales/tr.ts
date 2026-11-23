@@ -18,6 +18,7 @@ export const tr = {
         trackers: "Ölçmek istediğin her şeyi buradan takip edeceksin.",
         notebooks: "Defterlerin ve birlikte düzenlediğin sayfalar burada olacak.",
         calendar: "Görev ve rutinlerin takvim görünümü burada olacak.",
+        tags: "Etiketlerin ve etiketli nesnelerin burada olacak.",
         settings: "Bu bölüm sonraki sürümlerde gelecek.",
         more: "Bu bölüm sonraki sürümlerde gelecek.",
       },
@@ -54,8 +55,24 @@ export const tr = {
     trackers: "Takipler",
     notebooks: "Defterler",
     calendar: "Takvim",
+    tags: "Etiketler",
     settings: "Ayarlar",
     more: "Daha fazla",
+  },
+  tags: {
+    pickerTitle: "Etiketler",
+    edit: "Etiketleri düzenle",
+    close: "Kapat",
+    newTag: "Yeni etiket",
+    create: "Oluştur ve tak",
+    nameTaken: "Bu adda bir etiketin var.",
+    failed: "İşlem yapılamadı. Tekrar dene.",
+    loadFailed: "Etiketler yüklenemedi",
+    emptyTitle: "Henüz etiketin yok",
+    emptyHint:
+      "Bir nesnenin detayından ilk etiketini oluşturabilirsin. Etiketlerini yalnız sen görürsün.",
+    chooseHint: "Nesnelerini görmek için bir etiket seç.",
+    noItems: "Bu etikette nesne yok",
   },
   items: {
     kinds: {
