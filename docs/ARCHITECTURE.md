@@ -152,7 +152,7 @@ Her türün kendi detay tablosu vardır: `tasks`, `routines`, `goals`, `trackers
 - `subtasks(id, task_id, title, position, done_at, done_by)`
 - `subtask_assignees(subtask_id, user_id)`
 - `user_board_columns(id, user_id, name, position, is_inbox)`: Her kullanıcının bir gelen kutusu sütunu (`is_inbox`) vardır (G6).
-- `user_task_placements(user_id, task_id, column_id, position)`: `position`, kesirli indeks (fractional indexing) ile tutulur.
+- `user_task_placements(user_id, task_id, column_id, position)`: `position`, kesirli indeks (fractional indexing) ile tutulur. Anahtar, bayt sırasıyla karşılaştırılan (`COLLATE "C"`) base-62 metindir ve `0` ile bitmez; float gibi hassasiyeti tükenmez. 64 karakteri aşarsa sütun yeniden numaralanır. Yerleşim kişiseldir: taşımak görevin `last_touched_at` değerini değiştirmez.
 
 ### 5.5 Takip motoru
 - `trackers(item_id, unit, target_value, period[day|week|month|total|range], range_start NULL, range_end NULL, aggregation[sum|count|last|max], direction[increase|limit], owner_kind[standalone|routine|module])`

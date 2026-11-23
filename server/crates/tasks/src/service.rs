@@ -44,10 +44,10 @@ fn member_ids(item: &Item, subtasks: &[SubtaskView]) -> Vec<Uuid> {
 /// Shared handle; cheap to clone.
 #[derive(Clone)]
 pub struct TasksService {
-    pool: PgPool,
-    clock: SharedClock,
-    permissions: PermissionService<ItemsAccessContext>,
-    items: ItemsService,
+    pub(crate) pool: PgPool,
+    pub(crate) clock: SharedClock,
+    pub(crate) permissions: PermissionService<ItemsAccessContext>,
+    pub(crate) items: ItemsService,
 }
 
 impl TasksService {
@@ -99,6 +99,10 @@ impl TasksService {
                 .await
                 .map_err(internal)?;
         }
+        // G6: a new task lands in its creator's inbox.
+        crate::board::place_new(&mut tx, actor, item.id, now)
+            .await
+            .map_err(internal)?;
         tx.commit().await.map_err(internal)?;
         self.task(actor, item.id).await
     }
