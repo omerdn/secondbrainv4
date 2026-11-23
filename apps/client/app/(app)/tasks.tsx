@@ -1,5 +1,5 @@
-import { PlaceholderScreen } from "@/features/shell";
+import { TasksScreen } from "@/features/tasks";
 
 export default function Page() {
-  return <PlaceholderScreen section="tasks" />;
+  return <TasksScreen />;
 }
