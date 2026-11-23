@@ -7,6 +7,7 @@
 //! | POST   | `/trackers` | 201 [`TrackerView`]; creates the item and its definition |
 //! | GET    | `/trackers/{id}` | 200 [`TrackerView`]; VIEW |
 //! | PATCH  | `/trackers/{id}` | 200 [`TrackerView`]; EDIT |
+//! | GET    | `/trackers/{id}/summary` | 200 [`TrackerSummary`]; current period, VIEW |
 //! | POST   | `/trackers/{id}/entries` | 201 [`EntryView`]; EDIT |
 //! | GET    | `/trackers/{id}/entries?from=&to=&limit=&cursor=` | 200 `Page<TrackerEntry>`; VIEW |
 //! | DELETE | `/trackers/{id}/entries/{entry_id}` | 204; own: EDIT, someone else's: MANAGE |
@@ -22,6 +23,7 @@ use uuid::Uuid;
 
 use crate::definitions::{CreateTrackerRequest, TrackerView, UpdateTrackerRequest};
 use crate::service::{CreateEntryRequest, EntryView, ListEntriesQuery, TrackerEntries};
+use crate::summary::TrackerSummary;
 
 /// State of the tracker routes.
 #[derive(Clone)]
@@ -41,6 +43,7 @@ pub fn router(state: TrackingHttpState) -> Router {
     Router::new()
         .route("/trackers", post(create_tracker))
         .route("/trackers/{id}", get(read_tracker).patch(update_tracker))
+        .route("/trackers/{id}/summary", get(read_summary))
         .route("/trackers/{id}/entries", post(add_entry).get(list_entries))
         .route("/trackers/{id}/entries/{entry_id}", delete(delete_entry))
         .with_state(state)
@@ -79,6 +82,18 @@ async fn update_tracker(
     state
         .entries
         .update_tracker(auth.user_id.as_uuid(), id, request)
+        .await
+        .map(Json)
+}
+
+async fn read_summary(
+    State(state): State<TrackingHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+) -> Result<Json<TrackerSummary>, AppError> {
+    state
+        .entries
+        .summary(auth.user_id.as_uuid(), id)
         .await
         .map(Json)
 }

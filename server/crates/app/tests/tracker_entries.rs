@@ -632,3 +632,91 @@ async fn an_item_without_a_definition_is_not_a_tracker() {
     let response = send(&w, Method::PATCH, &uri, &token, json!({"unit": "x"})).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
+
+async fn limit_tracker(w: &World, token: &str, period: Value) -> String {
+    let response = send(
+        w,
+        Method::POST,
+        "/trackers",
+        token,
+        json!({
+            "title": "Budget",
+            "unit": "TL",
+            "target_value": "100",
+            "period": period,
+            "aggregation": "sum",
+            "direction": "limit",
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    json_body(response).await["item"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+#[tokio::test]
+async fn k2_the_summary_shows_use_and_what_is_left() {
+    let w = World::new().await;
+    let (_, token) = w.user("summary@example.com").await;
+    let id = limit_tracker(&w, &token, json!({"type": "month"})).await;
+    let tracker: Uuid = id.parse().unwrap();
+    w.post_entry(tracker, &token, json!({"value": "30.5"}))
+        .await;
+    // Last month does not count.
+    w.post_entry(
+        tracker,
+        &token,
+        json!({"value": "99", "occurred_at": "2026-04-20T12:00:00Z"}),
+    )
+    .await;
+
+    let uri = format!("/trackers/{id}/summary");
+    let response = w.call(Method::GET, &uri, &token, None, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["period_start"], "2026-05-01");
+    assert_eq!(body["period_end"], "2026-05-31");
+    assert_eq!(body["value"], "30.5");
+    assert_eq!(body["remaining"], "69.5");
+    assert_eq!(body["exceeded_by"], "0");
+    assert_eq!(body["over_limit"], false);
+
+    w.post_entry(tracker, &token, json!({"value": "80"})).await;
+    let response = w.call(Method::GET, &uri, &token, None, None).await;
+    let body = json_body(response).await;
+    assert_eq!(body["remaining"], "0");
+    assert_eq!(body["exceeded_by"], "10.5");
+    assert_eq!(body["over_limit"], true);
+}
+
+#[tokio::test]
+async fn the_summary_period_follows_the_users_time_zone() {
+    let w = World::new().await;
+    let (user, token) = w.user("summary-tz@example.com").await;
+    sqlx::query("UPDATE users SET timezone = 'America/New_York' WHERE id = $1")
+        .bind(user)
+        .execute(w.db.pool())
+        .await
+        .unwrap();
+    let id = limit_tracker(&w, &token, json!({"type": "day"})).await;
+    // 22:00 on May 1 in New York, already May 2 in UTC.
+    w.clock
+        .set(Utc.with_ymd_and_hms(2026, 5, 2, 2, 0, 0).unwrap());
+    let uri = format!("/trackers/{id}/summary");
+    let body = json_body(w.call(Method::GET, &uri, &token, None, None).await).await;
+    assert_eq!(body["today"], "2026-05-01");
+    assert_eq!(body["period_start"], "2026-05-01");
+}
+
+#[tokio::test]
+async fn v9_a_stranger_cannot_read_the_summary() {
+    let w = World::new().await;
+    let (_, owner) = w.user("summary-owner@example.com").await;
+    let (_, stranger) = w.user("summary-stranger@example.com").await;
+    let id = limit_tracker(&w, &owner, json!({"type": "day"})).await;
+    let uri = format!("/trackers/{id}/summary");
+    let response = w.call(Method::GET, &uri, &stranger, None, None).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}

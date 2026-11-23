@@ -68,6 +68,7 @@ export type * from "./generated/TrackerDirection";
 export type * from "./generated/TrackerEntry";
 export type * from "./generated/TrackerOwnerKind";
 export type * from "./generated/TrackerPeriod";
+export type * from "./generated/TrackerSummary";
 export type * from "./generated/UpdateItemRequest";
 export type * from "./generated/UpdateProfileRequest";
 export type * from "./generated/UpdateRoutineRequest";
