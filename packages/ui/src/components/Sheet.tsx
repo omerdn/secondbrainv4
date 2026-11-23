@@ -1,5 +1,12 @@
 import type { ReactNode } from "react";
-import { Modal, Pressable, useWindowDimensions, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  useWindowDimensions,
+  View,
+} from "react-native";
 
 import { cx } from "../cx";
 import { ThemeScope } from "../ThemeProvider";
@@ -14,6 +21,14 @@ export type SheetLayout = "sheet" | "dialog";
 /** Bottom sheet on narrow screens, centered dialog on wide ones (pure; see tests). */
 export function sheetLayout(windowWidth: number): SheetLayout {
   return windowWidth >= DIALOG_MIN_WIDTH ? "dialog" : "sheet";
+}
+
+/**
+ * How the sheet makes room for the keyboard: iOS does not resize a modal for it, Android and web
+ * do (pure; see tests).
+ */
+export function sheetKeyboardBehavior(os: string): "padding" | undefined {
+  return os === "ios" ? "padding" : undefined;
 }
 
 export interface SheetProps {
@@ -51,36 +66,40 @@ export function Sheet({
       statusBarTranslucent
     >
       <ThemeScope>
-        <View className={cx("flex-1", dialog ? "items-center justify-center p-6" : "justify-end")}>
-          <Pressable
-            testID="sheet-backdrop"
-            accessibilityRole="button"
-            accessibilityLabel={closeLabel}
-            onPress={onClose}
-            className="absolute bottom-0 left-0 right-0 top-0 bg-foreground/40"
-          />
+        <KeyboardAvoidingView behavior={sheetKeyboardBehavior(Platform.OS)} style={{ flex: 1 }}>
           <View
-            accessibilityViewIsModal
-            aria-modal
-            role="dialog"
-            aria-label={title}
-            className={cx(
-              "gap-4 bg-surface-raised p-6",
-              dialog ? "w-full max-w-lg rounded-xl" : "rounded-t-xl pb-10",
-            )}
+            className={cx("flex-1", dialog ? "items-center justify-center p-6" : "justify-end")}
           >
-            <View className="flex-row items-center justify-between gap-4">
-              <Text variant="heading" className="flex-1">
-                {title}
-              </Text>
-              <Button title={closeLabel} variant="ghost" size="sm" onPress={onClose} />
+            <Pressable
+              testID="sheet-backdrop"
+              accessibilityRole="button"
+              accessibilityLabel={closeLabel}
+              onPress={onClose}
+              className="absolute bottom-0 left-0 right-0 top-0 bg-foreground/40"
+            />
+            <View
+              accessibilityViewIsModal
+              aria-modal
+              role="dialog"
+              aria-label={title}
+              className={cx(
+                "gap-4 bg-surface-raised p-6",
+                dialog ? "w-full max-w-lg rounded-xl" : "rounded-t-xl pb-10",
+              )}
+            >
+              <View className="flex-row items-center justify-between gap-4">
+                <Text variant="heading" className="flex-1">
+                  {title}
+                </Text>
+                <Button title={closeLabel} variant="ghost" size="sm" onPress={onClose} />
+              </View>
+              <View>{children}</View>
+              {footer !== undefined ? (
+                <View className="flex-row justify-end gap-2">{footer}</View>
+              ) : null}
             </View>
-            <View>{children}</View>
-            {footer !== undefined ? (
-              <View className="flex-row justify-end gap-2">{footer}</View>
-            ) : null}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </ThemeScope>
     </Modal>
   );
