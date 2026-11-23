@@ -5,6 +5,7 @@ export type * from "./generated/AccessMemberRole";
 export type * from "./generated/AccessPermission";
 export type * from "./generated/AccessPreview";
 export type * from "./generated/AccessPreviewItem";
+export type * from "./generated/AccessPreviewPerson";
 export type * from "./generated/AccessPreviewRequest";
 export type * from "./generated/AccessReason";
 export type * from "./generated/Activity";

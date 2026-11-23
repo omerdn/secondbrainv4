@@ -76,6 +76,17 @@ export const tr = {
     chooseHint: "Nesnelerini görmek için bir etiket seç.",
     noItems: "Bu etikette nesne yok",
   },
+  share: {
+    title: "Paylaşımı onayla",
+    checking: "Kimlerin erişeceği kontrol ediliyor…",
+    failed: "Kimlerin erişeceği görülemedi.",
+    retry: "Tekrar dene",
+    cancel: "Vazgeç",
+    nobody: "Kimse yeni erişim kazanmayacak.",
+    willSee_one: "Bu işlemle şu kişiler {{count}} nesneyi görebilecek:",
+    willSee_other: "Bu işlemle şu kişiler {{count}} nesneyi görebilecek:",
+    unknownPerson: "Bir kişi",
+  },
   views: {
     pinned: "Sabitlenenler",
     filter: { state: "Durum", kind: "Tür", tag: "Etiket" },

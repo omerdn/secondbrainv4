@@ -88,6 +88,44 @@ pub enum PreviewRequest {
 #[ts(export)]
 pub struct AccessPreview {
     pub items: Vec<PreviewItem>,
+    /// Everyone in `items`, once, by name: what the confirmation dialog lists (V7).
+    pub people: Vec<PreviewPerson>,
+}
+
+/// Someone who would gain access.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export, rename = "AccessPreviewPerson")]
+pub struct PreviewPerson {
+    pub id: Uuid,
+    /// `None` if the account no longer exists, or for the person being added: the server does
+    /// not reveal a name for an id the caller supplied.
+    pub display_name: Option<String>,
+}
+
+/// One entry per person, sorted by name (unknown names last), then id.
+fn preview_people(
+    items: &[PreviewItem],
+    names: &std::collections::HashMap<Uuid, String>,
+) -> Vec<PreviewPerson> {
+    let ids: std::collections::BTreeSet<Uuid> = items
+        .iter()
+        .flat_map(|item| item.new_viewers.iter().copied())
+        .collect();
+    let mut people: Vec<PreviewPerson> = ids
+        .into_iter()
+        .map(|id| PreviewPerson {
+            id,
+            display_name: names.get(&id).cloned(),
+        })
+        .collect();
+    people.sort_by(|a, b| {
+        (a.display_name.is_none(), &a.display_name, a.id).cmp(&(
+            b.display_name.is_none(),
+            &b.display_name,
+            b.id,
+        ))
+    });
+    people
 }
 
 /// The access routes.
@@ -123,6 +161,12 @@ async fn preview<C: AccessContext>(
 ) -> Result<Json<AccessPreview>, AppError> {
     let actor = auth.user_id.as_uuid();
     let permissions = &state.permissions;
+    // The caller chose this id, and V1 is not checked here: answering with the name would let
+    // anyone with SHARE look up a stranger's name by id. The client already knows whom it picked.
+    let invited = match request {
+        PreviewRequest::AddMember { user_id, .. } => Some(user_id),
+        PreviewRequest::Link { .. } => None,
+    };
     let tuple = match request {
         PreviewRequest::Link { page_id, item_id } => {
             // V4: only someone who may link the page, and only to an item they can see.
@@ -151,5 +195,12 @@ async fn preview<C: AccessContext>(
         .preview(&mut conn, tuple)
         .await
         .map_err(internal)?;
-    Ok(Json(AccessPreview { items }))
+    let ids: Vec<Uuid> = items
+        .iter()
+        .flat_map(|item| item.new_viewers.iter().copied())
+        .filter(|id| Some(*id) != invited)
+        .collect();
+    let names = state.identity.display_names(&ids).await?;
+    let people = preview_people(&items, &names);
+    Ok(Json(AccessPreview { items, people }))
 }

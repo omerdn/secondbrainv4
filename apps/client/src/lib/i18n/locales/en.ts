@@ -74,6 +74,17 @@ export const en: Catalog = {
     chooseHint: "Choose a tag to see its items.",
     noItems: "No items with this tag",
   },
+  share: {
+    title: "Confirm sharing",
+    checking: "Checking who would get access…",
+    failed: "Could not check who would get access.",
+    retry: "Try again",
+    cancel: "Cancel",
+    nobody: "Nobody gains access.",
+    willSee_one: "These people will be able to see {{count}} item:",
+    willSee_other: "These people will be able to see {{count}} items:",
+    unknownPerson: "Someone",
+  },
   views: {
     pinned: "Pinned",
     filter: { state: "Status", kind: "Type", tag: "Tag" },

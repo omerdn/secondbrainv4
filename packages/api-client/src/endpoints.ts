@@ -6,6 +6,8 @@
 
 import type {
   AccessExplanation,
+  AccessPreview,
+  AccessPreviewRequest,
   AppleNativeRequest,
   CreateSavedViewRequest,
   CreateTagRequest,
@@ -106,6 +108,8 @@ export function endpoints(api: ApiClient) {
       /** "Why am I seeing this?" (PRD V11). */
       explanation: (itemId: string) =>
         api.get<AccessExplanation>(`/access/items/${encodeURIComponent(itemId)}/explanation`),
+      /** Who would gain access if the action went ahead; changes nothing (PRD V7). */
+      preview: (body: AccessPreviewRequest) => api.post<AccessPreview>("/access/preview", body),
     },
   };
 }
