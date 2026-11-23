@@ -5,6 +5,7 @@
  */
 
 import type {
+  AccessExplanation,
   AppleNativeRequest,
   AuthResponse,
   CsrfResponse,
@@ -12,10 +13,13 @@ import type {
   ForgotPasswordRequest,
   GoogleNativeRequest,
   Health,
+  Item,
+  ItemLink,
   LoginRequest,
   RegisterRequest,
   ResetPasswordRequest,
   SessionInfo,
+  Tag,
   UpdateProfileRequest,
   VerifyEmailRequest,
 } from "@secondbrain/api-types";
@@ -53,6 +57,18 @@ export function endpoints(api: ApiClient) {
       get: () => api.get<CurrentUser>("/me"),
       update: (body: UpdateProfileRequest, options?: MutationOptions) =>
         api.patch<CurrentUser>("/me", body, options),
+    },
+    items: {
+      get: (id: string) => api.get<Item>(`/items/${encodeURIComponent(id)}`),
+      /** The caller's own tags on the item (PRD E2). */
+      tags: (id: string) => api.get<Tag[]>(`/items/${encodeURIComponent(id)}/tags`),
+      /** Links whose other end the caller can see (PRD V9). */
+      links: (id: string) => api.get<ItemLink[]>(`/items/${encodeURIComponent(id)}/links`),
+    },
+    access: {
+      /** "Why am I seeing this?" (PRD V11). */
+      explanation: (itemId: string) =>
+        api.get<AccessExplanation>(`/access/items/${encodeURIComponent(itemId)}/explanation`),
     },
   };
 }
