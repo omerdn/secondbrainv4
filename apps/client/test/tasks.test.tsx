@@ -7,7 +7,9 @@ import {
   draftErrors,
   draftOf,
   emptyDraft,
+  isDefaultTaskFilter,
   itemPatch,
+  taskFilter,
 } from "@/features/tasks/model";
 import { addDays, isDay } from "@/lib/dates";
 import { i18n } from "@/lib/i18n";
@@ -168,6 +170,91 @@ describe("tasks screen", () => {
     await fireEvent.press(screen.getByRole("button", { name: "Oluştur" }));
     expect(await screen.findByText("Bu alan gerekli.")).toBeTruthy();
     expect(mutation(server)).toEqual([]);
+  });
+});
+
+describe("task list (G7, F1)", () => {
+  const filterOf = (call: { path: string }) =>
+    JSON.parse(new URL(`http://x${call.path}`).searchParams.get("filter") ?? "{}") as unknown;
+  const page = (items: Item[], next_cursor: string | null = null) =>
+    json(200, { items, next_cursor });
+  const tag = { id: "g1", name: "İş", color: null, created_at: at, updated_at: at };
+  const lists = (server: ReturnType<typeof fakeServer>) =>
+    server.calls.filter((call) => call.path.startsWith("/items/filter"));
+
+  it("always filters by task and adds the chosen state and tags", () => {
+    expect(taskFilter({})).toEqual({ kinds: ["task"] });
+    expect(taskFilter({ kinds: ["goal"], state: "active" })).toEqual({ kinds: ["task"] });
+    expect(taskFilter({ state: "trash", tag_ids: ["b", "a"] })).toEqual({
+      kinds: ["task"],
+      tag_ids: ["a", "b"],
+      state: "trash",
+    });
+    expect(isDefaultTaskFilter({ state: "active", tag_ids: [] })).toBe(true);
+    expect(isDefaultTaskFilter({ state: "archived" })).toBe(false);
+  });
+
+  it("lists tasks and filters them by state and tag", async () => {
+    const server = fakeServer({
+      ...routes,
+      "GET /tags": () => json(200, [tag]),
+      "GET /items/filter": () => page([item]),
+    });
+    await open(server, "/tasks");
+    expect(await screen.findByRole("button", { name: "Görev: Raporu yaz" })).toBeTruthy();
+    expect(screen.queryByText("Tür")).toBeNull();
+    await fireEvent.press(screen.getByRole("button", { name: "Arşiv" }));
+    await waitFor(() => {
+      expect(filterOf(lists(server).at(-1) ?? { path: "/" })).toEqual({
+        kinds: ["task"],
+        state: "archived",
+      });
+    });
+    await fireEvent.press(await screen.findByRole("button", { name: "İş" }));
+    await waitFor(() => {
+      expect(filterOf(lists(server).at(-1) ?? { path: "/" })).toEqual({
+        kinds: ["task"],
+        tag_ids: ["g1"],
+        state: "archived",
+      });
+    });
+  });
+
+  it("loads the next page", async () => {
+    const second = { ...item, id: "t2", title: "İkinci" };
+    const server = fakeServer({
+      ...routes,
+      "GET /items/filter": (call) =>
+        call.path.includes("cursor=") ? page([second]) : page([item], "next"),
+    });
+    await open(server, "/tasks");
+    await fireEvent.press(await screen.findByRole("button", { name: "Daha fazla yükle" }));
+    expect(await screen.findByRole("button", { name: "Görev: İkinci" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Görev: Raporu yaz" })).toBeTruthy();
+  });
+
+  it("tells an empty list from a filter with no match", async () => {
+    await open(fakeServer({ ...routes, "GET /items/filter": () => page([]) }), "/tasks");
+    expect(await screen.findByText("Henüz görevin yok")).toBeTruthy();
+    await fireEvent.press(screen.getByRole("button", { name: "Çöp" }));
+    expect(await screen.findByText("Bu filtreye uyan görev yok")).toBeTruthy();
+    await fireEvent.press(screen.getByRole("button", { name: "Filtreyi temizle" }));
+    expect(await screen.findByText("Henüz görevin yok")).toBeTruthy();
+  });
+
+  it("offers a retry when the list fails", async () => {
+    let fail = true;
+    await open(
+      fakeServer({
+        ...routes,
+        "GET /items/filter": () => (fail ? apiError(500, "internal") : page([item])),
+      }),
+      "/tasks",
+    );
+    const retry = await screen.findByRole("button", { name: "Tekrar dene" });
+    fail = false;
+    await fireEvent.press(retry);
+    expect(await screen.findByRole("button", { name: "Görev: Raporu yaz" })).toBeTruthy();
   });
 });
 
