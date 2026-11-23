@@ -14,16 +14,24 @@
 //! | POST   | `/tasks/{id}/subtasks/{subtask_id}/reopen` | 200 [`SubtaskView`]; G4 |
 //! | PUT    | `/tasks/{id}/subtasks/{subtask_id}/assignees/{user_id}` | 200 [`SubtaskView`]; self |
 //! | DELETE | `/tasks/{id}/subtasks/{subtask_id}/assignees/{user_id}` | 200 [`SubtaskView`]; self |
+//! | GET    | `/board` | 200 [`Board`]; the caller's personal kanban (G6) |
+//! | POST   | `/board/columns` | 201 [`Board`] |
+//! | PATCH  | `/board/columns/{id}` | 200 [`Board`]; rename or reorder |
+//! | DELETE | `/board/columns/{id}` | 204; its cards move to the inbox |
+//! | PUT    | `/board/tasks/{task_id}` | 200 [`Board`]; VIEW on the task |
 
 use axum::extract::{FromRef, Path, State};
 use axum::http::StatusCode;
-use axum::routing::{patch, post, put};
+use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
 use identity::IdentityService;
 use identity::http::Authenticated;
 use kernel::AppError;
 use uuid::Uuid;
 
+use crate::board::{
+    Board, CreateBoardColumnRequest, MoveBoardTaskRequest, UpdateBoardColumnRequest,
+};
 use crate::model::{
     CreateSubtaskRequest, CreateTaskRequest, SubtaskView, TaskView, UpdateSubtaskRequest,
     UpdateTaskRequest,
@@ -65,6 +73,13 @@ pub fn router(state: TasksHttpState) -> Router {
             "/tasks/{id}/subtasks/{subtask_id}/assignees/{user_id}",
             put(assign).delete(unassign),
         )
+        .route("/board", get(read_board))
+        .route("/board/columns", post(create_column))
+        .route(
+            "/board/columns/{id}",
+            patch(update_column).delete(delete_column),
+        )
+        .route("/board/tasks/{task_id}", put(move_card))
         .with_state(state)
 }
 
@@ -180,6 +195,63 @@ async fn unassign(
     state
         .tasks
         .unassign(auth.user_id.as_uuid(), id, subtask, user)
+        .await
+        .map(Json)
+}
+
+async fn read_board(
+    State(state): State<TasksHttpState>,
+    Authenticated(auth): Authenticated,
+) -> Result<Json<Board>, AppError> {
+    state.tasks.board(auth.user_id.as_uuid()).await.map(Json)
+}
+
+async fn create_column(
+    State(state): State<TasksHttpState>,
+    Authenticated(auth): Authenticated,
+    Json(request): Json<CreateBoardColumnRequest>,
+) -> Result<(StatusCode, Json<Board>), AppError> {
+    let board = state
+        .tasks
+        .create_column(auth.user_id.as_uuid(), request)
+        .await?;
+    Ok((StatusCode::CREATED, Json(board)))
+}
+
+async fn update_column(
+    State(state): State<TasksHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateBoardColumnRequest>,
+) -> Result<Json<Board>, AppError> {
+    state
+        .tasks
+        .update_column(auth.user_id.as_uuid(), id, request)
+        .await
+        .map(Json)
+}
+
+async fn delete_column(
+    State(state): State<TasksHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    state
+        .tasks
+        .delete_column(auth.user_id.as_uuid(), id)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn move_card(
+    State(state): State<TasksHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(task): Path<Uuid>,
+    Json(request): Json<MoveBoardTaskRequest>,
+) -> Result<Json<Board>, AppError> {
+    state
+        .tasks
+        .move_card(auth.user_id.as_uuid(), task, request)
         .await
         .map(Json)
 }
