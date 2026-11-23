@@ -12,6 +12,7 @@ import {
   Input,
   MAX_TOASTS,
   Sheet,
+  sheetKeyboardBehavior,
   sheetLayout,
   TagChip,
   Text,
@@ -140,6 +141,12 @@ describe("Sheet", () => {
     await fireEvent.press(screen.getByTestId("sheet-backdrop", { includeHiddenElements: true }));
     await fireEvent.press(screen.getByRole("button", { name: "Kapat" }));
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it("makes room for the keyboard only where a modal is not resized for it", () => {
+    expect(sheetKeyboardBehavior("ios")).toBe("padding");
+    expect(sheetKeyboardBehavior("android")).toBeUndefined();
+    expect(sheetKeyboardBehavior("web")).toBeUndefined();
   });
 });
 
