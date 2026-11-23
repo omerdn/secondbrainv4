@@ -20,6 +20,7 @@ import type {
   Item,
   ItemFilter,
   ItemLink,
+  ItemListState,
   LoginRequest,
   Page,
   RegisterRequest,
@@ -68,6 +69,12 @@ export function endpoints(api: ApiClient) {
     },
     items: {
       get: (id: string) => api.get<Item>(`/items/${encodeURIComponent(id)}`),
+      list: (state: ItemListState) => api.get<Item[]>("/items", { query: { state } }),
+      /** Back from the trash; owner only (PRD N4, V6). */
+      restore: (id: string, options?: MutationOptions) =>
+        api.post<Item>(`/items/${encodeURIComponent(id)}/restore`, undefined, options),
+      unarchive: (id: string, options?: MutationOptions) =>
+        api.post<Item>(`/items/${encodeURIComponent(id)}/unarchive`, undefined, options),
       /** Accessible items matching `filter`, newest first (PRD F1). */
       filter: (filter: ItemFilter, page: { cursor?: string; limit?: number } = {}) =>
         api.get<Page<Item>>("/items/filter", {
