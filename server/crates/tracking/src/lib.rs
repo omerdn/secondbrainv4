@@ -10,6 +10,7 @@ mod model;
 mod progress;
 pub mod repo;
 mod service;
+mod summary;
 
 pub use aggregate::{DateWindow, aggregate, aggregate_period, start_of_day, window_for};
 pub use definitions::{CreateTrackerRequest, TrackerView, UNIT_MAX_CHARS, UpdateTrackerRequest};
@@ -23,3 +24,4 @@ pub use progress::{
 pub use service::{
     CreateEntryRequest, EntryView, ListEntriesQuery, NOTE_MAX_CHARS, TrackerEntries,
 };
+pub use summary::{TrackerSummary, summarize};

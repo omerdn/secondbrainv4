@@ -155,7 +155,7 @@ pub struct TrackerEntries {
     pub(crate) clock: SharedClock,
     pub(crate) permissions: PermissionService<ItemsAccessContext>,
     pub(crate) items: ItemsService,
-    identity: IdentityService,
+    pub(crate) identity: IdentityService,
 }
 
 impl TrackerEntries {

@@ -340,6 +340,9 @@ Her spike'ın sonucu bir ADR olarak yazılır.
   - Oluşturma: birim, hedef değer, dönem, yön
   - Kayıt girme (isteğe bağlı notla)
   - Geçmiş grafiği (K1–K3)
+- **T2.4.2** · Takip dönem özeti API · backend · S
+  - Dönem içi kullanım, kalan ve sınır aşımı (K2)
+  - T2.4.1 buna bağlıdır
 
 ### E2.5 · Defterler ve sayfalar · bağımlılık: F1, T0.6.2
 - **T2.5.1** · Defter ve sayfa şeması · backend · S
