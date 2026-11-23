@@ -1,5 +1,6 @@
 import { layout, Text } from "@secondbrain/ui";
 import { usePathname } from "expo-router";
+import type { ReactNode } from "react";
 import { ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -9,7 +10,7 @@ import { destinations, isActive, settings } from "./nav";
 import { NavItem } from "./NavItem";
 
 /** Left navigation from the `md` breakpoint on (web, desktop, tablets). */
-export function Sidebar({ account }: { account: string | null }) {
+export function Sidebar({ account, extra }: { account: string | null; extra?: ReactNode }) {
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   return (
@@ -31,6 +32,7 @@ export function Sidebar({ account }: { account: string | null }) {
             variant="sidebar"
           />
         ))}
+        {extra}
       </ScrollView>
       <View className="gap-1 border-t border-border px-2 py-2">
         {account !== null ? (

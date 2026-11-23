@@ -9,7 +9,8 @@ import type { QueryKey } from "@tanstack/react-query";
  * **Query key convention:** every query key starts with the resource kind, the same string
  * the server sends as `kind` (`["task", id]`, `["task", "list", filters]`, `["notifications"]`).
  * Invalidating `[kind]` then covers that kind's lists and details (prefix match). The shared
- * item screens do not know the kind before loading, so they use `["item", id]`.
+ * item screens do not know the kind before loading, so they use `["item", id]`; lists across
+ * kinds (filters) use `["items", ...]`.
  */
 
 /** Query keys to invalidate for one event's `data`; empty when the data is not understood. */
@@ -30,7 +31,7 @@ export const defaultRules: InvalidationRules = {
   /** `{ id, kind }`: an object of `kind` was created, changed or deleted. */
   "item.changed": (data) =>
     isRecord(data) && nonEmpty(data.kind) && nonEmpty(data.id)
-      ? [[data.kind], ["item", data.id]]
+      ? [[data.kind], ["item", data.id], ["items"]]
       : [],
   "notification.new": () => [["notifications"]],
 };

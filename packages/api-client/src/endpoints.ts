@@ -7,6 +7,7 @@
 import type {
   AccessExplanation,
   AppleNativeRequest,
+  CreateSavedViewRequest,
   CreateTagRequest,
   AuthResponse,
   CsrfResponse,
@@ -15,13 +16,17 @@ import type {
   GoogleNativeRequest,
   Health,
   Item,
+  ItemFilter,
   ItemLink,
   LoginRequest,
+  Page,
   RegisterRequest,
   ResetPasswordRequest,
+  SavedView,
   SessionInfo,
   Tag,
   UpdateProfileRequest,
+  UpdateSavedViewRequest,
   VerifyEmailRequest,
 } from "@secondbrain/api-types";
 
@@ -61,6 +66,11 @@ export function endpoints(api: ApiClient) {
     },
     items: {
       get: (id: string) => api.get<Item>(`/items/${encodeURIComponent(id)}`),
+      /** Accessible items matching `filter`, newest first (PRD F1). */
+      filter: (filter: ItemFilter, page: { cursor?: string; limit?: number } = {}) =>
+        api.get<Page<Item>>("/items/filter", {
+          query: { filter: JSON.stringify(filter), limit: page.limit, cursor: page.cursor },
+        }),
       /** The caller's own tags on the item (PRD E2). */
       tags: (id: string) => api.get<Tag[]>(`/items/${encodeURIComponent(id)}/tags`),
       /** Links whose other end the caller can see (PRD V9). */
@@ -81,6 +91,16 @@ export function endpoints(api: ApiClient) {
         api.post<Tag>("/tags", body, options),
       /** Accessible items carrying the tag. */
       items: (id: string) => api.get<Item[]>(`/tags/${encodeURIComponent(id)}/items`),
+    },
+    views: {
+      /** The caller's saved views, pinned first (PRD F2). */
+      list: () => api.get<SavedView[]>("/saved-views"),
+      create: (body: CreateSavedViewRequest, options?: MutationOptions) =>
+        api.post<SavedView>("/saved-views", body, options),
+      update: (id: string, body: UpdateSavedViewRequest, options?: MutationOptions) =>
+        api.patch<SavedView>(`/saved-views/${encodeURIComponent(id)}`, body, options),
+      delete: (id: string, options?: MutationOptions) =>
+        api.delete(`/saved-views/${encodeURIComponent(id)}`, options),
     },
     access: {
       /** "Why am I seeing this?" (PRD V11). */
