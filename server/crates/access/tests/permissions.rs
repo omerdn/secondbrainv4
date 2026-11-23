@@ -355,10 +355,15 @@ async fn preview_endpoint_checks_the_actors_rights() {
         .call(Method::POST, "/access/preview", &ali_token, Some(link))
         .await;
     assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
     assert_eq!(
-        json_body(response).await,
-        json!({ "items": [{ "item_id": page, "new_viewers": [ayse] }] })
+        body["items"],
+        json!([{ "item_id": page, "new_viewers": [ayse] }])
     );
+    // V7: the dialog can name the person.
+    assert_eq!(body["people"].as_array().unwrap().len(), 1);
+    assert_eq!(body["people"][0]["id"], json!(ayse));
+    assert!(body["people"][0]["display_name"].is_string());
 
     // V4: Ali cannot link to an item he cannot see (404, not revealed).
     let hidden = json!({ "action": "link", "page_id": page, "item_id": secret });
@@ -383,8 +388,19 @@ async fn preview_endpoint_checks_the_actors_rights() {
         .call(Method::POST, "/access/preview", &ali_token, Some(add))
         .await;
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        json_body(response).await["items"].as_array().unwrap().len(),
-        1
-    );
+    let body = json_body(response).await;
+    assert_eq!(body["items"].as_array().unwrap().len(), 1);
+    // An id without an account has no name to show.
+    assert!(body["people"][0]["display_name"].is_null());
+
+    // A real stranger's name cannot be looked up by adding them to a preview (V1).
+    let (stranger, _) = app.user("stranger@example.test").await;
+    let add =
+        json!({ "action": "add_member", "item_id": task, "user_id": stranger, "role": "watcher" });
+    let response = app
+        .call(Method::POST, "/access/preview", &ali_token, Some(add))
+        .await;
+    let body = json_body(response).await;
+    assert_eq!(body["people"][0]["id"], json!(stranger));
+    assert!(body["people"][0]["display_name"].is_null());
 }

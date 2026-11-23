@@ -354,6 +354,24 @@ impl IdentityService {
         .ok_or(AppError::Unauthenticated)
     }
 
+    /// Display names of `ids`, for screens that show who is affected (PRD V7). Unknown ids are
+    /// absent from the result. Callers decide who may see them.
+    ///
+    /// # Errors
+    /// [`AppError::Internal`] on database errors.
+    pub async fn display_names(
+        &self,
+        ids: &[uuid::Uuid],
+    ) -> Result<std::collections::HashMap<uuid::Uuid, String>, AppError> {
+        let rows: Vec<(uuid::Uuid, String)> =
+            sqlx::query_as("SELECT id, display_name FROM users WHERE id = ANY($1)")
+                .bind(ids)
+                .fetch_all(self.pool())
+                .await
+                .map_err(AppError::internal)?;
+        Ok(rows.into_iter().collect())
+    }
+
     /// The user's active sessions, newest first.
     pub async fn list_sessions(&self, auth: AuthContext) -> Result<Vec<SessionInfo>, AppError> {
         let rows = sqlx::query_as::<
