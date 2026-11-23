@@ -263,6 +263,8 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 - **T1.5.5** · "Bunu neden görüyorum?" paneli · client · S
   - V11
 - **T1.5.6** · Çöp kutusu ve arşiv ekranları · client · S
+- **T1.5.7** · Filtre çubuğunda tarih, durum, kişi ve takım · client · S
+  - Veri kaynakları sonraki fazlarda geldiği için E1.5'i bekletmez (görev durumları F2, arkadaşlar F3, takımlar F5)
 
 ---
 

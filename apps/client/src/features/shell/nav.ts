@@ -30,6 +30,7 @@ export const destinations: readonly Destination[] = [
   { key: "notebooks", href: "/notebooks", icon: "book-outline", tab: true },
   { key: "calendar", href: "/calendar", icon: "calendar-outline", tab: false },
   { key: "tags", href: "/tags", icon: "pricetags-outline", tab: false },
+  { key: "views", href: "/views", icon: "funnel-outline", tab: false },
 ];
 
 export const settings: Destination = {
