@@ -234,6 +234,8 @@ export const en: Catalog = {
     saveFailed: "Could not save. Try again.",
     notAllowed: "You are not allowed to do this.",
     emptyTitle: "No tasks yet",
+    noMatch: "No tasks match this filter",
+    clearFilter: "Clear filter",
     emptyHint: "Create your first task and split it into subtasks if you like.",
     subtasks: "Subtasks",
     subtasksHint: "If you add none, one is created from the task's title.",

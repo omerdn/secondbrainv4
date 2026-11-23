@@ -22,10 +22,12 @@ export interface FilterBarProps {
   /** The user's own tags (PRD E2). */
   tags: readonly Tag[];
   onChange: (filter: ItemFilter) => void;
+  /** Off for a list of a single kind, such as the task list. */
+  showKinds?: boolean;
 }
 
 /** Chooses what the list shows. Values in a row are alternatives; rows narrow each other. */
-export function FilterBar({ filter, tags, onChange }: FilterBarProps) {
+export function FilterBar({ filter, tags, onChange, showKinds = true }: FilterBarProps) {
   const { t } = useTranslation();
   const state = filter.state ?? "active";
   return (
@@ -42,18 +44,20 @@ export function FilterBar({ filter, tags, onChange }: FilterBarProps) {
           />
         ))}
       </Row>
-      <Row label={t("views.filter.kind")}>
-        {FILTER_KINDS.map((kind) => (
-          <TagChip
-            key={kind}
-            label={t(`items.kinds.${kind}`)}
-            selected={filter.kinds?.includes(kind) ?? false}
-            onPress={() => {
-              onChange({ ...filter, kinds: toggled(filter.kinds, kind) });
-            }}
-          />
-        ))}
-      </Row>
+      {showKinds ? (
+        <Row label={t("views.filter.kind")}>
+          {FILTER_KINDS.map((kind) => (
+            <TagChip
+              key={kind}
+              label={t(`items.kinds.${kind}`)}
+              selected={filter.kinds?.includes(kind) ?? false}
+              onPress={() => {
+                onChange({ ...filter, kinds: toggled(filter.kinds, kind) });
+              }}
+            />
+          ))}
+        </Row>
+      ) : null}
       {tags.length > 0 ? (
         <Row label={t("views.filter.tag")}>
           {tags.map((tag) => (

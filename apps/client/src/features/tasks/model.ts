@@ -1,4 +1,9 @@
-import type { CreateTaskRequest, Task, UpdateTaskRequest } from "@secondbrain/api-types";
+import type {
+  CreateTaskRequest,
+  ItemFilter,
+  Task,
+  UpdateTaskRequest,
+} from "@secondbrain/api-types";
 
 import { isDay } from "@/lib/dates";
 
@@ -87,4 +92,21 @@ export function itemPatch(
     patch.description = description;
   }
   return Object.keys(patch).length === 0 ? null : patch;
+}
+
+/** The server filter for the task list: always tasks, with the chosen state and tags. */
+export function taskFilter(selection: ItemFilter): ItemFilter {
+  const tagIds = [...(selection.tag_ids ?? [])].sort();
+  return {
+    kinds: ["task"],
+    ...(tagIds.length === 0 ? {} : { tag_ids: tagIds }),
+    ...(selection.state === undefined || selection.state === "active"
+      ? {}
+      : { state: selection.state }),
+  };
+}
+
+/** Whether nothing narrows the list, so an empty result means the user has no tasks. */
+export function isDefaultTaskFilter(selection: ItemFilter): boolean {
+  return Object.keys(taskFilter(selection)).length === 1;
 }

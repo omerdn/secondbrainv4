@@ -236,6 +236,8 @@ export const tr = {
     saveFailed: "Kaydedilemedi. Tekrar dene.",
     notAllowed: "Bunu yapma yetkin yok.",
     emptyTitle: "Henüz görevin yok",
+    noMatch: "Bu filtreye uyan görev yok",
+    clearFilter: "Filtreyi temizle",
     emptyHint: "İlk görevini oluştur, istersen alt kırılımlara böl.",
     subtasks: "Alt kırılımlar",
     subtasksHint: "Eklemezsen görevin başlığıyla bir alt kırılım oluşur.",
