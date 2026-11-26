@@ -54,6 +54,9 @@ import type {
   SessionStats,
   SessionSummary,
   TimerCommand,
+  Today,
+  HomePreferences,
+  UpdateHomePreferences,
   WorkSession,
   Subtask,
   Tag,
@@ -227,6 +230,14 @@ export function endpoints(api: ApiClient) {
       /** Latest process page lines of the visible items among `ids`, at most 100 (PRD S3). */
       processLines: (ids: readonly string[]) =>
         api.get<ItemStatusLine[]>("/process-lines", { query: { ids: ids.join(",") } }),
+    },
+    today: {
+      /** The Today screen on the caller's local day (PRD H1-H6). */
+      get: (today?: string) => api.get<Today>("/today", { query: { today } }),
+      preferences: () => api.get<HomePreferences>("/today/preferences"),
+      /** The forgotten threshold in days, 1 to 365 (PRD H4). */
+      setPreferences: (body: UpdateHomePreferences, options?: MutationOptions) =>
+        api.put<HomePreferences>("/today/preferences", body, options),
     },
     sessions: {
       /** The open work session, opened if none is (PRD W1). */
