@@ -138,3 +138,25 @@ pub async fn running_goals(
     .fetch_all(conn)
     .await
 }
+
+/// The goals among `ids` whose range overlaps `from..=to`, starting first.
+///
+/// # Errors
+/// Database errors.
+pub async fn overlapping_goals(
+    conn: impl PgExecutor<'_>,
+    ids: &[Uuid],
+    from: NaiveDate,
+    to: NaiveDate,
+) -> sqlx::Result<Vec<GoalRow>> {
+    sqlx::query_as(
+        "SELECT item_id, start_date, end_date FROM goals
+         WHERE item_id = ANY($1) AND start_date <= $3 AND end_date >= $2
+         ORDER BY start_date, item_id",
+    )
+    .bind(ids)
+    .bind(from)
+    .bind(to)
+    .fetch_all(conn)
+    .await
+}

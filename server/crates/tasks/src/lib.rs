@@ -16,7 +16,7 @@ pub use board::{
     Board, BoardCard, BoardColumn, COLUMN_LIMIT, CreateBoardColumnRequest, MoveBoardTaskRequest,
     UpdateBoardColumnRequest,
 };
-pub use due::DueTask;
+pub use due::{DatedTask, DueTask};
 pub use fractional::{MAX_KEY_LEN, even_keys, key_between};
 pub use model::{
     CreateSubtaskRequest, CreateTaskRequest, SUBTASK_LIMIT, SubtaskView, TaskView,

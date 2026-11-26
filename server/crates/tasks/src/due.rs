@@ -101,3 +101,81 @@ impl TasksService {
             .collect())
     }
 }
+
+/// A task with a date in a calendar range (PRD C1): it starts, ends or runs through it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
+pub struct DatedTask {
+    pub item: Item,
+    #[ts(type = "string | null")]
+    pub start_date: Option<NaiveDate>,
+    #[ts(type = "string | null")]
+    pub due_date: Option<NaiveDate>,
+}
+
+#[derive(FromRow)]
+struct DatedRow {
+    item_id: Uuid,
+    start_date: Option<NaiveDate>,
+    due_date: Option<NaiveDate>,
+}
+
+impl TasksService {
+    /// Active tasks `actor` can view whose dates touch `from..=to`: a start or due date in it,
+    /// or a start before and a due date after it. Earliest first, at most `limit` (C1).
+    ///
+    /// # Errors
+    /// [`AppError::Internal`] on database errors.
+    pub async fn dated(
+        &self,
+        actor: Uuid,
+        from: NaiveDate,
+        to: NaiveDate,
+        limit: i64,
+    ) -> Result<Vec<DatedTask>, AppError> {
+        let visible = self
+            .permissions
+            .list_accessible(&self.pool, actor, Perms::VIEW)
+            .await
+            .map_err(internal)?;
+        if visible.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows: Vec<DatedRow> = sqlx::query_as(
+            "SELECT item_id, start_date, due_date FROM tasks
+             WHERE item_id = ANY($1)
+               AND (start_date IS NOT NULL OR due_date IS NOT NULL)
+               AND COALESCE(start_date, due_date) <= $3
+               AND COALESCE(due_date, start_date) >= $2
+             ORDER BY COALESCE(start_date, due_date), item_id
+             LIMIT $4",
+        )
+        .bind(&visible)
+        .bind(from)
+        .bind(to)
+        .bind(limit.saturating_mul(2))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(internal)?;
+        let ids: Vec<Uuid> = rows.iter().map(|row| row.item_id).collect();
+        let mut items: std::collections::HashMap<Uuid, Item> = self
+            .items
+            .visible_items(actor, &ids)
+            .await?
+            .into_iter()
+            .filter(|item| item.archived_at.is_none() && item.deleted_at.is_none())
+            .map(|item| (item.id, item))
+            .collect();
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| {
+                items.remove(&row.item_id).map(|item| DatedTask {
+                    item,
+                    start_date: row.start_date,
+                    due_date: row.due_date,
+                })
+            })
+            .take(usize::try_from(limit).unwrap_or(0))
+            .collect())
+    }
+}

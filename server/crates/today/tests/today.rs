@@ -154,13 +154,23 @@ impl World {
     }
 
     async fn task(&self, owner: Uuid, title: &str, due: Option<NaiveDate>) -> Uuid {
+        self.task_between(owner, title, None, due).await
+    }
+
+    async fn task_between(
+        &self,
+        owner: Uuid,
+        title: &str,
+        start: Option<NaiveDate>,
+        due: Option<NaiveDate>,
+    ) -> Uuid {
         self.tasks
             .create(
                 owner,
                 CreateTaskRequest {
                     title: title.into(),
                     description: None,
-                    start_date: None,
+                    start_date: start,
                     due_date: due,
                     subtasks: None,
                 },
@@ -172,13 +182,18 @@ impl World {
     }
 
     async fn routine(&self, owner: Uuid, title: &str, rrule: &str) -> Uuid {
+        self.routine_in(owner, title, rrule, "Europe/Istanbul")
+            .await
+    }
+
+    async fn routine_in(&self, owner: Uuid, title: &str, rrule: &str, zone: &str) -> Uuid {
         self.routines
             .create(
                 owner,
                 CreateRoutineRequest {
                     title: title.into(),
                     description: None,
-                    timezone: "Europe/Istanbul".into(),
+                    timezone: zone.into(),
                     rrule: rrule.into(),
                     daily_target: Some(2),
                     start_date: Some(day(1)),
@@ -486,4 +501,144 @@ async fn the_callers_day_must_be_close_to_the_servers() {
         w.today.today(ada, Some(day(28))).await,
         Err(AppError::Validation(_))
     ));
+}
+
+fn date(y: i32, m: u32, d: u32) -> NaiveDate {
+    NaiveDate::from_ymd_opt(y, m, d).unwrap()
+}
+
+#[tokio::test]
+async fn c1_calendar_holds_tasks_whose_dates_touch_the_range() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com").await;
+    // The range: the week of 23-29 November.
+    w.task_between(ada, "Biten", None, Some(day(23))).await;
+    w.task_between(ada, "Başlayan", Some(day(29)), None).await;
+    w.task_between(ada, "Kapsayan", Some(day(10)), Some(date(2026, 12, 10)))
+        .await;
+    w.task_between(ada, "Önceki", Some(day(1)), Some(day(22)))
+        .await;
+    w.task_between(ada, "Sonraki", Some(day(30)), None).await;
+    w.task_between(ada, "Tarihsiz", None, None).await;
+    let calendar = w.today.calendar(ada, day(23), day(29)).await.unwrap();
+    let mut titles: Vec<&str> = calendar
+        .tasks
+        .iter()
+        .map(|t| t.item.title.as_str())
+        .collect();
+    titles.sort_unstable();
+    assert_eq!(titles, ["Başlayan", "Biten", "Kapsayan"]);
+}
+
+#[tokio::test]
+async fn c1_routine_occurrences_come_from_the_plan_in_each_zone() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com").await;
+    w.routine(ada, "Pazartesi", "FREQ=WEEKLY;BYDAY=MO").await;
+    // New York leaves DST on Sunday 1 November 2026: still one occurrence a day.
+    w.routine_in(ada, "Günlük NY", "FREQ=DAILY", "America/New_York")
+        .await;
+    // Far ahead of UTC: its days are its own calendar dates all the same.
+    w.routine_in(ada, "Günlük Kiritimati", "FREQ=DAILY", "Pacific/Kiritimati")
+        .await;
+    w.routine(ada, "Ayın 30'u", "FREQ=MONTHLY;BYMONTHDAY=30")
+        .await;
+
+    let calendar = w
+        .today
+        .calendar(ada, date(2026, 10, 30), date(2026, 11, 3))
+        .await
+        .unwrap();
+    let dates = |title: &str| {
+        calendar
+            .routines
+            .iter()
+            .find(|r| r.item.title == title)
+            .map(|r| r.dates.clone())
+    };
+    let every_day: Vec<NaiveDate> = date(2026, 10, 30).iter_days().take(5).collect();
+    // The routines started on 1 November: nothing before it.
+    assert_eq!(dates("Günlük NY").unwrap(), every_day[2..].to_vec());
+    assert_eq!(dates("Günlük Kiritimati").unwrap(), every_day[2..].to_vec());
+    assert_eq!(dates("Pazartesi").unwrap(), [date(2026, 11, 2)]);
+    assert_eq!(
+        calendar
+            .routines
+            .iter()
+            .find(|r| r.item.title == "Günlük NY")
+            .unwrap()
+            .timezone,
+        "America/New_York"
+    );
+    // No occurrence in the range: left out. Both ends are included.
+    assert!(dates("Ayın 30'u").is_none());
+    let edge = w.today.calendar(ada, day(30), day(30)).await.unwrap();
+    // 30 November 2026 is a Monday: every routine occurs on it.
+    assert_eq!(edge.routines.len(), 4);
+    assert!(edge.routines.iter().all(|r| r.dates == [day(30)]));
+}
+
+#[tokio::test]
+async fn c1_goal_ranges_that_overlap_the_range() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com").await;
+    w.goal(ada, "Kasım", day(1), day(30)).await;
+    w.goal(ada, "Aralık", date(2026, 12, 1), date(2026, 12, 31))
+        .await;
+    w.goal(ada, "Ekim", date(2026, 10, 1), date(2026, 10, 31))
+        .await;
+    let calendar = w
+        .today
+        .calendar(ada, day(30), date(2026, 12, 2))
+        .await
+        .unwrap();
+    let titles: Vec<&str> = calendar
+        .goals
+        .iter()
+        .map(|g| g.item.title.as_str())
+        .collect();
+    assert_eq!(titles, ["Kasım", "Aralık"]);
+    assert_eq!(calendar.goals[0].end_date, day(30));
+}
+
+#[tokio::test]
+async fn c1_calendar_shows_only_what_the_caller_can_view() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com").await;
+    let bob = w.user("bob@example.com").await;
+    w.task_between(bob, "Bob", Some(day(24)), None).await;
+    w.routine(bob, "Bob'un rutini", "FREQ=DAILY").await;
+    w.goal(bob, "Bob'un hedefi", day(1), day(30)).await;
+    let archived = w.task_between(ada, "Arşivde", Some(day(24)), None).await;
+    w.items.set_archived(ada, archived, true).await.unwrap();
+    let calendar = w.today.calendar(ada, day(23), day(29)).await.unwrap();
+    assert!(calendar.tasks.is_empty());
+    assert!(calendar.routines.is_empty());
+    assert!(calendar.goals.is_empty());
+    let bobs = w.today.calendar(bob, day(23), day(29)).await.unwrap();
+    assert_eq!(
+        (bobs.tasks.len(), bobs.routines.len(), bobs.goals.len()),
+        (1, 1, 1)
+    );
+}
+
+#[tokio::test]
+async fn c1_calendar_range_is_checked() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com").await;
+    assert!(matches!(
+        w.today.calendar(ada, day(26), day(25)).await,
+        Err(AppError::Validation(_))
+    ));
+    assert!(matches!(
+        w.today.calendar(ada, day(1), date(2027, 1, 2)).await,
+        Err(AppError::Validation(_))
+    ));
+    // 62 days, both ends included: the longest range.
+    assert!(
+        w.today
+            .calendar(ada, day(1), date(2027, 1, 1))
+            .await
+            .is_ok()
+    );
 }

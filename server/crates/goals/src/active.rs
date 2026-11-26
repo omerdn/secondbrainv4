@@ -84,3 +84,61 @@ impl GoalsService {
         Ok(goals)
     }
 }
+
+/// A goal whose range touches a calendar range (PRD C1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
+pub struct GoalSpan {
+    pub item: Item,
+    #[ts(type = "string")]
+    pub start_date: NaiveDate,
+    #[ts(type = "string")]
+    pub end_date: NaiveDate,
+}
+
+impl GoalsService {
+    /// Active goals `actor` can view whose range overlaps `from..=to`, starting first, at most
+    /// `limit` (C1).
+    ///
+    /// # Errors
+    /// [`AppError::Internal`] on database errors.
+    pub async fn overlapping(
+        &self,
+        actor: Uuid,
+        from: NaiveDate,
+        to: NaiveDate,
+        limit: usize,
+    ) -> Result<Vec<GoalSpan>, AppError> {
+        let visible = self
+            .permissions
+            .list_accessible(&self.pool, actor, Perms::VIEW)
+            .await
+            .map_err(internal)?;
+        if visible.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = repo::overlapping_goals(&self.pool, &visible, from, to)
+            .await
+            .map_err(internal)?;
+        let ids: Vec<Uuid> = rows.iter().map(|row| row.item_id).collect();
+        let items = self.items.visible_items(actor, &ids).await?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| {
+                items
+                    .iter()
+                    .find(|item| {
+                        item.id == row.item_id
+                            && item.archived_at.is_none()
+                            && item.deleted_at.is_none()
+                    })
+                    .map(|item| GoalSpan {
+                        item: item.clone(),
+                        start_date: row.start_date,
+                        end_date: row.end_date,
+                    })
+            })
+            .take(limit)
+            .collect())
+    }
+}

@@ -24,4 +24,4 @@ pub use model::{
 pub use progress::{RoutineProgress, overlap, routine_progress};
 pub use service::RoutinesService;
 pub use streak::{RoutineStreak, StreakDay, routine_streak, streak};
-pub use today::RoutineToday;
+pub use today::{RoutineOccurrences, RoutineToday};
