@@ -10,6 +10,7 @@ pub mod http;
 mod model;
 pub mod repo;
 mod service;
+pub mod snapshots;
 
 pub use model::{
     CreateNotebookRequest, CreatePageRequest, Notebook, NotebookSummary, Page, default_title,

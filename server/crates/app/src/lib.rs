@@ -126,6 +126,8 @@ where
             }
         });
     }
+    notebooks::snapshots::register(&mut worker, &mut scheduler, pool.clone(), clock.clone())
+        .map_err(RunError::Schedule)?;
     scheduler
         .add(
             "idempotency-cleanup",

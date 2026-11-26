@@ -357,6 +357,10 @@ async fn y3_a_restart_keeps_every_update() {
     a.until(|p| p.text() == "kalici metin").await;
     tokio::time::sleep(Duration::from_millis(200)).await;
     drop(a);
+    // Compaction folds the updates into a snapshot meanwhile (T2.5.3).
+    notebooks::snapshots::compact(server.db.pool(), page, Utc::now())
+        .await
+        .unwrap();
 
     // A new process: empty memory, same database.
     let restarted = Collab::new(server.db.pool().clone(), clock());

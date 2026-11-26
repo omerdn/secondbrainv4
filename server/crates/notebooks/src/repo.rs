@@ -164,3 +164,112 @@ pub async fn page_updates(conn: impl PgExecutor<'_>, page: Uuid) -> sqlx::Result
         .fetch_all(conn)
         .await
 }
+
+/// A page's latest snapshot: version and state.
+///
+/// # Errors
+/// Database errors.
+pub async fn latest_snapshot(
+    conn: impl PgExecutor<'_>,
+    page: Uuid,
+) -> sqlx::Result<Option<(i32, Vec<u8>)>> {
+    sqlx::query_as(
+        "SELECT version, state FROM page_snapshots WHERE page_id = $1
+         ORDER BY version DESC LIMIT 1",
+    )
+    .bind(page)
+    .fetch_optional(conn)
+    .await
+}
+
+/// A page's stored updates with their ids, in the order they were written.
+///
+/// # Errors
+/// Database errors.
+pub async fn page_updates_with_ids(
+    conn: impl PgExecutor<'_>,
+    page: Uuid,
+) -> sqlx::Result<Vec<(i64, Vec<u8>)>> {
+    sqlx::query_as("SELECT id, update FROM page_updates WHERE page_id = $1 ORDER BY id")
+        .bind(page)
+        .fetch_all(conn)
+        .await
+}
+
+/// Serializes compactions of one page until the transaction ends.
+///
+/// # Errors
+/// Database errors.
+pub async fn lock_page_compaction(conn: &mut PgConnection, page: Uuid) -> sqlx::Result<()> {
+    sqlx::query(
+        "SELECT pg_advisory_xact_lock(hashtextextended('notebooks:compact:' || $1::text, 0))",
+    )
+    .bind(page)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// # Errors
+/// Database errors.
+pub async fn insert_snapshot(
+    conn: &mut PgConnection,
+    (page, version): (Uuid, i32),
+    state: &[u8],
+    plain_text: &str,
+    now: DateTime<Utc>,
+) -> sqlx::Result<()> {
+    sqlx::query(
+        "INSERT INTO page_snapshots (page_id, version, state, plain_text, created_at)
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(page)
+    .bind(version)
+    .bind(state)
+    .bind(plain_text)
+    .bind(now)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// Deletes exactly the updates `ids` of `page`, once a snapshot holds them.
+///
+/// # Errors
+/// Database errors.
+pub async fn delete_updates(conn: &mut PgConnection, page: Uuid, ids: &[i64]) -> sqlx::Result<()> {
+    sqlx::query("DELETE FROM page_updates WHERE page_id = $1 AND id = ANY($2)")
+        .bind(page)
+        .bind(ids)
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+/// Pages that have updates waiting to be compacted, at most `limit`.
+///
+/// # Errors
+/// Database errors.
+pub async fn pages_with_updates(conn: impl PgExecutor<'_>, limit: i64) -> sqlx::Result<Vec<Uuid>> {
+    sqlx::query_scalar("SELECT DISTINCT page_id FROM page_updates LIMIT $1")
+        .bind(limit)
+        .fetch_all(conn)
+        .await
+}
+
+/// The latest snapshot's plain text of each page among `pages` (search).
+///
+/// # Errors
+/// Database errors.
+pub async fn plain_texts(
+    conn: impl PgExecutor<'_>,
+    pages: &[Uuid],
+) -> sqlx::Result<Vec<(Uuid, String)>> {
+    sqlx::query_as(
+        "SELECT DISTINCT ON (page_id) page_id, plain_text FROM page_snapshots
+         WHERE page_id = ANY($1) ORDER BY page_id, version DESC",
+    )
+    .bind(pages)
+    .fetch_all(conn)
+    .await
+}

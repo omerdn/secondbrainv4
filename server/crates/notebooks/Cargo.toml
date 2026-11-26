@@ -18,9 +18,11 @@ chrono.workspace = true
 futures-util.workspace = true
 identity = { path = "../identity" }
 items = { path = "../items" }
+jobs = { path = "../jobs" }
 kernel = { path = "../kernel" }
 serde.workspace = true
 sqlx.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 ts-rs.workspace = true
