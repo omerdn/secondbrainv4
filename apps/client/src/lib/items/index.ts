@@ -5,3 +5,4 @@ export { WhyPanel, type WhyPanelProps } from "./WhyPanel";
 export { type KindLabel, kindLabel, type RoleLabel, roleLabels } from "./labels";
 export { StatusLineText } from "./StatusLineText";
 export { daysBetween, localToday, useStatusLine } from "./statusLines";
+export { itemPath } from "./paths";

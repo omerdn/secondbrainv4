@@ -1,5 +1,5 @@
-import { PlaceholderScreen } from "@/features/shell";
+import { CalendarScreen } from "@/features/calendar";
 
 export default function Page() {
-  return <PlaceholderScreen section="calendar" />;
+  return <CalendarScreen />;
 }
