@@ -11,6 +11,7 @@ import type {
   AppleNativeRequest,
   Board,
   CreateBoardColumnRequest,
+  CreateGoalRequest,
   CompleteRoutineRequest,
   CreateRoutineRequest,
   CreateSavedViewRequest,
@@ -23,12 +24,15 @@ import type {
   CsrfResponse,
   CurrentUser,
   ForgotPasswordRequest,
+  Goal,
+  GoalProgress,
   GoogleNativeRequest,
   Health,
   Item,
   ItemFilter,
   ItemLink,
   ItemListState,
+  LinkGoalRequest,
   LoginRequest,
   MoveBoardTaskRequest,
   Page,
@@ -46,6 +50,7 @@ import type {
   TrackerEntry,
   TrackerSummary,
   UpdateBoardColumnRequest,
+  UpdateGoalRequest,
   UpdateItemRequest,
   UpdateProfileRequest,
   UpdateSavedViewRequest,
@@ -176,6 +181,30 @@ export function endpoints(api: ApiClient) {
         api.delete(`/board/columns/${encodeURIComponent(id)}`, options),
       moveTask: (taskId: string, body: MoveBoardTaskRequest, options?: MutationOptions) =>
         api.put<Board>(`/board/tasks/${encodeURIComponent(taskId)}`, body, options),
+    },
+    goals: {
+      /** Both dates are required (PRD D1). */
+      create: (body: CreateGoalRequest, options?: MutationOptions) =>
+        api.post<Goal>("/goals", body, options),
+      /** The goal with the linked items the caller can see (PRD V9). */
+      get: (id: string) => api.get<Goal>(`/goals/${encodeURIComponent(id)}`),
+      update: (id: string, body: UpdateGoalRequest, options?: MutationOptions) =>
+        api.patch<Goal>(`/goals/${encodeURIComponent(id)}`, body, options),
+      /** Links an item, or changes its weight (PRD D2, D3). */
+      link: (id: string, itemId: string, body: LinkGoalRequest, options?: MutationOptions) =>
+        api.put<Goal>(
+          `/goals/${encodeURIComponent(id)}/links/${encodeURIComponent(itemId)}`,
+          body,
+          options,
+        ),
+      unlink: (id: string, itemId: string, options?: MutationOptions) =>
+        api.delete<Goal>(
+          `/goals/${encodeURIComponent(id)}/links/${encodeURIComponent(itemId)}`,
+          options,
+        ),
+      /** Actual, pace and the breakdown as of the caller's day (PRD D3-D6). */
+      progress: (id: string, today?: string) =>
+        api.get<GoalProgress>(`/goals/${encodeURIComponent(id)}/progress`, { query: { today } }),
     },
     routines: {
       /** Creates the routine with its first plan version (PRD R1-R3, R13). */
