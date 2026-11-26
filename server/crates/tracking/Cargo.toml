@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 access = { path = "../access" }
+db = { path = "../db" }
 axum.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true

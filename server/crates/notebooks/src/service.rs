@@ -244,6 +244,58 @@ impl NotebooksService {
         self.page(actor, item.id).await
     }
 
+    /// Creates the process page of `item` in `notebook` of `owner` (S1, S2) unless it has one,
+    /// and returns it. No permission check: callers check access to the item first. Concurrent
+    /// calls create exactly one.
+    ///
+    /// # Errors
+    /// [`AppError::Validation`] for a bad title, or [`AppError::Internal`].
+    pub(crate) async fn create_process_page(
+        &self,
+        (actor, owner): (Uuid, Uuid),
+        notebook: Uuid,
+        item: Uuid,
+        title: String,
+    ) -> Result<Uuid, AppError> {
+        let mut tx = self.pool.begin().await.map_err(internal)?;
+        repo::lock_process_page(&mut tx, item)
+            .await
+            .map_err(internal)?;
+        if let Some(page) = repo::process_page_of(&mut *tx, item)
+            .await
+            .map_err(internal)?
+        {
+            return Ok(page);
+        }
+        let new = CreateItemRequest {
+            kind: "page".into(),
+            title,
+            description: None,
+        }
+        .validate()?;
+        let page = self
+            .items
+            .create_owned_in(&mut tx, actor, owner, new)
+            .await?;
+        let row = PageRow {
+            item_id: page.id,
+            notebook_id: notebook,
+            process_of_item_id: Some(item),
+        };
+        repo::insert_page(&mut tx, row, self.clock.now())
+            .await
+            .map_err(internal)?;
+        self.access
+            .grant(
+                &mut tx,
+                RelationTuple::new(page.id, Relation::InNotebook, notebook),
+            )
+            .await
+            .map_err(internal)?;
+        tx.commit().await.map_err(internal)?;
+        Ok(page.id)
+    }
+
     /// A page (VIEW).
     ///
     /// # Errors

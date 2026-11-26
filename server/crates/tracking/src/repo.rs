@@ -311,3 +311,41 @@ pub async fn soft_delete_entry(
     .rows_affected();
     Ok(updated == 1)
 }
+
+/// Links an entry's note to its line on the process page (T3); a linked entry stays as it is.
+///
+/// # Errors
+/// Database errors.
+pub async fn set_note_block(
+    conn: impl PgExecutor<'_>,
+    entry_id: Uuid,
+    block: Uuid,
+) -> sqlx::Result<bool> {
+    let done = sqlx::query(
+        "UPDATE tracker_entries SET note_block_id = $2 WHERE id = $1 AND note_block_id IS NULL",
+    )
+    .bind(entry_id)
+    .bind(block)
+    .execute(conn)
+    .await?;
+    Ok(done.rows_affected() == 1)
+}
+
+/// Live entries whose note is not on a process page yet, oldest first, at most `limit`.
+///
+/// # Errors
+/// Database errors.
+pub async fn unlinked_notes(
+    conn: impl PgExecutor<'_>,
+    limit: i64,
+) -> sqlx::Result<Vec<TrackerEntry>> {
+    let rows = sqlx::query_as::<_, EntryRow>(sqlx::AssertSqlSafe(format!(
+        "SELECT {ENTRY_COLUMNS} FROM tracker_entries
+         WHERE note IS NOT NULL AND note_block_id IS NULL AND deleted_at IS NULL
+         ORDER BY created_at, id LIMIT $1"
+    )))
+    .bind(limit)
+    .fetch_all(conn)
+    .await?;
+    Ok(rows.into_iter().map(TrackerEntry::from).collect())
+}
