@@ -12,6 +12,7 @@ pub mod purge;
 mod service;
 mod tags;
 mod touch;
+mod touched;
 mod views;
 
 pub use activity::{Activity, ActivityKind};
@@ -31,6 +32,7 @@ pub use tags::{
     CreateTagRequest, NewTag, TAG_LIST_LIMIT, TAG_NAME_MAX_CHARS, Tag, TagChanges, UpdateTagRequest,
 };
 pub use touch::{TouchAction, touched_at};
+pub use touched::Touched;
 pub use views::{
     CreateSavedViewRequest, SavedView, UpdateSavedViewRequest, VIEW_LIMIT, VIEW_NAME_MAX_CHARS,
 };

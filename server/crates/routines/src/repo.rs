@@ -182,3 +182,19 @@ pub async fn replace_version(
         .await?;
     Ok(())
 }
+
+/// The routines among `ids`.
+///
+/// # Errors
+/// Database errors.
+pub async fn list_routines(
+    conn: impl PgExecutor<'_>,
+    ids: &[Uuid],
+) -> sqlx::Result<Vec<RoutineRow>> {
+    sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT {ROUTINE_COLUMNS} FROM routines WHERE item_id = ANY($1)"
+    )))
+    .bind(ids)
+    .fetch_all(conn)
+    .await
+}

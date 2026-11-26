@@ -118,3 +118,23 @@ pub async fn delete_weight(
         .await?;
     Ok(())
 }
+
+/// The goals among `ids` whose range holds `today`, ending soonest first.
+///
+/// # Errors
+/// Database errors.
+pub async fn running_goals(
+    conn: impl PgExecutor<'_>,
+    ids: &[Uuid],
+    today: NaiveDate,
+) -> sqlx::Result<Vec<GoalRow>> {
+    sqlx::query_as(
+        "SELECT item_id, start_date, end_date FROM goals
+         WHERE item_id = ANY($1) AND start_date <= $2 AND end_date >= $2
+         ORDER BY end_date, item_id",
+    )
+    .bind(ids)
+    .bind(today)
+    .fetch_all(conn)
+    .await
+}

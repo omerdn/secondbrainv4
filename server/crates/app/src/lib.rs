@@ -214,6 +214,53 @@ where
         clock: clock.clone(),
         config: realtime::RealtimeConfig::new(config.cors_origins.clone()),
     });
+    let goals_service = goals::GoalsService::new(
+        pool.clone(),
+        clock.clone(),
+        access_engine.permissions(),
+        items.clone(),
+    )
+    .with_progress(
+        "task",
+        std::sync::Arc::new(tasks::TaskProgress::new(pool.clone())),
+    )
+    .with_progress(
+        "routine",
+        std::sync::Arc::new(routines::RoutineProgress::new(pool.clone())),
+    )
+    .with_progress(
+        "tracker",
+        std::sync::Arc::new(tracking::TrackerProgress::new(pool.clone())),
+    );
+    let routines_service = routines::RoutinesService::new(
+        pool.clone(),
+        clock.clone(),
+        access_engine.permissions(),
+        items.clone(),
+    );
+    let tasks_service = tasks::TasksService::new(
+        pool.clone(),
+        clock.clone(),
+        access_engine.permissions(),
+        items.clone(),
+    );
+    let sessions_service = sessions::WorkSessions::new(
+        pool.clone(),
+        clock.clone(),
+        access_engine.permissions(),
+        realtime::Notifier::default(),
+    );
+    // The Today screen reads through the modules' services (T2.7.1, ADR-0007).
+    let today_service = today::TodayService::new(
+        pool.clone(),
+        clock.clone(),
+        items.clone(),
+        tasks_service.clone(),
+        routines_service.clone(),
+        goals_service.clone(),
+        process_pages.clone(),
+        sessions_service.clone(),
+    );
     let mut modules = identity::http::rate_limited_router(identity.clone(), limits)
         .merge(idempotency::protect(
             profile
@@ -226,55 +273,27 @@ where
                         notebooks: notebooks_service,
                         identity: identity.clone(),
                         collab: collab.clone(),
-                        process: process_pages,
+                        process: process_pages.clone(),
                     },
                 ))
                 .merge(goals::http::router(goals::http::GoalsHttpState {
-                    goals: goals::GoalsService::new(
-                        pool.clone(),
-                        clock.clone(),
-                        access_engine.permissions(),
-                        items.clone(),
-                    )
-                    .with_progress(
-                        "task",
-                        std::sync::Arc::new(tasks::TaskProgress::new(pool.clone())),
-                    )
-                    .with_progress(
-                        "routine",
-                        std::sync::Arc::new(routines::RoutineProgress::new(pool.clone())),
-                    )
-                    .with_progress(
-                        "tracker",
-                        std::sync::Arc::new(tracking::TrackerProgress::new(pool.clone())),
-                    ),
+                    goals: goals_service.clone(),
                     identity: identity.clone(),
                 }))
                 .merge(routines::http::router(routines::http::RoutinesHttpState {
-                    routines: routines::RoutinesService::new(
-                        pool.clone(),
-                        clock.clone(),
-                        access_engine.permissions(),
-                        items.clone(),
-                    ),
+                    routines: routines_service.clone(),
                     identity: identity.clone(),
                 }))
                 .merge(tasks::http::router(tasks::http::TasksHttpState {
-                    tasks: tasks::TasksService::new(
-                        pool.clone(),
-                        clock.clone(),
-                        access_engine.permissions(),
-                        items.clone(),
-                    ),
+                    tasks: tasks_service.clone(),
                     identity: identity.clone(),
                 }))
                 .merge(sessions::http::router(sessions::http::SessionsHttpState {
-                    sessions: sessions::WorkSessions::new(
-                        pool.clone(),
-                        clock.clone(),
-                        access_engine.permissions(),
-                        realtime::Notifier::default(),
-                    ),
+                    sessions: sessions_service.clone(),
+                    identity: identity.clone(),
+                }))
+                .merge(today::http::router(today::http::HomeHttpState {
+                    today: today_service,
                     identity: identity.clone(),
                 }))
                 .merge(tracking::http::router(tracking::http::TrackingHttpState {

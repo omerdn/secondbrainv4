@@ -1,0 +1,36 @@
+[package]
+name = "today"
+description = "The Today screen: today's routines, due tasks, goals, forgotten items (PRD H1-H6)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+axum.workspace = true
+chrono.workspace = true
+goals = { path = "../goals" }
+identity = { path = "../identity" }
+items = { path = "../items" }
+kernel = { path = "../kernel" }
+notebooks = { path = "../notebooks" }
+routines = { path = "../routines" }
+serde.workspace = true
+sessions = { path = "../sessions" }
+sqlx.workspace = true
+tasks = { path = "../tasks" }
+ts-rs.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+access = { path = "../access" }
+db = { path = "../db", features = ["testing"] }
+realtime = { path = "../realtime" }
+rust_decimal.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracking = { path = "../tracking" }

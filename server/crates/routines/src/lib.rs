@@ -11,6 +11,7 @@ mod progress;
 pub mod repo;
 mod service;
 mod streak;
+mod today;
 
 pub use completions::{
     BACKDATE_DAYS, COUNT_MAX, CompleteRoutineRequest, DAYS_MAX, RoutineDay, RoutineDaysQuery,
@@ -23,3 +24,4 @@ pub use model::{
 pub use progress::{RoutineProgress, overlap, routine_progress};
 pub use service::RoutinesService;
 pub use streak::{RoutineStreak, StreakDay, routine_streak, streak};
+pub use today::RoutineToday;
