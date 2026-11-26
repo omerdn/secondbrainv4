@@ -19,8 +19,10 @@ identity = { path = "../identity" }
 items = { path = "../items" }
 kernel = { path = "../kernel" }
 recurrence = { path = "../recurrence" }
+rust_decimal.workspace = true
 serde.workspace = true
 sqlx.workspace = true
+tracking = { path = "../tracking" }
 ts-rs.workspace = true
 uuid.workspace = true
 

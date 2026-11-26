@@ -14,7 +14,8 @@ use items::{ItemsAccessContext, ItemsService, NewItem};
 use kernel::{AppError, FixedClock};
 use recurrence::{PlanVersion, Schedule};
 use routines::{
-    ChangePlanRequest, CreateRoutineRequest, RoutineView, RoutinesService, UpdateRoutineRequest,
+    ChangePlanRequest, CompleteRoutineRequest, CreateRoutineRequest, RoutineDaysQuery, RoutineView,
+    RoutinesService, UndoCompletionQuery, UpdateRoutineRequest,
 };
 use uuid::Uuid;
 
@@ -493,5 +494,236 @@ async fn a_routine_in_the_trash_cannot_change() {
             .change_plan(w.owner, routine.item.id, plan("FREQ=WEEKLY"))
             .await,
         Err(AppError::Conflict(_))
+    ));
+}
+
+fn on(date: NaiveDate) -> CompleteRoutineRequest {
+    CompleteRoutineRequest {
+        date: Some(date),
+        count: None,
+    }
+}
+
+async fn with_target(w: &World, target: i32) -> Uuid {
+    w.routines
+        .create(
+            w.owner,
+            CreateRoutineRequest {
+                daily_target: Some(target),
+                ..request("FREQ=DAILY")
+            },
+        )
+        .await
+        .unwrap()
+        .item
+        .id
+}
+
+#[tokio::test]
+async fn r4_a_partial_day_counts() {
+    let w = World::new().await;
+    let id = with_target(&w, 8).await;
+    let mut last = None;
+    for _ in 0..5 {
+        last = Some(
+            w.routines
+                .complete(w.owner, id, CompleteRoutineRequest::default())
+                .await
+                .unwrap(),
+        );
+    }
+    let day_state = last.unwrap();
+    assert_eq!(
+        (day_state.date, day_state.done, day_state.target),
+        (day(23), 5, 8)
+    );
+    assert!(!day_state.complete);
+    let more = CompleteRoutineRequest {
+        count: Some(3),
+        ..CompleteRoutineRequest::default()
+    };
+    assert!(
+        w.routines
+            .complete(w.owner, id, more)
+            .await
+            .unwrap()
+            .complete
+    );
+}
+
+#[tokio::test]
+async fn r7_only_the_last_three_days_can_be_marked() {
+    let w = World::new().await;
+    let id = w.routine("FREQ=DAILY").await.item.id;
+    assert!(w.routines.complete(w.owner, id, on(day(20))).await.is_ok());
+    for bad in [day(19), day(24)] {
+        assert!(matches!(
+            w.routines.complete(w.owner, id, on(bad)).await,
+            Err(AppError::Validation(_))
+        ));
+    }
+}
+
+#[tokio::test]
+async fn r7_today_is_the_routines_own_day() {
+    let w = World::new().await;
+    let id = w.routine("FREQ=DAILY").await.item.id;
+    // 23 November 22:30 UTC is already the 24th in Istanbul, so the 21st is the last allowed.
+    w.clock
+        .set(Utc.with_ymd_and_hms(2026, 11, 23, 22, 30, 0).unwrap());
+    let today = w
+        .routines
+        .complete(w.owner, id, CompleteRoutineRequest::default())
+        .await
+        .unwrap();
+    assert_eq!(today.date, day(24));
+    assert!(w.routines.complete(w.owner, id, on(day(21))).await.is_ok());
+    assert!(w.routines.complete(w.owner, id, on(day(20))).await.is_err());
+}
+
+#[tokio::test]
+async fn a_day_without_an_occurrence_cannot_be_marked() {
+    let w = World::new().await;
+    // 23 November 2026 is a Monday.
+    let id = w.routine("FREQ=WEEKLY;BYDAY=MO").await.item.id;
+    assert!(w.routines.complete(w.owner, id, on(day(23))).await.is_ok());
+    assert!(matches!(
+        w.routines.complete(w.owner, id, on(day(22))).await,
+        Err(AppError::Validation(_))
+    ));
+}
+
+#[tokio::test]
+async fn r11_each_day_keeps_the_target_of_its_plan() {
+    let w = World::new().await;
+    let id = with_target(&w, 2).await;
+    w.routines.complete(w.owner, id, on(day(22))).await.unwrap();
+    let change = ChangePlanRequest {
+        daily_target: Some(5),
+        ..plan("FREQ=DAILY")
+    };
+    w.routines.change_plan(w.owner, id, change).await.unwrap();
+    let days = w
+        .routines
+        .days(
+            w.owner,
+            id,
+            RoutineDaysQuery {
+                from: Some(day(22)),
+                to: Some(day(23)),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!((days[0].target, days[0].done), (2, 1));
+    assert_eq!((days[1].target, days[1].done), (5, 0));
+}
+
+#[tokio::test]
+async fn undo_takes_back_the_latest_and_is_harmless_when_empty() {
+    let w = World::new().await;
+    let id = with_target(&w, 3).await;
+    let two = CompleteRoutineRequest {
+        count: Some(2),
+        ..CompleteRoutineRequest::default()
+    };
+    w.routines.complete(w.owner, id, two).await.unwrap();
+    // A minute later: "latest" is by the time it was entered.
+    w.clock.advance(Duration::minutes(1));
+    w.routines
+        .complete(w.owner, id, CompleteRoutineRequest::default())
+        .await
+        .unwrap();
+    let query = UndoCompletionQuery::default();
+    assert_eq!(
+        w.routines
+            .undo_completion(w.owner, id, query)
+            .await
+            .unwrap()
+            .done,
+        2
+    );
+    assert_eq!(
+        w.routines
+            .undo_completion(w.owner, id, query)
+            .await
+            .unwrap()
+            .done,
+        0
+    );
+    assert_eq!(
+        w.routines
+            .undo_completion(w.owner, id, query)
+            .await
+            .unwrap()
+            .done,
+        0
+    );
+    let old = UndoCompletionQuery {
+        date: Some(day(19)),
+    };
+    assert!(matches!(
+        w.routines.undo_completion(w.owner, id, old).await,
+        Err(AppError::Validation(_))
+    ));
+}
+
+#[tokio::test]
+async fn concurrent_completions_all_count() {
+    let w = World::new().await;
+    let id = with_target(&w, 8).await;
+    let add = || {
+        w.routines
+            .complete(w.owner, id, CompleteRoutineRequest::default())
+    };
+    let results = tokio::join!(add(), add(), add(), add());
+    assert!(results.0.is_ok() && results.1.is_ok() && results.2.is_ok() && results.3.is_ok());
+    let days = w
+        .routines
+        .days(w.owner, id, RoutineDaysQuery::default())
+        .await
+        .unwrap();
+    assert_eq!(days.len(), 30);
+    assert_eq!(days.last().unwrap().done, 4);
+}
+
+#[tokio::test]
+async fn a_range_must_be_valid() {
+    let w = World::new().await;
+    let id = w.routine("FREQ=DAILY").await.item.id;
+    let reversed = RoutineDaysQuery {
+        from: Some(day(10)),
+        to: Some(day(9)),
+    };
+    assert!(w.routines.days(w.owner, id, reversed).await.is_err());
+    let long = RoutineDaysQuery {
+        from: Some(day(1) - Duration::days(routines::DAYS_MAX)),
+        to: Some(day(1)),
+    };
+    assert!(w.routines.days(w.owner, id, long).await.is_err());
+}
+
+#[tokio::test]
+async fn v9_a_stranger_cannot_touch_completions() {
+    let w = World::new().await;
+    let id = w.routine("FREQ=DAILY").await.item.id;
+    let stranger = Uuid::now_v7();
+    assert!(matches!(
+        w.routines
+            .complete(stranger, id, CompleteRoutineRequest::default())
+            .await,
+        Err(AppError::NotFound)
+    ));
+    assert!(matches!(
+        w.routines
+            .undo_completion(stranger, id, UndoCompletionQuery::default())
+            .await,
+        Err(AppError::NotFound)
+    ));
+    assert!(matches!(
+        w.routines
+            .days(stranger, id, RoutineDaysQuery::default())
+            .await,
+        Err(AppError::NotFound)
     ));
 }

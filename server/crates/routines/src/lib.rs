@@ -4,11 +4,16 @@
 //! `items` is only reached through [`items::ItemsService`] (ADR-0007). Occurrences are computed by
 //! `recurrence` and never stored (ADR-0008).
 
+mod completions;
 pub mod http;
 mod model;
 pub mod repo;
 mod service;
 
+pub use completions::{
+    BACKDATE_DAYS, COUNT_MAX, CompleteRoutineRequest, DAYS_MAX, RoutineDay, RoutineDaysQuery,
+    UndoCompletionQuery, may_mark_day, routine_day,
+};
 pub use model::{
     ChangePlanRequest, CreateRoutineRequest, DAILY_TARGET_MAX, PlanVersionView, REMINDER_LIMIT,
     RoutineView, UpdateRoutineRequest, parse_reminders, parse_rules, parse_timezone, target_on,
