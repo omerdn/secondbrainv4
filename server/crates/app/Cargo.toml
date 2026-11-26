@@ -25,6 +25,7 @@ notebooks = { path = "../notebooks" }
 realtime = { path = "../realtime" }
 routines = { path = "../routines" }
 sessions = { path = "../sessions" }
+today = { path = "../today" }
 tasks = { path = "../tasks" }
 tracking = { path = "../tracking" }
 updates = { path = "../updates" }

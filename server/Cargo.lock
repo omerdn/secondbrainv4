@@ -95,6 +95,7 @@ dependencies = [
  "sha2 0.11.1",
  "sqlx",
  "tasks",
+ "today",
  "tokio",
  "tower",
  "tower-http 0.7.1",
@@ -4380,6 +4381,33 @@ name = "tinyvec"
 version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
+
+[[package]]
+name = "today"
+version = "0.0.0"
+dependencies = [
+ "access",
+ "axum",
+ "chrono",
+ "db",
+ "goals",
+ "identity",
+ "items",
+ "kernel",
+ "notebooks",
+ "realtime",
+ "routines",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "sessions",
+ "sqlx",
+ "tasks",
+ "tokio",
+ "tracking",
+ "ts-rs",
+ "uuid",
+]
 
 [[package]]
 name = "tokio"

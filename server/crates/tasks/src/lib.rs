@@ -4,6 +4,7 @@
 //! is only reached through [`items::ItemsService`] (ADR-0007).
 
 mod board;
+mod due;
 mod fractional;
 pub mod http;
 mod model;
@@ -15,6 +16,7 @@ pub use board::{
     Board, BoardCard, BoardColumn, COLUMN_LIMIT, CreateBoardColumnRequest, MoveBoardTaskRequest,
     UpdateBoardColumnRequest,
 };
+pub use due::DueTask;
 pub use fractional::{MAX_KEY_LEN, even_keys, key_between};
 pub use model::{
     CreateSubtaskRequest, CreateTaskRequest, SUBTASK_LIMIT, SubtaskView, TaskView,

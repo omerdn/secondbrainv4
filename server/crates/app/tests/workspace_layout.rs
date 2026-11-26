@@ -33,6 +33,7 @@ const EXPECTED_CRATES: &[&str] = &[
     "social",
     "tasks",
     "teams",
+    "today",
     "tracking",
     "updates",
 ];
