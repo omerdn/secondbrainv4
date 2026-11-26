@@ -17,7 +17,7 @@
 //!   when its last connection closes.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use access::{PermissionService, Perms};
@@ -40,9 +40,9 @@ use yrs::sync::{
 };
 use yrs::updates::decoder::{Decode, DecoderV1};
 use yrs::updates::encoder::{Encode, Encoder, EncoderV1};
-use yrs::{ClientID, Doc, ReadTxn, StateVector, Transact, Update};
+use yrs::{ClientID, Doc, Update};
 
-use crate::repo;
+use crate::{repo, snapshots};
 
 /// Largest frame accepted from a client. Large pastes arrive as a single update.
 const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
@@ -62,22 +62,14 @@ struct Room {
     awareness: Mutex<Awareness>,
     updates: broadcast::Sender<Arc<Vec<u8>>>,
     members: Mutex<HashMap<u64, Member>>,
+    /// Updates this room stored since it last asked for compaction.
+    stored_since_compaction: AtomicU32,
 }
 
 impl Room {
-    /// A room holding `stored`, the page's updates in order.
-    fn new(stored: &[Vec<u8>]) -> Result<Arc<Self>, yrs::encoding::read::Error> {
+    /// A room holding `doc`, the page as stored.
+    fn new(doc: Doc) -> Arc<Self> {
         let (updates, _) = broadcast::channel(BROADCAST_CAPACITY);
-        let doc = Doc::new();
-        {
-            let mut txn = doc.transact_mut();
-            for update in stored {
-                // Stored updates were decoded before they were written; one that no longer
-                // applies would be a bug, and dropping it would lose data, so it fails the room.
-                txn.apply_update(Update::decode_v1(update)?)
-                    .map_err(|_| yrs::encoding::read::Error::Custom("stored update".into()))?;
-            }
-        }
         {
             let tx = updates.clone();
             doc.observe_update_v1("fan-out", move |_, event| {
@@ -96,11 +88,12 @@ impl Room {
                 }
             });
         }
-        Ok(Arc::new(Self {
+        Arc::new(Self {
             awareness: Mutex::new(awareness),
             updates,
             members: Mutex::new(HashMap::new()),
-        }))
+            stored_since_compaction: AtomicU32::new(0),
+        })
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Awareness> {
@@ -146,10 +139,10 @@ impl Collab {
         if let Some(room) = rooms.get(&page) {
             return Ok(room.clone());
         }
-        let stored = repo::page_updates(&self.pool, page)
+        let doc = snapshots::load(&self.pool, page)
             .await
             .map_err(|err| AppError::Internal(Box::new(err)))?;
-        let room = Room::new(&stored).map_err(|err| AppError::Internal(Box::new(err)))?;
+        let room = Room::new(doc);
         rooms.insert(page, room.clone());
         Ok(room)
     }
@@ -183,24 +176,43 @@ impl Collab {
             .count()
     }
 
-    /// The page's current content as a Yjs update, from the stored updates (tests and
-    /// snapshots).
+    /// The page's current content as a Yjs update, as stored (tests).
     ///
     /// # Errors
     /// [`AppError::Internal`].
     pub async fn snapshot(&self, page: Uuid) -> Result<Vec<u8>, AppError> {
-        let stored = repo::page_updates(&self.pool, page)
+        let doc = snapshots::load(&self.pool, page)
             .await
             .map_err(|err| AppError::Internal(Box::new(err)))?;
-        let room = Room::new(&stored).map_err(|err| AppError::Internal(Box::new(err)))?;
-        let awareness = room.lock();
-        let txn = awareness.doc().transact();
-        Ok(txn.encode_state_as_update_v1(&StateVector::default()))
+        Ok(snapshots::encode(&doc))
     }
 
-    /// Writes `update` for `page` (Y3).
-    async fn persist(&self, page: Uuid, update: &[u8], author: Uuid) -> sqlx::Result<()> {
-        repo::append_update(&self.pool, page, update, author, self.clock.now()).await
+    /// Writes `update` for `page` (Y3), and asks for compaction every
+    /// [`snapshots::COMPACT_EVERY`] updates of the room.
+    async fn persist(
+        &self,
+        room: &Room,
+        page: Uuid,
+        update: &[u8],
+        author: Uuid,
+    ) -> sqlx::Result<()> {
+        repo::append_update(&self.pool, page, update, author, self.clock.now()).await?;
+        let stored = room.stored_since_compaction.fetch_add(1, Ordering::Relaxed) + 1;
+        if stored >= snapshots::COMPACT_EVERY {
+            room.stored_since_compaction.store(0, Ordering::Relaxed);
+            let mut conn = self.pool.acquire().await?;
+            // A lost request is harmless: the 10-minute sweep compacts the page anyway.
+            if let Err(err) = jobs::enqueue(
+                &mut conn,
+                &snapshots::CompactPage { page_id: page },
+                jobs::EnqueueOptions::default(),
+            )
+            .await
+            {
+                tracing::warn!(error = %err, "page compaction not queued");
+            }
+        }
+        Ok(())
     }
 }
 
@@ -380,7 +392,7 @@ impl Link {
                             Step::Store(update) => {
                                 // Y3: stored before anyone sees it; on failure the client
                                 // keeps the change and sends it again after reconnecting.
-                                if let Err(err) = self.collab.persist(self.page, &update, self.user).await {
+                                if let Err(err) = self.collab.persist(&self.room, self.page, &update, self.user).await {
                                     tracing::error!(error = %err, "page update not stored");
                                     break 'connection;
                                 }
