@@ -9,8 +9,26 @@ use kernel::{AppError, SharedClock};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::model::{CreateNotebookRequest, CreatePageRequest, Notebook, NotebookSummary, Page};
-use crate::repo::{self, NotebookRow, PageRow};
+use base64::Engine;
+
+use crate::collab::Collab;
+use crate::model::{
+    CreateNotebookRequest, CreatePageRequest, Notebook, NotebookSummary, Page, PageVersion,
+    PageVersionContent, preview,
+};
+use crate::repo::{self, NotebookRow, PageRow, VersionRow};
+use crate::snapshots;
+
+/// Versions one history request returns.
+const VERSIONS_PAGE: i64 = 50;
+
+fn listed(row: VersionRow) -> PageVersion {
+    PageVersion {
+        version: row.version,
+        created_at: row.created_at,
+        preview: preview(&row.plain_text),
+    }
+}
 
 fn internal(err: impl std::error::Error + Send + Sync + 'static) -> AppError {
     AppError::Internal(Box::new(err))
@@ -241,5 +259,88 @@ impl NotebooksService {
             notebook_id: row.notebook_id,
             process_of_item_id: row.process_of_item_id,
         })
+    }
+
+    /// A page's version history, newest first, older than `before` if given (VIEW, Y3).
+    ///
+    /// # Errors
+    /// [`AppError::NotFound`] or [`AppError::Internal`].
+    pub async fn versions(
+        &self,
+        actor: Uuid,
+        page: Uuid,
+        before: Option<i32>,
+    ) -> Result<Vec<PageVersion>, AppError> {
+        self.page(actor, page).await?;
+        let rows = repo::versions(&self.pool, page, before, VERSIONS_PAGE)
+            .await
+            .map_err(internal)?;
+        Ok(rows.into_iter().map(listed).collect())
+    }
+
+    /// One version's content (VIEW, Y3).
+    ///
+    /// # Errors
+    /// [`AppError::NotFound`] if the page or the version is not there, or [`AppError::Internal`].
+    pub async fn version(
+        &self,
+        actor: Uuid,
+        page: Uuid,
+        version: i32,
+    ) -> Result<PageVersionContent, AppError> {
+        self.page(actor, page).await?;
+        let (row, state) = repo::snapshot(&self.pool, page, version)
+            .await
+            .map_err(internal)?
+            .ok_or(AppError::NotFound)?;
+        Ok(PageVersionContent {
+            version: row.version,
+            created_at: row.created_at,
+            plain_text: row.plain_text,
+            state: base64::engine::general_purpose::STANDARD.encode(state),
+        })
+    }
+
+    /// Brings back an old version as a new change (EDIT, Y3, ARCHITECTURE §9). The current
+    /// content is kept as a version first and the result becomes the newest version, so nothing
+    /// in the history is lost; open editors receive the change at once.
+    ///
+    /// # Errors
+    /// [`AppError::NotFound`], [`AppError::Forbidden`] without EDIT, [`AppError::Conflict`] for a
+    /// page in the trash, or [`AppError::Internal`].
+    pub async fn restore_version(
+        &self,
+        actor: Uuid,
+        page: Uuid,
+        version: i32,
+        collab: &Collab,
+    ) -> Result<PageVersion, AppError> {
+        let item = self.page(actor, page).await?.item;
+        self.permissions
+            .require(&self.pool, actor, page, Perms::EDIT)
+            .await?;
+        if item.deleted_at.is_some() {
+            return Err(AppError::Conflict(
+                "the item is in the trash; restore it first".into(),
+            ));
+        }
+        let (_, state) = repo::snapshot(&self.pool, page, version)
+            .await
+            .map_err(internal)?
+            .ok_or(AppError::NotFound)?;
+        let target = snapshots::rebuild(Some(&state), &[]).map_err(internal)?;
+        snapshots::compact(&self.pool, page, self.clock.now())
+            .await
+            .map_err(internal)?;
+        collab.restore(page, &target, actor).await?;
+        snapshots::compact(&self.pool, page, self.clock.now())
+            .await
+            .map_err(internal)?;
+        let latest = repo::versions(&self.pool, page, None, 1)
+            .await
+            .map_err(internal)?
+            .pop()
+            .ok_or_else(|| AppError::Internal("restored page has no version".into()))?;
+        Ok(listed(latest))
     }
 }

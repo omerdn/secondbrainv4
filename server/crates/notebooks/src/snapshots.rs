@@ -10,9 +10,13 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 use yrs::types::text::YChange;
-use yrs::types::xml::{XmlFragment, XmlOut};
+use yrs::types::xml::{Xml, XmlFragment, XmlOut};
+use yrs::types::{Attrs, ToJson};
 use yrs::updates::decoder::Decode;
-use yrs::{Any, Doc, GetString, Out, ReadTxn, StateVector, Text, Transact, Update};
+use yrs::{
+    Any, Doc, GetString, Out, ReadTxn, StateVector, Text, Transact, TransactionMut, Update,
+    XmlElementPrelim, XmlTextPrelim, XmlTextRef,
+};
 
 use crate::repo;
 
@@ -143,6 +147,114 @@ pub fn plain_text(doc: &Doc) -> String {
         .chars()
         .take(PLAIN_TEXT_MAX_CHARS)
         .collect()
+}
+
+/// Copies the formatted text of `src` to the end of `dst`.
+fn copy_text<S: Text, D: Text>(
+    src: &S,
+    src_txn: &impl ReadTxn,
+    dst: &D,
+    txn: &mut TransactionMut<'_>,
+) {
+    for chunk in src.diff(src_txn, YChange::identity) {
+        let attrs: Attrs = chunk.attributes.map(|attrs| *attrs).unwrap_or_default();
+        let at = dst.len(txn);
+        match chunk.insert {
+            Out::Any(Any::String(s)) => dst.insert_with_attributes(txn, at, &s, attrs),
+            other => {
+                dst.insert_embed_with_attributes(txn, at, other.to_json(src_txn), attrs);
+            }
+        }
+    }
+}
+
+/// Copies the attributes of `src` onto `dst`.
+fn copy_attributes(
+    src: &impl Xml,
+    src_txn: &impl ReadTxn,
+    dst: &impl Xml,
+    txn: &mut TransactionMut<'_>,
+) {
+    for (key, value) in src.attributes(src_txn) {
+        dst.insert_attribute(txn, key, value.to_json(src_txn));
+    }
+}
+
+/// Appends deep copies of the children of `src` to `dst` (another document).
+fn copy_children(
+    src: &impl XmlFragment,
+    src_txn: &impl ReadTxn,
+    dst: &impl XmlFragment,
+    txn: &mut TransactionMut<'_>,
+) {
+    for child in src.children(src_txn) {
+        match child {
+            XmlOut::Element(element) => {
+                let copy = dst.push_back(txn, XmlElementPrelim::empty(element.tag().as_ref()));
+                copy_attributes(&element, src_txn, &copy, txn);
+                copy_children(&element, src_txn, &copy, txn);
+            }
+            XmlOut::Text(text) => {
+                let copy: XmlTextRef = dst.push_back(txn, XmlTextPrelim::new(""));
+                copy_attributes(&text, src_txn, &copy, txn);
+                copy_text(&text, src_txn, &copy, txn);
+            }
+            // y-prosemirror never nests fragments; keep their content in place anyway.
+            XmlOut::Fragment(fragment) => copy_children(&fragment, src_txn, dst, txn),
+        }
+    }
+}
+
+/// The update that turns `current` into the content of `target`, applied on top of `current`
+/// (PRD Y3, ARCHITECTURE §9): restoring a version is a new change, so history stays and
+/// concurrent edits merge. Empty if both already hold the same content.
+#[must_use]
+pub fn revert_update(current: &Doc, target: &Doc) -> Vec<u8> {
+    if encode_content(current) == encode_content(target) {
+        return Vec::new();
+    }
+    // A copy with its own client id, so the change never collides with an editor's.
+    let scratch = Doc::new();
+    {
+        let mut txn = scratch.transact_mut();
+        if let Ok(update) = Update::decode_v1(&encode(current)) {
+            let _ = txn.apply_update(update);
+        }
+    }
+    let before = scratch.transact().state_vector();
+    let fragment = scratch.get_or_insert_xml_fragment(PROSEMIRROR_ROOT);
+    let text = scratch.get_or_insert_text(TEXT_ROOT);
+    {
+        let target_txn = target.transact();
+        let mut txn = scratch.transact_mut();
+        let len = fragment.len(&txn);
+        fragment.remove_range(&mut txn, 0, len);
+        if let Some(src) = target_txn.get_xml_fragment(PROSEMIRROR_ROOT) {
+            copy_children(&src, &target_txn, &fragment, &mut txn);
+        }
+        let len = text.len(&txn);
+        text.remove_range(&mut txn, 0, len);
+        if let Some(src) = target_txn.get_text(TEXT_ROOT) {
+            copy_text(&src, &target_txn, &text, &mut txn);
+        }
+    }
+    scratch.transact().encode_state_as_update_v1(&before)
+}
+
+/// The content of `doc` as comparable text: its structure, attributes and formatting.
+fn encode_content(doc: &Doc) -> String {
+    let txn = doc.transact();
+    let mut out = String::new();
+    if let Some(root) = txn.get_xml_fragment(PROSEMIRROR_ROOT) {
+        out.push_str(&root.get_string(&txn));
+    }
+    out.push('\u{0}');
+    if let Some(text) = txn.get_text(TEXT_ROOT) {
+        for chunk in text.diff(&txn, YChange::identity) {
+            out.push_str(&format!("{:?}{:?}", chunk.insert, chunk.attributes));
+        }
+    }
+    out
 }
 
 /// What one compaction did.
@@ -309,6 +421,86 @@ mod tests {
             rebuild(None, &[vec![1, 2, 3]]),
             Err(PageError::Decode(_))
         ));
+    }
+
+    /// A TipTap-like document: a heading with a level and a paragraph with bold text.
+    fn rich(heading: &str, body: &str) -> Doc {
+        let doc = Doc::new();
+        let root = doc.get_or_insert_xml_fragment(PROSEMIRROR_ROOT);
+        {
+            let mut txn = doc.transact_mut();
+            let h = root.push_back(&mut txn, XmlElementPrelim::empty("heading"));
+            h.insert_attribute(&mut txn, "level", Any::from(2));
+            h.push_back(&mut txn, XmlTextPrelim::new(heading));
+            let p = root.push_back(&mut txn, XmlElementPrelim::empty("paragraph"));
+            let text = p.push_back(&mut txn, XmlTextPrelim::new(body));
+            text.format(
+                &mut txn,
+                0,
+                1,
+                HashMap::from([("bold".into(), Any::Bool(true))]),
+            );
+        }
+        doc
+    }
+
+    fn apply(doc: &Doc, update: &[u8]) {
+        doc.transact_mut()
+            .apply_update(Update::decode_v1(update).unwrap())
+            .unwrap();
+    }
+
+    fn copy(doc: &Doc) -> Doc {
+        rebuild(Some(&encode(doc)), &[]).unwrap()
+    }
+
+    #[test]
+    fn y3_reverting_brings_back_structure_attributes_and_formatting() {
+        let old = rich("Eski", "kalın");
+        let current = copy(&old);
+        // Edited since: more text and another block.
+        {
+            let root = current.get_or_insert_xml_fragment(PROSEMIRROR_ROOT);
+            let mut txn = current.transact_mut();
+            root.push_back(&mut txn, XmlElementPrelim::empty("paragraph"))
+                .push_back(&mut txn, XmlTextPrelim::new("yeni"));
+        }
+        assert_ne!(encode_content(&current), encode_content(&old));
+        let update = revert_update(&current, &old);
+        apply(&current, &update);
+        assert_eq!(encode_content(&current), encode_content(&old));
+        assert_eq!(plain_text(&current), "Eski\nkalın");
+        // Nothing changes when the content is already the same.
+        assert!(revert_update(&current, &old).is_empty());
+    }
+
+    #[test]
+    fn y3_a_revert_merges_with_a_concurrent_edit() {
+        let old = Doc::new();
+        let text = old.get_or_insert_text(TEXT_ROOT);
+        text.insert(&mut old.transact_mut(), 0, "bir");
+        let server = copy(&old);
+        let text = server.get_or_insert_text(TEXT_ROOT);
+        let len = text.len(&server.transact());
+        text.insert(&mut server.transact_mut(), len, " iki");
+        // An editor types while the revert is being made.
+        let editor = copy(&server);
+        let before = editor.transact().state_vector();
+        let etext = editor.get_or_insert_text(TEXT_ROOT);
+        let len = etext.len(&editor.transact());
+        etext.insert(&mut editor.transact_mut(), len, " üç");
+        let typed = editor.transact().encode_state_as_update_v1(&before);
+
+        let revert = revert_update(&server, &old);
+        apply(&server, &typed);
+        apply(&server, &revert);
+        apply(&editor, &revert);
+        // Both converge; the old content is back and the concurrent typing is kept (no data
+        // loss). Where the typing lands relative to the restored text is up to the CRDT.
+        let result = plain_text(&server);
+        assert_eq!(result, plain_text(&editor));
+        assert!(result.contains("bir") && result.contains("üç"), "{result}");
+        assert!(!result.contains("iki"), "{result}");
     }
 
     use std::collections::HashMap;

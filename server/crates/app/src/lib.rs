@@ -199,6 +199,7 @@ where
                             items.clone(),
                         ),
                         identity: identity.clone(),
+                        collab: collab.clone(),
                     },
                 ))
                 .merge(goals::http::router(goals::http::GoalsHttpState {

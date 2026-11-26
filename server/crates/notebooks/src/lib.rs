@@ -2,8 +2,8 @@
 //!
 //! - Notebooks and pages (T2.5.1, PRD Y1, Y2, Y5): detail rows of `notebook` and `page` items;
 //!   items are only reached through [`items::ItemsService`] (ADR-0007).
-//! - [`collab`]: `GET /collab/{page_id}`, y-sync over WebSocket on [`yrs`] (spike T0.6.2,
-//!   development only until E2.5 adds permissions and persistence).
+//! - [`collab`]: `GET /collab/{page_id}`, y-sync over WebSocket on [`yrs`] (T2.5.2).
+//! - [`snapshots`]: compaction, plain text and the version history (T2.5.3, T2.5.4, PRD Y3).
 
 pub mod collab;
 pub mod http;
@@ -13,6 +13,7 @@ mod service;
 pub mod snapshots;
 
 pub use model::{
-    CreateNotebookRequest, CreatePageRequest, Notebook, NotebookSummary, Page, default_title,
+    CreateNotebookRequest, CreatePageRequest, Notebook, NotebookSummary, Page, PageVersion,
+    PageVersionContent, VersionsQuery, default_title,
 };
 pub use service::NotebooksService;
