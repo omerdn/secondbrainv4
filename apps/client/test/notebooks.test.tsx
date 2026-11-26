@@ -192,3 +192,67 @@ describe("page screen", () => {
     expect(await screen.findByText(i18n.t("items.detail.notFound"))).toBeTruthy();
   });
 });
+
+describe("page links (B1, V4, V7)", () => {
+  const task = item("t1", "task", "Taşınma");
+  const explanation = (permissions: string[]) => ({ permissions, reasons: [] });
+
+  it("shows who gains access before linking, and links only after approval", async () => {
+    let links: unknown[] = [];
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /pages/p1": () => json(200, pageOf("p1", "Okuma notları")),
+      "GET /items/p1/links": () => json(200, links),
+      "GET /access/items/p1/explanation": () =>
+        json(200, explanation(["view", "edit", "share", "link", "manage", "delete"])),
+      "GET /items/filter": () =>
+        json(200, { items: [task, item("n9", "notebook", "Defter")], next_cursor: null }),
+      "POST /access/preview": () =>
+        json(200, {
+          items: [{ item_id: "p1", new_viewers: ["u2"] }],
+          people: [{ id: "u2", display_name: "Ayşe" }],
+        }),
+      "PUT /items/p1/links/t1": () => {
+        links = [{ id: "l1", direction: "outgoing", item: task, created_at: at }];
+        return json(200, links[0]);
+      },
+    });
+    await open(server, "/pages/p1");
+    expect(await screen.findByText("Bu sayfa bir nesneye bağlı değil.")).toBeTruthy();
+    await fireEvent.press(await screen.findByRole("button", { name: "Nesneye bağla" }));
+    // Notebooks are not offered (B1).
+    expect(await screen.findByRole("button", { name: "Taşınma nesnesine bağla" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Defter nesnesine bağla" })).toBeNull();
+    await fireEvent.press(screen.getByRole("button", { name: "Taşınma nesnesine bağla" }));
+    // V7: the people who would gain access, before anything changes.
+    expect(await screen.findByText("Ayşe")).toBeTruthy();
+    expect(server.calls.find((call) => call.path === "/access/preview")?.body).toEqual({
+      action: "link",
+      page_id: "p1",
+      item_id: "t1",
+    });
+    expect(server.calls.some((call) => call.method === "PUT")).toBe(false);
+    await fireEvent.press(screen.getByRole("button", { name: "Bağla" }));
+    expect(await screen.findByText("Taşınma")).toBeTruthy();
+    expect(
+      server.calls.some((call) => call.method === "PUT" && call.path === "/items/p1/links/t1"),
+    ).toBe(true);
+  });
+
+  it("offers no linking without LINK on the page (V4)", async () => {
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /pages/p1": () => json(200, pageOf("p1", "Ortak sayfa")),
+      "GET /items/p1/links": () =>
+        json(200, [{ id: "l1", direction: "outgoing", item: task, created_at: at }]),
+      "GET /access/items/p1/explanation": () => json(200, explanation(["view", "edit"])),
+    });
+    await open(server, "/pages/p1");
+    expect(await screen.findByText("Taşınma")).toBeTruthy();
+    await waitFor(() => {
+      expect(server.calls.some((call) => call.path === "/access/items/p1/explanation")).toBe(true);
+    });
+    expect(screen.queryByRole("button", { name: "Nesneye bağla" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Taşınma bağlantısını kaldır" })).toBeNull();
+  });
+});
