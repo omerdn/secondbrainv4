@@ -18,6 +18,7 @@ pub mod id;
 pub mod pagination;
 pub mod redact;
 pub mod retry;
+pub mod search;
 pub mod validation;
 
 pub use clock::{Clock, FixedClock, SharedClock, SystemClock};

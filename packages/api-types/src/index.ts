@@ -92,6 +92,8 @@ export type * from "./generated/RoutinePlanVersion";
 export type * from "./generated/RoutineStreak";
 export type * from "./generated/RoutineToday";
 export type * from "./generated/SavedView";
+export type * from "./generated/SearchField";
+export type * from "./generated/SearchHit";
 export type * from "./generated/ServerMessage";
 export type * from "./generated/SessionDayStats";
 export type * from "./generated/SessionGlance";

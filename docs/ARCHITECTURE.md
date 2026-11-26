@@ -340,7 +340,8 @@ RECONNECTING ──(ok)──▶ ONLINE (+ tüm sorgular geçersiz kılınır ve
 ## 12. Arama
 - `items` tablosundaki başlık ve açıklama alanlarından, ayrıca `page_snapshots.plain_text` alanından bir `tsvector` üretilir. Türkçe yapılandırma ve `unaccent` uzantısı kullanılır. Yazım hatalarına tolerans için `pg_trgm` eklenir.
 - Her arama sorgusu `item_access` ile filtrelenir (AR2).
-- Ölçek gerektirirse Meilisearch'e geçilebilir. Bunun için arama, `SearchIndex` arayüzünün arkasında tutulur.
+- Her modül kendi tablosunu arar ve `kernel::search::SearchSource` arayüzünü uygular: `items` başlık, açıklama ve çağıranın kendi etiketleri (E2); `notebooks` sayfa içeriği. `search` crate'i sonuçları nesne bazında birleştirir, sıralar ve nesneleri `ItemsService` ile yükler (ADR-0007). Belge ve sorgu iki okumanın birleşimidir: Türkçe kök + aksansızlaştırma ve aksansızlaştırılmış metnin kökü (T2.7.5).
+- Ölçek gerektirirse Meilisearch'e geçilebilir: kaynaklar bu arayüzün arkasındadır.
 
 ## 13. Ek modül sistemi
 ```rust

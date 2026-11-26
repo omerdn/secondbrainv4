@@ -24,6 +24,7 @@ kernel = { path = "../kernel" }
 notebooks = { path = "../notebooks" }
 realtime = { path = "../realtime" }
 routines = { path = "../routines" }
+search = { path = "../search" }
 sessions = { path = "../sessions" }
 today = { path = "../today" }
 tasks = { path = "../tasks" }

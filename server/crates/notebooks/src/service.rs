@@ -37,10 +37,10 @@ fn internal(err: impl std::error::Error + Send + Sync + 'static) -> AppError {
 /// Shared handle; cheap to clone.
 #[derive(Clone)]
 pub struct NotebooksService {
-    pool: PgPool,
+    pub(crate) pool: PgPool,
     clock: SharedClock,
     access: AccessEngine<ItemsAccessContext>,
-    permissions: PermissionService<ItemsAccessContext>,
+    pub(crate) permissions: PermissionService<ItemsAccessContext>,
     items: ItemsService,
 }
 
