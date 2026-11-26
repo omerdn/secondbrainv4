@@ -20,6 +20,7 @@ kernel = { path = "../kernel" }
 rust_decimal.workspace = true
 serde.workspace = true
 sqlx.workspace = true
+tracking = { path = "../tracking" }
 ts-rs.workspace = true
 uuid.workspace = true
 

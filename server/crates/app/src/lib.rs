@@ -192,6 +192,18 @@ where
                         clock.clone(),
                         access_engine.permissions(),
                         items.clone(),
+                    )
+                    .with_progress(
+                        "task",
+                        std::sync::Arc::new(tasks::TaskProgress::new(pool.clone())),
+                    )
+                    .with_progress(
+                        "routine",
+                        std::sync::Arc::new(routines::RoutineProgress::new(pool.clone())),
+                    )
+                    .with_progress(
+                        "tracker",
+                        std::sync::Arc::new(tracking::TrackerProgress::new(pool.clone())),
                     ),
                     identity: identity.clone(),
                 }))
