@@ -62,6 +62,7 @@ export type * from "./generated/ResetPasswordRequest";
 export type * from "./generated/Routine";
 export type * from "./generated/RoutineDay";
 export type * from "./generated/RoutinePlanVersion";
+export type * from "./generated/RoutineStreak";
 export type * from "./generated/SavedView";
 export type * from "./generated/ServerMessage";
 export type * from "./generated/SessionInfo";

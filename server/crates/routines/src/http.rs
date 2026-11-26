@@ -11,10 +11,11 @@
 //! | POST  | `/routines/{id}/completions` | 201 [`RoutineDay`]; adds to a day (R4, R7); EDIT |
 //! | DELETE | `/routines/{id}/completions?date=` | 200 [`RoutineDay`]; takes back the latest; EDIT |
 //! | GET   | `/routines/{id}/completions?from=&to=` | 200 `RoutineDay[]`; VIEW |
+//! | GET   | `/routines/{id}/streak` | 200 [`RoutineStreak`]; R9; VIEW |
 
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::StatusCode;
-use axum::routing::{patch, post};
+use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use identity::IdentityService;
 use identity::http::Authenticated;
@@ -26,6 +27,7 @@ use crate::completions::{
 };
 use crate::model::{ChangePlanRequest, CreateRoutineRequest, RoutineView, UpdateRoutineRequest};
 use crate::service::RoutinesService;
+use crate::streak::RoutineStreak;
 
 /// State of the routine routes.
 #[derive(Clone)]
@@ -50,6 +52,7 @@ pub fn router(state: RoutinesHttpState) -> Router {
             "/routines/{id}/completions",
             post(complete).get(list_days).delete(undo),
         )
+        .route("/routines/{id}/streak", get(read_streak))
         .with_state(state)
 }
 
@@ -138,6 +141,18 @@ async fn list_days(
     state
         .routines
         .days(auth.user_id.as_uuid(), id, query)
+        .await
+        .map(Json)
+}
+
+async fn read_streak(
+    State(state): State<RoutinesHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+) -> Result<Json<RoutineStreak>, AppError> {
+    state
+        .routines
+        .streak(auth.user_id.as_uuid(), id)
         .await
         .map(Json)
 }

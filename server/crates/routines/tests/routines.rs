@@ -14,8 +14,8 @@ use items::{ItemsAccessContext, ItemsService, NewItem};
 use kernel::{AppError, FixedClock};
 use recurrence::{PlanVersion, Schedule};
 use routines::{
-    ChangePlanRequest, CompleteRoutineRequest, CreateRoutineRequest, RoutineDaysQuery, RoutineView,
-    RoutinesService, UndoCompletionQuery, UpdateRoutineRequest,
+    ChangePlanRequest, CompleteRoutineRequest, CreateRoutineRequest, RoutineDaysQuery,
+    RoutineStreak, RoutineView, RoutinesService, UndoCompletionQuery, UpdateRoutineRequest,
 };
 use uuid::Uuid;
 
@@ -726,4 +726,67 @@ async fn v9_a_stranger_cannot_touch_completions() {
             .await,
         Err(AppError::NotFound)
     ));
+    assert!(matches!(
+        w.routines.streak(stranger, id).await,
+        Err(AppError::NotFound)
+    ));
+}
+
+#[tokio::test]
+async fn r9_the_streak_comes_from_complete_occurrences() {
+    let w = World::new().await;
+    let id = with_target(&w, 2).await;
+    let streak = |current, today_pending| RoutineStreak {
+        current,
+        today_pending,
+    };
+    assert_eq!(
+        w.routines.streak(w.owner, id).await.unwrap(),
+        streak(0, true)
+    );
+    for date in [day(20), day(21), day(22)] {
+        let twice = CompleteRoutineRequest {
+            date: Some(date),
+            count: Some(2),
+        };
+        w.routines.complete(w.owner, id, twice).await.unwrap();
+    }
+    // Today is still open: it does not break the streak (R9).
+    assert_eq!(
+        w.routines.streak(w.owner, id).await.unwrap(),
+        streak(3, true)
+    );
+    // A partial day does not continue it (R4, R9).
+    w.routines.complete(w.owner, id, on(day(23))).await.unwrap();
+    assert_eq!(
+        w.routines.streak(w.owner, id).await.unwrap(),
+        streak(3, true)
+    );
+    w.routines.complete(w.owner, id, on(day(23))).await.unwrap();
+    assert_eq!(
+        w.routines.streak(w.owner, id).await.unwrap(),
+        streak(4, false)
+    );
+    // Two days later the 24th was missed.
+    w.clock.advance(Duration::days(2));
+    assert_eq!(
+        w.routines.streak(w.owner, id).await.unwrap(),
+        streak(0, true)
+    );
+}
+
+#[tokio::test]
+async fn r9_days_without_an_occurrence_do_not_break_the_streak() {
+    let w = World::new().await;
+    // Mondays: the 16th and the 23rd.
+    let id = w.routine("FREQ=WEEKLY;BYDAY=MO").await.item.id;
+    w.clock.set(now() - Duration::days(7));
+    w.routines.complete(w.owner, id, on(day(16))).await.unwrap();
+    w.clock.set(now());
+    w.routines.complete(w.owner, id, on(day(23))).await.unwrap();
+    // Sunday the 29th: six days without an occurrence since the last one.
+    w.clock.set(now() + Duration::days(6));
+    let result = w.routines.streak(w.owner, id).await.unwrap();
+    assert_eq!(result.current, 2);
+    assert!(!result.today_pending);
 }
