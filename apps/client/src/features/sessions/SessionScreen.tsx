@@ -297,7 +297,7 @@ function Timer({
                     preset === p ? "border-primary bg-primary/10" : "border-border"
                   }`}
                 >
-                  <Text>{presetLabel(t, p, session.pomodoro)}</Text>
+                  <PresetLabel preset={p} pomodoro={session.pomodoro} />
                 </Pressable>
               ))}
             </View>
@@ -401,16 +401,17 @@ function Timer({
   );
 }
 
-function presetLabel(
-  t: ReturnType<typeof useTranslation>["t"],
-  preset: Preset,
-  pomodoro: PomodoroConfig,
-): string {
+function PresetLabel({ preset, pomodoro }: { preset: Preset; pomodoro: PomodoroConfig }) {
+  const { t } = useTranslation();
   const { planned_ms } = presetStart(preset, pomodoro);
   const name = t(`sessions.presets.${preset}`);
-  return planned_ms === undefined
-    ? name
-    : t("sessions.presetWithMinutes", { name, minutes: Math.round(planned_ms / 60_000) });
+  return (
+    <Text>
+      {planned_ms === undefined
+        ? name
+        : t("sessions.presetWithMinutes", { name, minutes: Math.round(planned_ms / 60_000) })}
+    </Text>
+  );
 }
 
 /** Picks the item the time goes to, or none (W3). Rows are pressed; no hover. */

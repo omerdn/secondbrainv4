@@ -1,5 +1,5 @@
-import { PlaceholderScreen } from "@/features/shell";
+import { TodayScreen } from "@/features/today";
 
 export default function Page() {
-  return <PlaceholderScreen section="today" />;
+  return <TodayScreen />;
 }
