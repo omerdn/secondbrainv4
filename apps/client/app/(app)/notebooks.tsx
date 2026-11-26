@@ -1,5 +1,5 @@
-import { PlaceholderScreen } from "@/features/shell";
+import { NotebooksScreen } from "@/features/notebooks";
 
 export default function Page() {
-  return <PlaceholderScreen section="notebooks" />;
+  return <NotebooksScreen />;
 }

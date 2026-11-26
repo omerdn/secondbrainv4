@@ -112,10 +112,10 @@ describe("wide layout (≥ md)", () => {
 
   it("describes what each placeholder section will hold (T0.7.5)", async () => {
     setWidth(1280);
-    await signedIn("/notebooks");
-    await header("Defterler");
+    await signedIn("/calendar");
+    await header(i18n.t("nav.calendar"));
     expect(screen.getByText(i18n.t("common.comingSoon.title"))).toBeOnTheScreen();
-    expect(screen.getByText(i18n.t("common.comingSoon.sections.notebooks"))).toBeOnTheScreen();
+    expect(screen.getByText(i18n.t("common.comingSoon.sections.calendar"))).toBeOnTheScreen();
   });
 
   it("keeps the sign-out action in the account card of the settings", async () => {

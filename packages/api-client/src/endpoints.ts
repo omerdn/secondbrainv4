@@ -12,6 +12,8 @@ import type {
   Board,
   CreateBoardColumnRequest,
   CreateGoalRequest,
+  CreateNotebookRequest,
+  CreatePageRequest,
   CompleteRoutineRequest,
   CreateRoutineRequest,
   CreateSavedViewRequest,
@@ -35,6 +37,9 @@ import type {
   LinkGoalRequest,
   LoginRequest,
   MoveBoardTaskRequest,
+  Notebook,
+  NotebookPage,
+  NotebookSummary,
   Page,
   RegisterRequest,
   ResetPasswordRequest,
@@ -104,6 +109,9 @@ export function endpoints(api: ApiClient) {
         api.post<Item>(`/items/${encodeURIComponent(id)}/restore`, undefined, options),
       unarchive: (id: string, options?: MutationOptions) =>
         api.post<Item>(`/items/${encodeURIComponent(id)}/unarchive`, undefined, options),
+      /** To the trash, restorable for 30 days; owner only (PRD N4, V6). */
+      trash: (id: string, options?: MutationOptions) =>
+        api.delete(`/items/${encodeURIComponent(id)}`, options),
       /** Accessible items matching `filter`, newest first (PRD F1). */
       filter: (filter: ItemFilter, page: { cursor?: string; limit?: number } = {}) =>
         api.get<Page<Item>>("/items/filter", {
@@ -181,6 +189,18 @@ export function endpoints(api: ApiClient) {
         api.delete(`/board/columns/${encodeURIComponent(id)}`, options),
       moveTask: (taskId: string, body: MoveBoardTaskRequest, options?: MutationOptions) =>
         api.put<Board>(`/board/tasks/${encodeURIComponent(taskId)}`, body, options),
+    },
+    notebooks: {
+      /** The caller's notebooks, default first; creates the default one once (PRD Y1). */
+      list: () => api.get<NotebookSummary[]>("/notebooks"),
+      create: (body: CreateNotebookRequest, options?: MutationOptions) =>
+        api.post<Notebook>("/notebooks", body, options),
+      /** The notebook with the pages the caller can see (PRD V2). */
+      get: (id: string) => api.get<Notebook>(`/notebooks/${encodeURIComponent(id)}`),
+      /** The page belongs to the notebook's owner (PRD Y5). */
+      createPage: (id: string, body: CreatePageRequest, options?: MutationOptions) =>
+        api.post<NotebookPage>(`/notebooks/${encodeURIComponent(id)}/pages`, body, options),
+      page: (id: string) => api.get<NotebookPage>(`/pages/${encodeURIComponent(id)}`),
     },
     goals: {
       /** Both dates are required (PRD D1). */
