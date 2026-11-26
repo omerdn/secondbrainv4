@@ -278,3 +278,156 @@ async fn sessions_and_items_of_others_stay_hidden() {
         Err(AppError::Validation(_))
     ));
 }
+
+fn stopwatch(item: Option<Uuid>) -> Command {
+    Command::Start {
+        mode: Mode::Stopwatch,
+        item_id: item,
+        planned_ms: None,
+    }
+}
+
+#[tokio::test]
+async fn w4_the_log_is_in_order_and_w5_nothing_is_completed() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com").await;
+    let tasks = tasks::TasksService::new(
+        w._db.pool().clone(),
+        w.clock.clone(),
+        AccessEngine::new(ItemsAccessContext, AccessConfig::default()).permissions(),
+        w.items.clone(),
+    );
+    let task = tasks
+        .create(
+            ada,
+            tasks::CreateTaskRequest {
+                title: "Rapor".into(),
+                description: None,
+                start_date: None,
+                due_date: None,
+                subtasks: None,
+            },
+        )
+        .await
+        .unwrap()
+        .item
+        .id;
+    let gitar = w.task(ada, "Gitar").await;
+    let s = w
+        .sessions
+        .open(ada, OpenRequest::default())
+        .await
+        .unwrap()
+        .id;
+    // 45 min Gitar → 5 min break → 25 min Rapor (W4's example).
+    w.sessions
+        .command(ada, s, stopwatch(Some(gitar)))
+        .await
+        .unwrap();
+    w.wait(45);
+    w.sessions.command(ada, s, Command::Stop).await.unwrap();
+    let pause = Command::Start {
+        mode: Mode::Break,
+        item_id: None,
+        planned_ms: Some(5 * 60_000),
+    };
+    w.sessions.command(ada, s, pause).await.unwrap();
+    w.wait(5);
+    w.sessions.command(ada, s, Command::Stop).await.unwrap();
+    let pomodoro = Command::Start {
+        mode: Mode::Pomodoro,
+        item_id: Some(task),
+        planned_ms: None,
+    };
+    w.sessions.command(ada, s, pomodoro).await.unwrap();
+    w.wait(25);
+    let session = w.sessions.command(ada, s, Command::Stop).await.unwrap();
+    let log: Vec<(Mode, Option<Uuid>, i64)> = session
+        .segments
+        .iter()
+        .map(|seg| (seg.mode, seg.item_id, seg.active_ms / 60_000))
+        .collect();
+    assert_eq!(
+        log,
+        vec![
+            (Mode::Stopwatch, Some(gitar), 45),
+            (Mode::Break, None, 5),
+            (Mode::Pomodoro, Some(task), 25),
+        ]
+    );
+    // W5: the time is statistics; the task is not done, nor any of its subtasks.
+    let view = tasks.task(ada, task).await.unwrap();
+    assert!(view.subtasks.iter().all(|sub| sub.done_at.is_none()));
+    w.sessions.close(ada, s).await.unwrap();
+    let history = w.sessions.history(ada, None).await.unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(
+        (history[0].work_ms, history[0].break_ms),
+        (70 * 60_000, 5 * 60_000)
+    );
+    assert_eq!(history[0].segments, 3);
+    assert!(!history[0].open);
+}
+
+#[tokio::test]
+async fn statistics_follow_the_users_time_zone_and_include_the_running_segment() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com").await;
+    let gitar = w.task(ada, "Gitar").await;
+    let istanbul: chrono_tz::Tz = "Europe/Istanbul".parse().unwrap();
+    // 09:00 UTC on the 26th; move to 22:30 UTC = 01:30 on the 27th in Istanbul.
+    w.wait(13 * 60 + 30);
+    let s = w
+        .sessions
+        .open(ada, OpenRequest::default())
+        .await
+        .unwrap()
+        .id;
+    w.sessions
+        .command(ada, s, stopwatch(Some(gitar)))
+        .await
+        .unwrap();
+    w.wait(20);
+    // Still running: counted up to now.
+    let day = |d| chrono::NaiveDate::from_ymd_opt(2026, 11, d).unwrap();
+    let local = w
+        .sessions
+        .stats(ada, (Some(day(26)), Some(day(27))), istanbul)
+        .await
+        .unwrap();
+    assert_eq!(local.days[0].work_ms, 0);
+    assert_eq!(local.days[1].work_ms, 20 * 60_000);
+    assert_eq!(local.items[0].item_id, Some(gitar));
+    let utc = w
+        .sessions
+        .stats(ada, (Some(day(26)), Some(day(27))), chrono_tz::UTC)
+        .await
+        .unwrap();
+    assert_eq!(utc.days[0].work_ms, 20 * 60_000);
+    // Defaults to the last 7 days; bad ranges are refused; others see nothing.
+    assert_eq!(
+        w.sessions
+            .stats(ada, (None, None), istanbul)
+            .await
+            .unwrap()
+            .days
+            .len(),
+        7
+    );
+    assert!(matches!(
+        w.sessions
+            .stats(ada, (Some(day(27)), Some(day(26))), istanbul)
+            .await,
+        Err(AppError::Validation(_))
+    ));
+    let bob = w.user("bob@example.com").await;
+    assert_eq!(
+        w.sessions
+            .stats(bob, (Some(day(26)), Some(day(27))), istanbul)
+            .await
+            .unwrap()
+            .work_ms,
+        0
+    );
+    assert!(w.sessions.history(bob, None).await.unwrap().is_empty());
+}

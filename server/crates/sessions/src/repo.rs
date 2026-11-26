@@ -215,3 +215,77 @@ pub(crate) async fn segments(
         })
         .collect()
 }
+
+/// The user's segments that started in `[from, to)`, with the live active time of the one
+/// still going (from its session's timer).
+pub(crate) async fn counted(
+    conn: impl PgExecutor<'_>,
+    user: Uuid,
+    (from, to): (DateTime<Utc>, DateTime<Utc>),
+    now: DateTime<Utc>,
+) -> sqlx::Result<Vec<crate::stats::Counted>> {
+    let rows: Vec<(String, Option<Uuid>, DateTime<Utc>, i64)> = sqlx::query_as(
+        "SELECT g.mode, g.item_id, g.started_at,
+                CASE WHEN g.ended_at IS NOT NULL THEN g.active_ms
+                     ELSE s.timer_accumulated_ms + COALESCE(
+                         (EXTRACT(EPOCH FROM ($4 - s.timer_started_at)) * 1000)::bigint, 0)
+                END
+         FROM work_session_segments g JOIN work_sessions s ON s.id = g.session_id
+         WHERE g.user_id = $1 AND g.started_at >= $2 AND g.started_at < $3
+         ORDER BY g.started_at, g.id",
+    )
+    .bind(user)
+    .bind(from)
+    .bind(to)
+    .bind(now)
+    .fetch_all(conn)
+    .await?;
+    rows.into_iter()
+        .map(|(mode, item_id, started_at, active_ms)| {
+            Ok(crate::stats::Counted {
+                mode: Mode::parse(&mode)
+                    .ok_or_else(|| sqlx::Error::Decode("unknown segment mode".into()))?,
+                item_id,
+                started_at,
+                active_ms: active_ms.max(0),
+            })
+        })
+        .collect()
+}
+
+/// A past or current session in the history list.
+#[derive(Debug, FromRow)]
+pub(crate) struct HistoryRow {
+    pub id: Uuid,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+    pub closed_at: Option<DateTime<Utc>>,
+    pub work_ms: i64,
+    pub break_ms: i64,
+    pub segments: i64,
+}
+
+/// The user's sessions newest first, created before `before` if given, at most `limit`.
+pub(crate) async fn history(
+    conn: impl PgExecutor<'_>,
+    user: Uuid,
+    before: Option<DateTime<Utc>>,
+    limit: i64,
+) -> sqlx::Result<Vec<HistoryRow>> {
+    sqlx::query_as(
+        "SELECT s.id, s.status, s.created_at, s.closed_at,
+                COALESCE(SUM(g.active_ms) FILTER (WHERE g.mode <> 'break'), 0)::bigint AS work_ms,
+                COALESCE(SUM(g.active_ms) FILTER (WHERE g.mode = 'break'), 0)::bigint AS break_ms,
+                COUNT(g.id) AS segments
+         FROM work_sessions s
+         JOIN work_session_participants p ON p.session_id = s.id AND p.user_id = $1
+         LEFT JOIN work_session_segments g ON g.session_id = s.id AND g.user_id = $1
+         WHERE ($2::timestamptz IS NULL OR s.created_at < $2)
+         GROUP BY s.id ORDER BY s.created_at DESC, s.id DESC LIMIT $3",
+    )
+    .bind(user)
+    .bind(before)
+    .bind(limit)
+    .fetch_all(conn)
+    .await
+}

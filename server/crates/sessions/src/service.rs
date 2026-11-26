@@ -9,8 +9,12 @@ use kernel::{AppError, FieldError, FieldErrorCode, SharedClock, ValidationErrors
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
-use crate::model::{OpenRequest, PomodoroConfig, WorkSession};
+use chrono::{Duration, NaiveDate, TimeZone};
+use chrono_tz::Tz;
+
+use crate::model::{OpenRequest, PomodoroConfig, SessionSummary, WorkSession};
 use crate::repo::{self, SessionRow};
+use crate::stats::{self, SessionStats};
 use crate::timer::{self, Command, LogChange, Timer, TimerError};
 
 /// Name of the realtime event carrying a session's timer (ARCHITECTURE §11).
@@ -266,6 +270,81 @@ impl WorkSessions {
         }
         tx.commit().await.map_err(internal)?;
         self.get(actor, id).await
+    }
+}
+
+/// Longest statistics range, in days.
+pub const MAX_STATS_DAYS: i64 = 366;
+/// Sessions one history request returns.
+const HISTORY_PAGE: i64 = 50;
+
+/// The UTC instant a local day starts at (the earliest one around a DST change).
+fn day_start(day: NaiveDate, timezone: Tz) -> chrono::DateTime<chrono::Utc> {
+    let midnight = day.and_hms_opt(0, 0, 0).unwrap_or_default();
+    timezone
+        .from_local_datetime(&midnight)
+        .earliest()
+        .map_or_else(|| midnight.and_utc(), |t| t.with_timezone(&chrono::Utc))
+}
+
+impl WorkSessions {
+    /// Work and break time per local day and per item (W5), in `timezone`, the user's.
+    /// Defaults to the last 7 days up to today.
+    ///
+    /// # Errors
+    /// [`AppError::Validation`] for a reversed or too long range, or [`AppError::Internal`].
+    pub async fn stats(
+        &self,
+        actor: Uuid,
+        (from, to): (Option<NaiveDate>, Option<NaiveDate>),
+        timezone: Tz,
+    ) -> Result<SessionStats, AppError> {
+        let now = self.clock.now();
+        let today = now.with_timezone(&timezone).date_naive();
+        let to = to.unwrap_or(today);
+        let from = from.unwrap_or(to - Duration::days(6));
+        if from > to || (to - from).num_days() >= MAX_STATS_DAYS {
+            return Err(ValidationErrors::from(FieldError::new(
+                "from",
+                FieldErrorCode::OutOfRange,
+                format!("from must not be after to, at most {MAX_STATS_DAYS} days"),
+            ))
+            .into());
+        }
+        let window = (
+            day_start(from, timezone),
+            day_start(to + Duration::days(1), timezone),
+        );
+        let counted = repo::counted(&self.pool, actor, window, now)
+            .await
+            .map_err(internal)?;
+        Ok(stats::summarize(&counted, from, to, timezone))
+    }
+
+    /// The caller's sessions, newest first (W5).
+    ///
+    /// # Errors
+    /// [`AppError::Internal`].
+    pub async fn history(
+        &self,
+        actor: Uuid,
+        before: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<Vec<SessionSummary>, AppError> {
+        let rows = repo::history(&self.pool, actor, before, HISTORY_PAGE)
+            .await
+            .map_err(internal)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| SessionSummary {
+                id: r.id,
+                open: r.status == "open",
+                created_at: r.created_at,
+                closed_at: r.closed_at,
+                work_ms: r.work_ms,
+                break_ms: r.break_ms,
+                segments: r.segments,
+            })
+            .collect())
     }
 }
 

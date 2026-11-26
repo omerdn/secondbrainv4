@@ -113,3 +113,35 @@ pub struct WorkSession {
     #[ts(type = "string")]
     pub server_time: DateTime<Utc>,
 }
+
+/// A session in the history (W5): its totals as of its last pause or stop.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
+pub struct SessionSummary {
+    pub id: Uuid,
+    pub open: bool,
+    #[ts(type = "string")]
+    pub created_at: DateTime<Utc>,
+    #[ts(type = "string | null")]
+    pub closed_at: Option<DateTime<Utc>>,
+    #[ts(type = "number")]
+    pub work_ms: i64,
+    #[ts(type = "number")]
+    pub break_ms: i64,
+    #[ts(type = "number")]
+    pub segments: i64,
+}
+
+/// `GET /sessions/stats` query: local days, both ends included; the last 7 days by default.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+pub struct StatsQuery {
+    pub from: Option<chrono::NaiveDate>,
+    pub to: Option<chrono::NaiveDate>,
+}
+
+/// `GET /sessions` query.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+pub struct HistoryQuery {
+    /// Only sessions opened before this time (the next page).
+    pub before: Option<DateTime<Utc>>,
+}
