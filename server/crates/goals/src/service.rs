@@ -3,6 +3,7 @@
 //! (ADR-0007), so a link follows the item rules (B1, V4) and a hidden item is never shown (V9).
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use access::{PermissionService, Perms};
 use items::{CreateItemRequest, ItemsAccessContext, ItemsService, LinkDirection, TouchAction};
@@ -15,7 +16,9 @@ use crate::model::{
     CreateGoalRequest, Goal, GoalLink, LINKABLE_KINDS, LinkGoalRequest, UpdateGoalRequest,
     check_dates, check_weight, contributes, invalid,
 };
+use crate::progress::Providers;
 use crate::repo::{self, GoalRow};
+use tracking::ProgressProvider;
 
 fn internal(err: impl std::error::Error + Send + Sync + 'static) -> AppError {
     AppError::Internal(Box::new(err))
@@ -25,14 +28,15 @@ fn internal(err: impl std::error::Error + Send + Sync + 'static) -> AppError {
 #[derive(Clone)]
 pub struct GoalsService {
     pool: PgPool,
-    clock: SharedClock,
+    pub(crate) clock: SharedClock,
     permissions: PermissionService<ItemsAccessContext>,
     items: ItemsService,
+    pub(crate) providers: Arc<Providers>,
 }
 
 impl GoalsService {
     #[must_use]
-    pub const fn new(
+    pub fn new(
         pool: PgPool,
         clock: SharedClock,
         permissions: PermissionService<ItemsAccessContext>,
@@ -43,7 +47,16 @@ impl GoalsService {
             clock,
             permissions,
             items,
+            providers: Arc::new(HashMap::new()),
         }
+    }
+
+    /// Registers the module that measures items of `kind` (ADR-0006). Items of a kind without a
+    /// provider count as not started.
+    #[must_use]
+    pub fn with_progress(mut self, kind: &str, provider: Arc<dyn ProgressProvider>) -> Self {
+        Arc::make_mut(&mut self.providers).insert(kind.to_owned(), provider);
+        self
     }
 
     /// Creates a personal goal and its item in one transaction. Both dates are required (D1).

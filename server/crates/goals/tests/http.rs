@@ -175,6 +175,18 @@ async fn goals_are_created_read_moved_and_linked_over_http() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(linked["links"][0]["weight"], "2.5");
     assert_eq!(linked["links"][0]["contributes"], true);
+    let (status, progress) = w
+        .send(
+            Method::GET,
+            &format!("/goals/{id}/progress?today=2026-11-26"),
+            Some(&token),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(progress["today"], "2026-11-26");
+    assert_eq!(progress["pace"], 1.0);
+    assert_eq!(progress["items"][0]["not_started"], true);
     let (status, unlinked) = w.send(Method::DELETE, &link, Some(&token), None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(unlinked["links"], json!([]));
@@ -213,6 +225,7 @@ async fn v9_errors_reveal_nothing_to_others() {
     let missing = Uuid::now_v7();
     for (method, uri, request) in [
         (Method::GET, format!("/goals/{id}"), None),
+        (Method::GET, format!("/goals/{id}/progress"), None),
         (
             Method::PATCH,
             format!("/goals/{id}"),

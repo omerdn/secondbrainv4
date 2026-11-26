@@ -118,6 +118,13 @@ pub fn check_dates(
     }
     errors.into_result()?;
     match (start, end) {
+        (Some(start), Some(end)) if (end - start).num_days() >= tracking::MAX_RANGE_DAYS => {
+            Err(invalid(
+                "end_date",
+                FieldErrorCode::OutOfRange,
+                "a goal can last at most 20 years",
+            ))
+        }
         (Some(start), Some(end)) if start <= end => Ok((start, end)),
         (Some(_), Some(_)) => Err(invalid(
             "end_date",
@@ -189,6 +196,11 @@ mod tests {
             check_dates(Some(day(1)), Some(day(1))).unwrap(),
             (day(1), day(1))
         );
+        let far = day(1) + chrono::Days::new(7_305);
+        assert!(matches!(
+            check_dates(Some(day(1)), Some(far)),
+            Err(AppError::Validation(_))
+        ));
     }
 
     #[test]

@@ -4,15 +4,19 @@
 // Integration-test file: panics are the failure mechanism, including in helpers.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use access::{AccessConfig, AccessEngine, Relation, RelationTuple};
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use db::testing::TestDb;
-use goals::{CreateGoalRequest, Goal, GoalsService, LinkGoalRequest, UpdateGoalRequest};
+use goals::{
+    CreateGoalRequest, Goal, GoalProgressQuery, GoalsService, LinkGoalRequest, UpdateGoalRequest,
+};
 use items::{ItemsAccessContext, ItemsService, NewItem};
 use kernel::{AppError, FixedClock};
 use rust_decimal::Decimal;
+use tracking::{DateRange, Progress, ProgressFuture, ProgressProvider};
 use uuid::Uuid;
 
 fn now() -> DateTime<Utc> {
@@ -38,8 +42,37 @@ fn weight(w: &str) -> LinkGoalRequest {
     }
 }
 
+/// Answers with fixed figures per item and remembers the ranges it was asked about.
+#[derive(Default)]
+struct Fixed {
+    figures: Mutex<HashMap<Uuid, Progress>>,
+    asked: Mutex<Vec<(Uuid, DateRange, NaiveDate)>>,
+}
+
+impl Fixed {
+    fn set(&self, item: Uuid, done: f64, total: f64, expected_to_date: f64) {
+        self.figures.lock().unwrap().insert(
+            item,
+            Progress {
+                done,
+                total,
+                expected_to_date,
+            },
+        );
+    }
+}
+
+impl ProgressProvider for Fixed {
+    fn progress(&self, item: Uuid, range: DateRange, today: NaiveDate) -> ProgressFuture<'_> {
+        self.asked.lock().unwrap().push((item, range, today));
+        let found = self.figures.lock().unwrap().get(&item).copied();
+        Box::pin(async move { found.ok_or(AppError::NotFound) })
+    }
+}
+
 struct World {
     db: TestDb,
+    fixed: Arc<Fixed>,
     access: AccessEngine<ItemsAccessContext>,
     items: ItemsService,
     goals: GoalsService,
@@ -53,14 +86,18 @@ impl World {
         let access = AccessEngine::new(ItemsAccessContext, AccessConfig::default());
         let clock = Arc::new(FixedClock::new(now()));
         let items = ItemsService::new(db.pool().clone(), clock.clone(), access.clone());
+        let fixed = Arc::new(Fixed::default());
         let goals = GoalsService::new(
             db.pool().clone(),
             clock,
             access.permissions(),
             items.clone(),
-        );
+        )
+        .with_progress("task", fixed.clone())
+        .with_progress("routine", fixed.clone());
         Self {
             db,
+            fixed,
             access,
             items,
             goals,
@@ -324,5 +361,113 @@ async fn an_item_of_another_kind_is_not_a_goal_and_a_trashed_goal_is_frozen() {
             .link(w.ali, goal, task, LinkGoalRequest::default())
             .await,
         Err(AppError::Conflict(_))
+    ));
+}
+
+fn close(a: f64, b: f64) -> bool {
+    (a - b).abs() < 1e-9
+}
+
+fn on(today: NaiveDate) -> GoalProgressQuery {
+    GoalProgressQuery { today: Some(today) }
+}
+
+#[tokio::test]
+async fn d3_d4_d6_progress_is_the_weighted_mean_with_its_breakdown() {
+    let w = World::new().await;
+    let goal = w.goal().await.item.id;
+    let task = w.item(w.ali, "task").await;
+    let routine = w.item(w.ali, "routine").await;
+    let page = w.item(w.ali, "page").await;
+    let tracker = w.item(w.ali, "tracker").await;
+    w.goals.link(w.ali, goal, task, weight("1")).await.unwrap();
+    w.goals
+        .link(w.ali, goal, routine, weight("3"))
+        .await
+        .unwrap();
+    w.goals
+        .link(w.ali, goal, page, LinkGoalRequest::default())
+        .await
+        .unwrap();
+    w.goals
+        .link(w.ali, goal, tracker, LinkGoalRequest::default())
+        .await
+        .unwrap();
+    // The task is half done and on plan; the routine is a quarter done but should be at half.
+    w.fixed.set(task, 1.0, 2.0, 1.0);
+    w.fixed.set(routine, 5.0, 20.0, 10.0);
+    // NOW is 26 November; the goal runs through December, so the caller's day is accepted
+    // only near the server's.
+    let today = NaiveDate::from_ymd_opt(2026, 11, 26).unwrap();
+    let p = w.goals.progress(w.ali, goal, on(today)).await.unwrap();
+    assert!(close(p.actual, (0.5 + 3.0 * 0.25) / 4.0));
+    assert!(close(p.expected, 0.5));
+    assert!(close(p.pace, p.actual / 0.5));
+    // D6: each item is explained; the page is left out (D2) and the tracker, which has no
+    // provider here, has not started.
+    let by_kind: HashMap<&str, &goals::GoalItemProgress> =
+        p.items.iter().map(|i| (i.item.kind.as_str(), i)).collect();
+    assert_eq!(p.items.len(), 3);
+    assert!(!by_kind.contains_key("page"));
+    assert!(by_kind["tracker"].not_started);
+    assert!(close(by_kind["routine"].share, 0.75));
+    assert!(close(by_kind["routine"].contribution, 0.75 * 0.25));
+    assert!(close(by_kind["task"].actual, 0.5));
+    assert_eq!(by_kind["routine"].weight, Decimal::from(3));
+    let sum: f64 = p.items.iter().map(|i| i.contribution).sum();
+    assert!(close(sum, p.actual));
+    // D5: every provider is asked about the goal's whole range, and about the caller's day.
+    let asked = w.fixed.asked.lock().unwrap().clone();
+    assert!(asked.iter().all(|(_, range, asked_on)| {
+        (range.start(), range.end()) == (day(1), day(31)) && *asked_on == today
+    }));
+}
+
+#[tokio::test]
+async fn v9_hidden_items_do_not_move_the_progress() {
+    let w = World::new().await;
+    let goal = w.goal().await.item.id;
+    let shown = w.item(w.ali, "task").await;
+    let hidden = w.item(w.ali, "task").await;
+    w.goals.link(w.ali, goal, shown, weight("1")).await.unwrap();
+    w.goals
+        .link(w.ali, goal, hidden, weight("9"))
+        .await
+        .unwrap();
+    w.fixed.set(shown, 1.0, 1.0, 1.0);
+    w.fixed.set(hidden, 0.0, 1.0, 1.0);
+    w.grant(RelationTuple::new(goal, Relation::Watcher, w.ayse))
+        .await;
+    w.grant(RelationTuple::new(shown, Relation::Watcher, w.ayse))
+        .await;
+    let today = NaiveDate::from_ymd_opt(2026, 11, 26).unwrap();
+    let hers = w.goals.progress(w.ayse, goal, on(today)).await.unwrap();
+    assert_eq!(hers.items.len(), 1);
+    assert!(close(hers.actual, 1.0));
+    let his = w.goals.progress(w.ali, goal, on(today)).await.unwrap();
+    assert!(close(his.actual, 0.1));
+    assert!(matches!(
+        w.goals
+            .progress(Uuid::now_v7(), goal, GoalProgressQuery::default())
+            .await,
+        Err(AppError::NotFound)
+    ));
+}
+
+#[tokio::test]
+async fn progress_takes_the_callers_day_within_a_day_of_the_server() {
+    let w = World::new().await;
+    let goal = w.goal().await.item.id;
+    let p = w
+        .goals
+        .progress(w.ali, goal, GoalProgressQuery::default())
+        .await
+        .unwrap();
+    assert_eq!(p.today, now().date_naive());
+    assert_eq!((p.actual, p.expected, p.pace), (0.0, 0.0, 1.0));
+    let far = NaiveDate::from_ymd_opt(2026, 11, 29).unwrap();
+    assert!(matches!(
+        w.goals.progress(w.ali, goal, on(far)).await,
+        Err(AppError::Validation(_))
     ));
 }
