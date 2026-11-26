@@ -327,6 +327,13 @@ export const en: Catalog = {
       addRow: "Add row",
       addColumn: "Add column",
       deleteTable: "Delete table",
+      link: "Add link",
+    },
+    link: {
+      label: "Link address",
+      add: "Add",
+      cancel: "Cancel",
+      failed: "Could not add the link. Check the address.",
     },
   },
   notebooks: {

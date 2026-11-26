@@ -2,7 +2,15 @@ import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { TableKit } from "@tiptap/extension-table";
-import { type Editor, EditorContent, Extension, useEditor, useEditorState } from "@tiptap/react";
+import { useApi } from "@secondbrain/api-client/react";
+import {
+  type Editor,
+  EditorContent,
+  Extension,
+  Node,
+  useEditor,
+  useEditorState,
+} from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -17,6 +25,7 @@ import {
   PAGE_FIELD,
   SERVER_LINE_ATTRIBUTES,
 } from "./collab";
+import { isAllowedEmbed, previewNode, safeImage, safeLink } from "./embeds";
 
 /** Theme colours for the editable area, the Y4 blocks and live cursors (TipTap ships none). */
 const EDITOR_CSS = `
@@ -40,6 +49,15 @@ const EDITOR_CSS = `
 .collab-toolbar button { border: 1px solid rgba(127,127,127,0.4); border-radius: 6px; padding: 2px 8px; font-size: 13px; color: rgb(var(--color-foreground)); background: transparent; cursor: pointer; }
 .collab-toolbar button[aria-pressed="true"] { background: rgba(127,127,127,0.25); }
 .collab-toolbar button:disabled { opacity: 0.4; cursor: default; }
+.collab-editor .page-embed { margin: 8px 0; }
+.collab-editor .page-embed iframe { width: 100%; min-height: 200px; aspect-ratio: 16 / 9; border: 0; border-radius: 8px; }
+.collab-editor .page-embed[data-embed="spotify"] iframe, .collab-editor .page-embed[data-embed="soundcloud"] iframe { aspect-ratio: auto; height: 160px; min-height: 0; }
+.collab-editor .page-link-card { display: flex; gap: 12px; margin: 8px 0; padding: 10px 12px; border: 1px solid rgba(127,127,127,0.4); border-radius: 8px; text-decoration: none; color: inherit; }
+.collab-editor .page-link-card img { width: 96px; height: 64px; object-fit: cover; border-radius: 6px; }
+.collab-editor .page-link-card span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.collab-editor .page-link-card small { opacity: 0.7; }
+.collab-link-form { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.collab-link-form input { flex: 1; min-width: 200px; border: 1px solid rgba(127,127,127,0.4); border-radius: 6px; padding: 4px 8px; background: transparent; color: rgb(var(--color-foreground)); }
 .collaboration-carets__caret {
   position: relative; margin-left: -1px; margin-right: -1px; border-left: 1px solid;
   border-right: 1px solid; word-break: normal; pointer-events: none;
@@ -78,6 +96,159 @@ const ServerLineAttributes = Extension.create({
     ];
   },
 });
+
+/** An allowed provider's player (Y4); anything else stays a plain link. */
+const EmbedNode = Node.create({
+  name: "embed",
+  group: "block",
+  atom: true,
+  draggable: true,
+  addAttributes() {
+    return { src: { default: null }, provider: { default: null }, url: { default: null } };
+  },
+  parseHTML() {
+    return [{ tag: "div[data-embed]" }];
+  },
+  renderHTML({ node }) {
+    const { src, provider, url } = node.attrs as Record<string, unknown>;
+    if (!isAllowedEmbed(src)) {
+      const href = safeLink(url);
+      return ["p", {}, href === null ? "" : ["a", { href, rel: "noopener noreferrer" }, href]];
+    }
+    return [
+      "div",
+      { "data-embed": typeof provider === "string" ? provider : "", class: "page-embed" },
+      [
+        "iframe",
+        {
+          src,
+          loading: "lazy",
+          sandbox: "allow-scripts allow-same-origin allow-popups allow-presentation",
+          allow: "encrypted-media; picture-in-picture; fullscreen",
+          referrerpolicy: "strict-origin-when-cross-origin",
+          title: typeof provider === "string" ? provider : "embed",
+        },
+      ],
+    ];
+  },
+});
+
+/** A card for any other link (Y4): title, description, site, image. */
+const LinkPreviewNode = Node.create({
+  name: "linkPreview",
+  group: "block",
+  atom: true,
+  draggable: true,
+  addAttributes() {
+    return {
+      url: { default: null },
+      title: { default: null },
+      description: { default: null },
+      image: { default: null },
+      site: { default: null },
+    };
+  },
+  parseHTML() {
+    return [{ tag: "a[data-link-preview]" }];
+  },
+  renderHTML({ node }) {
+    const { url, title, description, image, site } = node.attrs as Record<string, unknown>;
+    const href = safeLink(url) ?? "";
+    const text = (value: unknown) => (typeof value === "string" ? value : "");
+    const host = href === "" ? "" : new URL(href).host;
+    const img = safeImage(image);
+    const body = [
+      "span",
+      {},
+      ["strong", {}, text(title) || href],
+      ...(text(description) === "" ? [] : [["span", {}, text(description)]]),
+      ["small", {}, text(site) || host],
+    ];
+    return [
+      "a",
+      {
+        href,
+        target: "_blank",
+        rel: "noopener noreferrer nofollow",
+        class: "page-link-card",
+        "data-link-preview": "",
+      },
+      ...(img === null ? [] : [["img", { src: img, alt: "", referrerpolicy: "no-referrer" }]]),
+      body,
+    ];
+  },
+});
+
+/** "Add link": asks the server what the link becomes and inserts it. */
+function LinkForm({ editor, editable }: { editor: Editor; editable: boolean }) {
+  const { t } = useTranslation();
+  const api = useApi();
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const submit = async () => {
+    if (url.trim() === "") return;
+    setBusy(true);
+    setFailed(false);
+    try {
+      const preview = await api.embeds.preview(url.trim());
+      // After the selection, so a selected embed is never replaced.
+      editor.chain().focus().insertContentAt(editor.state.selection.to, previewNode(preview)).run();
+      setUrl("");
+      setOpen(false);
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!open) {
+    return (
+      <button
+        type="button"
+        disabled={!editable}
+        onClick={() => {
+          setOpen(true);
+        }}
+      >
+        {t("editor.actions.link")}
+      </button>
+    );
+  }
+  return (
+    <form
+      className="collab-link-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void submit();
+      }}
+    >
+      <input
+        aria-label={t("editor.link.label")}
+        placeholder="https://"
+        value={url}
+        autoFocus
+        onChange={(event) => {
+          setUrl(event.target.value);
+        }}
+      />
+      <button type="submit" disabled={busy || !editable}>
+        {t("editor.link.add")}
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(false);
+          setFailed(false);
+        }}
+      >
+        {t("editor.link.cancel")}
+      </button>
+      {failed ? <span role="alert">{t("editor.link.failed")}</span> : null}
+    </form>
+  );
+}
 
 type ActionKey =
   | "h1"
@@ -192,6 +363,7 @@ function Toolbar({ editor, editable }: { editor: Editor; editable: boolean }) {
           {t(`editor.actions.${action.key}`)}
         </button>
       ))}
+      <LinkForm editor={editor} editable={editable} />
     </div>
   );
 }
@@ -251,6 +423,8 @@ export function CollabEditor({ pageId, user, readOnly = false }: CollabEditorPro
       TaskItem.configure({ nested: true }),
       TableKit.configure({ table: { resizable: false } }),
       ServerLineAttributes,
+      EmbedNode,
+      LinkPreviewNode,
       Collaboration.configure({ document: doc, field: PAGE_FIELD }),
       CollaborationCaret.configure({
         provider,

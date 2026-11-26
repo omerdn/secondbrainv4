@@ -329,6 +329,13 @@ export const tr = {
       addRow: "Satır ekle",
       addColumn: "Sütun ekle",
       deleteTable: "Tabloyu sil",
+      link: "Bağlantı ekle",
+    },
+    link: {
+      label: "Bağlantı adresi",
+      add: "Ekle",
+      cancel: "Vazgeç",
+      failed: "Bağlantı eklenemedi. Adresi kontrol et.",
     },
   },
   notebooks: {
