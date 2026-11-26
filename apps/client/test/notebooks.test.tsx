@@ -78,7 +78,7 @@ describe("notebooks screen (Y1)", () => {
     expect(screen.getByRole("button", { name: "Defterim defterini kapat" })).toBeTruthy();
     await fireEvent.press(screen.getByRole("link", { name: "Okuma notları" }));
     expect(await screen.findByRole("header", { name: "Okuma notları" })).toBeTruthy();
-    expect(screen.getByText("Sayfa düzenleyici yakında burada olacak.")).toBeTruthy();
+    expect(screen.getByText(i18n.t("notebooks.editorSoon"))).toBeTruthy();
   });
 
   it("creates a notebook after checking the name, then a page in it", async () => {
