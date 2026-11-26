@@ -98,7 +98,7 @@ fn whole(value: Decimal) -> i32 {
     value.trunc().to_i32().unwrap_or(i32::MAX)
 }
 
-fn done_by_day(entries: &[TrackerEntry]) -> HashMap<NaiveDate, i32> {
+pub(crate) fn done_by_day(entries: &[TrackerEntry]) -> HashMap<NaiveDate, i32> {
     let mut days: HashMap<NaiveDate, i32> = HashMap::new();
     for entry in entries {
         let total = days.entry(entry.local_date).or_default();
@@ -107,11 +107,14 @@ fn done_by_day(entries: &[TrackerEntry]) -> HashMap<NaiveDate, i32> {
     days
 }
 
-fn internal(err: impl std::error::Error + Send + Sync + 'static) -> AppError {
+pub(crate) fn internal(err: impl std::error::Error + Send + Sync + 'static) -> AppError {
     AppError::Internal(Box::new(err))
 }
 
-fn schedule_of(timezone: Tz, versions: &[PlanVersionView]) -> Result<Schedule, AppError> {
+pub(crate) fn schedule_of(
+    timezone: Tz,
+    versions: &[PlanVersionView],
+) -> Result<Schedule, AppError> {
     let plans = versions
         .iter()
         .map(|v| {

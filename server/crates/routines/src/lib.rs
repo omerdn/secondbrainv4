@@ -9,6 +9,7 @@ pub mod http;
 mod model;
 pub mod repo;
 mod service;
+mod streak;
 
 pub use completions::{
     BACKDATE_DAYS, COUNT_MAX, CompleteRoutineRequest, DAYS_MAX, RoutineDay, RoutineDaysQuery,
@@ -19,3 +20,4 @@ pub use model::{
     RoutineView, UpdateRoutineRequest, parse_reminders, parse_rules, parse_timezone, target_on,
 };
 pub use service::RoutinesService;
+pub use streak::{RoutineStreak, StreakDay, routine_streak, streak};
