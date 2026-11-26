@@ -1,3 +1,16 @@
 //! `goals`: Goals, weights and progress calculation (ADR-0010).
 //!
-//! Empty crate skeleton (T0.1.2). See ARCHITECTURE §3–§4 for module boundaries.
+//! See ARCHITECTURE §5.7, §7.3 and PRD D1–D6. A goal is an `items` row plus a detail row here;
+//! links between items live in `items` (B1) and are only reached through
+//! [`items::ItemsService`] (ADR-0007). This crate keeps the weight of each link (D3).
+
+pub mod http;
+mod model;
+pub mod repo;
+mod service;
+
+pub use model::{
+    CONTRIBUTING_KINDS, CreateGoalRequest, Goal, GoalLink, LINKABLE_KINDS, LinkGoalRequest,
+    UpdateGoalRequest, WEIGHT_MAX, check_dates, check_weight, contributes,
+};
+pub use service::GoalsService;

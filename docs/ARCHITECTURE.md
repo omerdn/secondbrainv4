@@ -171,7 +171,7 @@ Her türün kendi detay tablosu vardır: `tasks`, `routines`, `goals`, `trackers
 
 ### 5.7 Hedefler
 - `goals(item_id, start_date, end_date)`
-- `goal_links(goal_id, item_id, weight numeric default 1)`
+- `goal_links(goal_id, item_id, weight numeric default 1)`: Sadece bağlantının ağırlığını (D3) tutar. Bağlantının kendisi `item_links`'tedir (B1); `goals` onu `ItemsService` üzerinden okur, böylece görünmeyen bağlantılar (V9) hedefte de görünmez. Satırı olmayan bağlantının ağırlığı 1'dir.
 
 ### 5.8 Defterler
 - `notebooks(item_id, is_default)`: Sahibi, `items` tablosundan gelir (kişi veya takım).

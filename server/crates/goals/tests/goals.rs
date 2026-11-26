@@ -1,0 +1,328 @@
+//! Goals and goal links (T2.3.1, PRD D1-D3, V4, V9) against a real Postgres 17. Requires Docker
+//! (or `TEST_DATABASE_URL`).
+
+// Integration-test file: panics are the failure mechanism, including in helpers.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
+use std::sync::Arc;
+
+use access::{AccessConfig, AccessEngine, Relation, RelationTuple};
+use chrono::{DateTime, NaiveDate, TimeZone, Utc};
+use db::testing::TestDb;
+use goals::{CreateGoalRequest, Goal, GoalsService, LinkGoalRequest, UpdateGoalRequest};
+use items::{ItemsAccessContext, ItemsService, NewItem};
+use kernel::{AppError, FixedClock};
+use rust_decimal::Decimal;
+use uuid::Uuid;
+
+fn now() -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(2026, 11, 26, 12, 0, 0).unwrap()
+}
+
+fn day(d: u32) -> NaiveDate {
+    NaiveDate::from_ymd_opt(2026, 12, d).unwrap()
+}
+
+fn request(start: Option<NaiveDate>, end: Option<NaiveDate>) -> CreateGoalRequest {
+    CreateGoalRequest {
+        title: "Kitap".into(),
+        description: None,
+        start_date: start,
+        end_date: end,
+    }
+}
+
+fn weight(w: &str) -> LinkGoalRequest {
+    LinkGoalRequest {
+        weight: Some(w.parse().unwrap()),
+    }
+}
+
+struct World {
+    db: TestDb,
+    access: AccessEngine<ItemsAccessContext>,
+    items: ItemsService,
+    goals: GoalsService,
+    ali: Uuid,
+    ayse: Uuid,
+}
+
+impl World {
+    async fn new() -> Self {
+        let db = TestDb::new().await;
+        let access = AccessEngine::new(ItemsAccessContext, AccessConfig::default());
+        let clock = Arc::new(FixedClock::new(now()));
+        let items = ItemsService::new(db.pool().clone(), clock.clone(), access.clone());
+        let goals = GoalsService::new(
+            db.pool().clone(),
+            clock,
+            access.permissions(),
+            items.clone(),
+        );
+        Self {
+            db,
+            access,
+            items,
+            goals,
+            ali: Uuid::now_v7(),
+            ayse: Uuid::now_v7(),
+        }
+    }
+
+    async fn goal(&self) -> Goal {
+        self.goals
+            .create(self.ali, request(Some(day(1)), Some(day(31))))
+            .await
+            .unwrap()
+    }
+
+    async fn item(&self, owner: Uuid, kind: &str) -> Uuid {
+        self.items
+            .create(
+                owner,
+                NewItem {
+                    kind: kind.into(),
+                    title: format!("a {kind}"),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap()
+            .id
+    }
+
+    async fn grant(&self, tuple: RelationTuple) {
+        let mut tx = self.db.pool().begin().await.unwrap();
+        self.access.grant(&mut tx, tuple).await.unwrap();
+        tx.commit().await.unwrap();
+    }
+}
+
+fn kinds(goal: &Goal) -> Vec<(&str, bool, String)> {
+    goal.links
+        .iter()
+        .map(|l| (l.item.kind.as_str(), l.contributes, l.weight.to_string()))
+        .collect()
+}
+
+#[tokio::test]
+async fn d1_start_and_end_dates_are_required() {
+    let w = World::new().await;
+    for (start, end) in [
+        (None, Some(day(2))),
+        (Some(day(1)), None),
+        (None, None),
+        (Some(day(3)), Some(day(2))),
+    ] {
+        assert!(matches!(
+            w.goals.create(w.ali, request(start, end)).await,
+            Err(AppError::Validation(_))
+        ));
+    }
+    let goal = w.goal().await;
+    assert_eq!((goal.start_date, goal.end_date), (day(1), day(31)));
+    assert_eq!(goal.item.kind, "goal");
+    assert!(goal.links.is_empty());
+    assert_eq!(w.goals.goal(w.ali, goal.item.id).await.unwrap(), goal);
+}
+
+#[tokio::test]
+async fn d1_dates_move_but_never_clear_or_cross() {
+    let w = World::new().await;
+    let id = w.goal().await.item.id;
+    let moved = w
+        .goals
+        .update(
+            w.ali,
+            id,
+            UpdateGoalRequest {
+                start_date: None,
+                end_date: Some(day(10)),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!((moved.start_date, moved.end_date), (day(1), day(10)));
+    let crossed = UpdateGoalRequest {
+        start_date: Some(day(11)),
+        end_date: None,
+    };
+    assert!(matches!(
+        w.goals.update(w.ali, id, crossed).await,
+        Err(AppError::Validation(_))
+    ));
+    assert!(matches!(
+        w.goals
+            .update(w.ali, id, UpdateGoalRequest::default())
+            .await,
+        Err(AppError::Validation(_))
+    ));
+}
+
+#[tokio::test]
+async fn d2_tasks_routines_trackers_and_pages_link_and_pages_do_not_count() {
+    let w = World::new().await;
+    let goal = w.goal().await.item.id;
+    for kind in ["task", "routine", "tracker", "page"] {
+        let item = w.item(w.ali, kind).await;
+        w.goals
+            .link(w.ali, goal, item, LinkGoalRequest::default())
+            .await
+            .unwrap();
+    }
+    let read = w.goals.goal(w.ali, goal).await.unwrap();
+    let mut linked = kinds(&read);
+    linked.sort();
+    assert_eq!(
+        linked,
+        vec![
+            ("page", false, "1".into()),
+            ("routine", true, "1".into()),
+            ("task", true, "1".into()),
+            ("tracker", true, "1".into()),
+        ]
+    );
+    // Neither a goal nor a notebook can be linked.
+    for kind in ["goal", "notebook"] {
+        let other = w.item(w.ali, kind).await;
+        assert!(matches!(
+            w.goals
+                .link(w.ali, goal, other, LinkGoalRequest::default())
+                .await,
+            Err(AppError::Validation(_))
+        ));
+    }
+}
+
+#[tokio::test]
+async fn d3_weights_are_set_kept_and_reset_with_the_link() {
+    let w = World::new().await;
+    let goal = w.goal().await.item.id;
+    let task = w.item(w.ali, "task").await;
+    let page = w.item(w.ali, "page").await;
+    let linked = w
+        .goals
+        .link(w.ali, goal, task, weight("2.50"))
+        .await
+        .unwrap();
+    assert_eq!(linked.links[0].weight, Decimal::new(25, 1));
+    // Linking again without a weight keeps it; the link is not duplicated.
+    let again = w
+        .goals
+        .link(w.ali, goal, task, LinkGoalRequest::default())
+        .await
+        .unwrap();
+    assert_eq!(again.links.len(), 1);
+    assert_eq!(again.links[0].weight, Decimal::new(25, 1));
+    for bad in ["0", "-1", "100.01", "1.005"] {
+        assert!(matches!(
+            w.goals.link(w.ali, goal, task, weight(bad)).await,
+            Err(AppError::Validation(_))
+        ));
+    }
+    // A page takes no weight (D2).
+    assert!(matches!(
+        w.goals.link(w.ali, goal, page, weight("2")).await,
+        Err(AppError::Validation(_))
+    ));
+    let removed = w.goals.unlink(w.ali, goal, task).await.unwrap();
+    assert!(removed.links.is_empty());
+    // Removing twice is harmless, and a new link starts from 1.
+    w.goals.unlink(w.ali, goal, task).await.unwrap();
+    let relinked = w
+        .goals
+        .link(w.ali, goal, task, LinkGoalRequest::default())
+        .await
+        .unwrap();
+    assert_eq!(relinked.links[0].weight, Decimal::ONE);
+}
+
+#[tokio::test]
+async fn v9_links_to_items_the_viewer_cannot_see_are_not_shown_or_counted() {
+    let w = World::new().await;
+    let goal = w.goal().await.item.id;
+    let private = w.item(w.ali, "task").await;
+    w.goals
+        .link(w.ali, goal, private, weight("3"))
+        .await
+        .unwrap();
+    w.grant(RelationTuple::new(goal, Relation::Watcher, w.ayse))
+        .await;
+    let seen = w.goals.goal(w.ayse, goal).await.unwrap();
+    assert!(seen.links.is_empty());
+    // Once Ayşe can see the task, the link and its weight appear.
+    w.grant(RelationTuple::new(private, Relation::Watcher, w.ayse))
+        .await;
+    let seen = w.goals.goal(w.ayse, goal).await.unwrap();
+    assert_eq!(kinds(&seen), vec![("task", true, "3".into())]);
+}
+
+#[tokio::test]
+async fn linking_needs_edit_on_the_goal_and_sight_of_the_item() {
+    let w = World::new().await;
+    let goal = w.goal().await.item.id;
+    let hers = w.item(w.ayse, "task").await;
+    // Ali cannot see Ayşe's task: it is not found, not forbidden (V9).
+    assert!(matches!(
+        w.goals
+            .link(w.ali, goal, hers, LinkGoalRequest::default())
+            .await,
+        Err(AppError::NotFound)
+    ));
+    // Seeing the goal is not enough to add to it.
+    w.grant(RelationTuple::new(goal, Relation::Watcher, w.ayse))
+        .await;
+    assert!(matches!(
+        w.goals
+            .link(w.ayse, goal, hers, LinkGoalRequest::default())
+            .await,
+        Err(AppError::Forbidden)
+    ));
+    assert!(matches!(
+        w.goals
+            .update(
+                w.ayse,
+                goal,
+                UpdateGoalRequest {
+                    start_date: Some(day(2)),
+                    end_date: None
+                }
+            )
+            .await,
+        Err(AppError::Forbidden)
+    ));
+    // A stranger learns nothing.
+    let stranger = Uuid::now_v7();
+    assert!(matches!(
+        w.goals.goal(stranger, goal).await,
+        Err(AppError::NotFound)
+    ));
+    assert!(matches!(
+        w.goals
+            .link(stranger, goal, hers, LinkGoalRequest::default())
+            .await,
+        Err(AppError::NotFound)
+    ));
+    assert!(matches!(
+        w.goals.unlink(stranger, goal, hers).await,
+        Err(AppError::NotFound)
+    ));
+}
+
+#[tokio::test]
+async fn an_item_of_another_kind_is_not_a_goal_and_a_trashed_goal_is_frozen() {
+    let w = World::new().await;
+    let task = w.item(w.ali, "task").await;
+    assert!(matches!(
+        w.goals.goal(w.ali, task).await,
+        Err(AppError::NotFound)
+    ));
+    let goal = w.goal().await.item.id;
+    w.items.set_trashed(w.ali, goal, true).await.unwrap();
+    assert!(matches!(
+        w.goals
+            .link(w.ali, goal, task, LinkGoalRequest::default())
+            .await,
+        Err(AppError::Conflict(_))
+    ));
+}
