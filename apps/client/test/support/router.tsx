@@ -13,7 +13,8 @@ import More from "../../app/(app)/more";
 import Notebooks from "../../app/(app)/notebooks";
 import PageDetail from "../../app/(app)/pages/[id]";
 import Routines from "../../app/(app)/routines";
-import Session from "../../app/(app)/session";
+import Session from "../../app/(app)/session/index";
+import SessionStats from "../../app/(app)/session/stats";
 import Settings from "../../app/(app)/settings";
 import Tags from "../../app/(app)/tags";
 import Tasks from "../../app/(app)/tasks";
@@ -69,7 +70,8 @@ export function renderApp(
       "(app)/views": Views,
       "(app)/archive": Archive,
       "(app)/trash": Trash,
-      "(app)/session": Session,
+      "(app)/session/index": Session,
+      "(app)/session/stats": SessionStats,
       "(app)/settings": Settings,
       "(app)/more": More,
       "(app)/items/[id]": ItemDetail,

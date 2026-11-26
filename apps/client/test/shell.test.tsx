@@ -61,7 +61,11 @@ describe("navigation model", () => {
   it("has a route file for every destination", () => {
     for (const d of [...destinations, settings]) {
       const file = d.href === "/" ? "index" : d.href.slice(1);
-      expect(existsSync(join(__dirname, "..", "app", "(app)", `${file}.tsx`))).toBe(true);
+      const dir = join(__dirname, "..", "app", "(app)");
+      // `section.tsx`, or `section/index.tsx` for a section with routes under it.
+      const found =
+        existsSync(join(dir, `${file}.tsx`)) || existsSync(join(dir, file, "index.tsx"));
+      expect(found).toBe(true);
     }
   });
 });

@@ -1,12 +1,21 @@
-import type { Item, SessionTimer, WorkSession } from "@secondbrain/api-types";
+import type {
+  Item,
+  SessionStats,
+  SessionSummary,
+  SessionTimer,
+  WorkSession,
+} from "@secondbrain/api-types";
 import { act, fireEvent, screen, waitFor } from "expo-router/testing-library";
 
 import {
+  barShare,
   clockFace,
   clockOffset,
   formatClock,
+  hoursAndMinutes,
   parseMinutes,
   presetStart,
+  rangeOf,
   segmentLog,
 } from "@/features/sessions/model";
 import { i18n } from "@/lib/i18n";
@@ -297,5 +306,113 @@ describe("session screen (W1-W4)", () => {
     await waitFor(() => {
       expect(server.calls.some((c) => c.path === "/sessions/s1/close")).toBe(true);
     });
+  });
+});
+
+describe("statistics arithmetic (W5)", () => {
+  it("splits totals, ranges and bars", () => {
+    expect(hoursAndMinutes(80 * MIN + 59_000)).toEqual({ hours: 1, minutes: 20 });
+    expect(hoursAndMinutes(-5)).toEqual({ hours: 0, minutes: 0 });
+    expect(rangeOf("2026-11-26", 7)).toEqual({ from: "2026-11-20", to: "2026-11-26" });
+    expect(rangeOf("2026-03-01", 30)).toEqual({ from: "2026-01-31", to: "2026-03-01" });
+    expect(barShare(30, 60)).toBe(0.5);
+    expect(barShare(30, 0)).toBe(0);
+  });
+});
+
+const summary = (id: string, created: number, open = false): SessionSummary => ({
+  id,
+  open,
+  created_at: iso(created),
+  closed_at: open ? null : iso(created + 60 * MIN),
+  work_ms: 50 * MIN,
+  break_ms: 10 * MIN,
+  segments: 3,
+});
+
+describe("statistics screen (W5)", () => {
+  it("shows daily and per-item totals and pages through the history", async () => {
+    const stats = (from: string, to: string): SessionStats => ({
+      from,
+      to,
+      days: [
+        { date: from, work_ms: 0, break_ms: 0 },
+        { date: to, work_ms: 95 * MIN, break_ms: 5 * MIN },
+      ],
+      items: [
+        { item_id: "i1", work_ms: 45 * MIN },
+        { item_id: "hidden", work_ms: 25 * MIN },
+        { item_id: null, work_ms: 25 * MIN },
+        { item_id: "i2", work_ms: 20_000 },
+      ],
+      work_ms: 95 * MIN,
+      break_ms: 5 * MIN,
+    });
+    const firstPage = Array.from({ length: 50 }, (_, i) =>
+      summary(`s${i}`, T0 - i * 3_600_000, i === 0),
+    );
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /sessions/stats": (call) => {
+        const query = new URL(`http://x${call.path}`).searchParams;
+        return json(200, stats(query.get("from") ?? "", query.get("to") ?? ""));
+      },
+      "GET /sessions": (call) =>
+        json(
+          200,
+          call.path.includes("before=") ? [summary("old", T0 - 99 * 3_600_000)] : firstPage,
+        ),
+      "GET /items/i1": () => json(200, item("i1", "task", "Gitar kursu")),
+      "GET /items/i2": () => json(200, item("i2", "task", "Rapor")),
+      "GET /items/hidden": () => json(404, { error: { code: "not_found", message: "not_found" } }),
+    });
+    await renderApp(server.api, "/session/stats", { tokenStore: memoryTokenStore("t") });
+    expect(await screen.findByLabelText("Toplam çalışma")).toHaveTextContent("1 sa 35 dk");
+    expect(screen.getByLabelText("Toplam mola")).toHaveTextContent("5 dk");
+    expect(await screen.findByLabelText("Gitar kursu: 45 dk")).toBeTruthy();
+    // An item the caller cannot see stays unnamed; time on no item is shown apart.
+    expect(screen.getByLabelText("Nesne: 25 dk")).toBeTruthy();
+    expect(screen.getByLabelText("Nesnesiz: 25 dk")).toBeTruthy();
+    expect(await screen.findByLabelText("Rapor: 1 dk'dan az")).toBeTruthy();
+    const statsCall = server.calls.find((c) => c.path.startsWith("/sessions/stats"));
+    const from = new URL(`http://x${statsCall?.path ?? ""}`).searchParams.get("from") ?? "";
+    const to = new URL(`http://x${statsCall?.path ?? ""}`).searchParams.get("to") ?? "";
+    expect(rangeOf(to, 7).from).toBe(from);
+
+    await fireEvent.press(screen.getByRole("radio", { name: "Son 30 gün" }));
+    await waitFor(() => {
+      const last = server.calls.filter((c) => c.path.startsWith("/sessions/stats")).at(-1);
+      expect(last?.path).toContain(`from=${rangeOf(to, 30).from}`);
+    });
+
+    expect(await screen.findAllByText("50 dk çalışma · 10 dk mola · 3 dilim")).toHaveLength(50);
+    await fireEvent.press(screen.getByRole("button", { name: "Daha eski oturumlar" }));
+    await waitFor(() => {
+      expect(screen.getAllByText("50 dk çalışma · 10 dk mola · 3 dilim")).toHaveLength(51);
+    });
+    expect(server.calls.find((c) => c.path.includes("before="))?.path).toContain(
+      `before=${encodeURIComponent(iso(T0 - 49 * 3_600_000))}`,
+    );
+    expect(screen.queryByRole("button", { name: "Daha eski oturumlar" })).toBeNull();
+  });
+
+  it("is reached from the timer screen", async () => {
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /sessions/stats": () =>
+        json(200, {
+          from: "2026-11-20",
+          to: "2026-11-26",
+          days: [],
+          items: [],
+          work_ms: 0,
+          break_ms: 0,
+        }),
+      "GET /sessions": () => json(200, []),
+    });
+    await open(server);
+    await fireEvent.press(await screen.findByRole("button", { name: "Geçmiş ve istatistik" }));
+    expect(await screen.findByText("Bu aralıkta çalışma yok.")).toBeTruthy();
+    expect(screen.getByText("Henüz oturum yok.")).toBeTruthy();
   });
 });
