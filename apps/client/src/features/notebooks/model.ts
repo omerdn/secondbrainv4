@@ -10,3 +10,21 @@ export function titleError(title: string): TitleError | null {
   if ([...trimmed].length > TITLE_MAX_CHARS) return "tooLong";
   return null;
 }
+
+/** Item kinds a page can be linked to (PRD B1). */
+export const PAGE_TARGET_KINDS = ["task", "routine", "goal", "tracker"] as const;
+
+/** Items a page can still be linked to, matching `query`. */
+export function pageLinkCandidates<T extends { id: string; kind: string; title: string }>(
+  items: readonly T[],
+  linked: ReadonlySet<string>,
+  query: string,
+): T[] {
+  const needle = query.trim().toLocaleLowerCase("tr");
+  return items.filter(
+    (item) =>
+      (PAGE_TARGET_KINDS as readonly string[]).includes(item.kind) &&
+      !linked.has(item.id) &&
+      (needle === "" || item.title.toLocaleLowerCase("tr").includes(needle)),
+  );
+}

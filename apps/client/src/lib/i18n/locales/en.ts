@@ -337,6 +337,17 @@ export const en: Catalog = {
     },
   },
   notebooks: {
+    links: {
+      title: "Linked items",
+      none: "This page is not linked to anything.",
+      add: "Link to an item",
+      pick: "Link the page",
+      search: "Search",
+      linkTo: "Link to {{title}}",
+      confirm: "Link",
+      remove: "Remove",
+      removeOf: "Remove the link to {{title}}",
+    },
     newNotebook: "New notebook",
     newPage: "Add page",
     newPageIn: "Add a page to {{notebook}}",

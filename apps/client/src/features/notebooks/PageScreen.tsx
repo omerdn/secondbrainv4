@@ -13,6 +13,7 @@ import { Screen } from "@/features/shell";
 
 import { NameSheet } from "./NameSheet";
 import { PageEditor } from "./PageEditor";
+import { PageLinks } from "./PageLinks";
 
 /** A page of a notebook: its collaborative editor (web, T2.5.7), rename and delete. The mobile
  * editor comes with T4.2.2 (ADR-0024). */
@@ -126,6 +127,7 @@ export function PageScreen({ id }: { id: string }) {
             {t("notebooks.saveFailed")}
           </Text>
         ) : null}
+        <PageLinks pageId={item.id} />
         {session.status === "signedIn" ? (
           <PageEditor
             key={item.id}

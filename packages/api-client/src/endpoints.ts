@@ -122,6 +122,18 @@ export function endpoints(api: ApiClient) {
       tags: (id: string) => api.get<Tag[]>(`/items/${encodeURIComponent(id)}/tags`),
       /** Links whose other end the caller can see (PRD V9). */
       links: (id: string) => api.get<ItemLink[]>(`/items/${encodeURIComponent(id)}/links`),
+      /** Links `id` to `targetId`: LINK on the source, VIEW on the target (PRD B1, V4). */
+      link: (id: string, targetId: string, options?: MutationOptions) =>
+        api.put<ItemLink>(
+          `/items/${encodeURIComponent(id)}/links/${encodeURIComponent(targetId)}`,
+          undefined,
+          options,
+        ),
+      unlink: (id: string, targetId: string, options?: MutationOptions) =>
+        api.delete(
+          `/items/${encodeURIComponent(id)}/links/${encodeURIComponent(targetId)}`,
+          options,
+        ),
       attachTag: (id: string, tagId: string, options?: MutationOptions) =>
         api.put<void>(
           `/items/${encodeURIComponent(id)}/tags/${encodeURIComponent(tagId)}`,

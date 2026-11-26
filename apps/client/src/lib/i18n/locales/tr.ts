@@ -339,6 +339,17 @@ export const tr = {
     },
   },
   notebooks: {
+    links: {
+      title: "Bağlı nesneler",
+      none: "Bu sayfa bir nesneye bağlı değil.",
+      add: "Nesneye bağla",
+      pick: "Sayfayı bağla",
+      search: "Ara",
+      linkTo: "{{title}} nesnesine bağla",
+      confirm: "Bağla",
+      remove: "Kaldır",
+      removeOf: "{{title}} bağlantısını kaldır",
+    },
     newNotebook: "Yeni defter",
     newPage: "Sayfa ekle",
     newPageIn: "{{notebook}} defterine sayfa ekle",
