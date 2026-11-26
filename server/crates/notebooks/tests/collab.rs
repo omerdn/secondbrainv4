@@ -370,6 +370,42 @@ async fn y3_a_restart_keeps_every_update() {
 }
 
 #[tokio::test]
+async fn y3_a_restored_version_reaches_open_editors() {
+    let server = server().await;
+    let (ada_id, ada) = account(&server.identity, "ada@example.com").await;
+    let (bob_id, bob) = account(&server.identity, "bob@example.com").await;
+    let page = server.page(ada_id).await;
+    server
+        .grant(RelationTuple::new(page, Relation::Viewer, bob_id))
+        .await;
+    let mut a = Peer::connect(server.addr, page, &ada).await;
+    let mut b = Peer::connect(server.addr, page, &bob).await;
+    a.insert(0, "ilk").await;
+    a.until(|p| p.text() == "ilk").await;
+    b.until(|p| p.text() == "ilk").await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    notebooks::snapshots::compact(server.db.pool(), page, Utc::now())
+        .await
+        .unwrap();
+    a.insert(3, " ve sonra").await;
+    b.until(|p| p.text() == "ilk ve sonra").await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // T2.5.4: restoring version 1 while both are connected.
+    server
+        .notebooks
+        .restore_version(ada_id, page, 1, &server.collab)
+        .await
+        .unwrap();
+    a.until(|p| p.text() == "ilk").await;
+    b.until(|p| p.text() == "ilk").await;
+    assert_eq!(server.stored_text(page).await, "ilk");
+    // Editing goes on from the restored content.
+    a.insert(3, "!").await;
+    b.until(|p| p.text() == "ilk!").await;
+}
+
+#[tokio::test]
 async fn without_edit_a_connection_is_read_only() {
     let server = server().await;
     let (ada_id, ada) = account(&server.identity, "ada@example.com").await;

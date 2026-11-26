@@ -1,5 +1,6 @@
 //! Notebook and page DTOs (PRD Y1, Y2, Y5).
 
+use chrono::{DateTime, Utc};
 use items::Item;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -50,6 +51,51 @@ pub struct Notebook {
     pub pages: Vec<Page>,
 }
 
+/// One version of a page in its history (PRD Y3): a snapshot, newest first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
+pub struct PageVersion {
+    pub version: i32,
+    #[ts(type = "string")]
+    pub created_at: DateTime<Utc>,
+    /// The first line of the version's text, for the list.
+    pub preview: String,
+}
+
+/// A version's content: its text, and its Yjs state to show it read-only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
+pub struct PageVersionContent {
+    pub version: i32,
+    #[ts(type = "string")]
+    pub created_at: DateTime<Utc>,
+    pub plain_text: String,
+    /// The whole document as one Yjs update (v1), base64.
+    pub state: String,
+}
+
+/// `GET /pages/{id}/versions` query.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+pub struct VersionsQuery {
+    /// Only versions older than this one (the next page of the list).
+    pub before: Option<i32>,
+}
+
+/// Longest preview of a version in the list.
+pub(crate) const PREVIEW_MAX_CHARS: usize = 120;
+
+/// The first line of `plain_text`, shortened.
+#[must_use]
+pub(crate) fn preview(plain_text: &str) -> String {
+    plain_text
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .chars()
+        .take(PREVIEW_MAX_CHARS)
+        .collect()
+}
+
 /// Title of the automatic notebook in the user's language.
 #[must_use]
 pub fn default_title(locale: &str) -> &'static str {
@@ -69,5 +115,12 @@ mod tests {
         assert_eq!(default_title("tr"), "Defterim");
         assert_eq!(default_title("tr-TR"), "Defterim");
         assert_eq!(default_title("en"), "My notebook");
+    }
+
+    #[test]
+    fn a_preview_is_the_first_line_shortened() {
+        assert_eq!(preview("Başlık\nikinci"), "Başlık");
+        assert_eq!(preview(""), "");
+        assert_eq!(preview(&"ş".repeat(500)).chars().count(), PREVIEW_MAX_CHARS);
     }
 }

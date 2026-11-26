@@ -67,6 +67,8 @@ export type * from "./generated/Notebook";
 export type * from "./generated/NotebookPage";
 export type * from "./generated/NotebookSummary";
 export type * from "./generated/Page";
+export type * from "./generated/PageVersion";
+export type * from "./generated/PageVersionContent";
 export type * from "./generated/PlatformPolicy";
 export type * from "./generated/RegisterRequest";
 export type * from "./generated/ResetPasswordRequest";

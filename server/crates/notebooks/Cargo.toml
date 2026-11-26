@@ -14,6 +14,7 @@ workspace = true
 access = { path = "../access" }
 db = { path = "../db" }
 axum = { workspace = true, features = ["ws"] }
+base64.workspace = true
 chrono.workspace = true
 futures-util.workspace = true
 identity = { path = "../identity" }

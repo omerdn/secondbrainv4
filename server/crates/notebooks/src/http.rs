@@ -9,8 +9,11 @@
 //! | GET  | `/notebooks/{id}` | 200 [`Notebook`]; VIEW; visible pages only |
 //! | POST | `/notebooks/{id}/pages` | 201 [`Page`]; EDIT; owned by the notebook's owner (Y5) |
 //! | GET  | `/pages/{id}` | 200 [`Page`]; VIEW |
+//! | GET  | `/pages/{id}/versions?before=` | 200 [`PageVersion`]`[]`, newest first; VIEW (Y3) |
+//! | GET  | `/pages/{id}/versions/{version}` | 200 [`PageVersionContent`]; VIEW (Y3) |
+//! | POST | `/pages/{id}/versions/{version}/restore` | 200 [`PageVersion`], the new latest; EDIT (Y3) |
 
-use axum::extract::{FromRef, Path, State};
+use axum::extract::{FromRef, Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -19,8 +22,10 @@ use identity::http::Authenticated;
 use kernel::AppError;
 use uuid::Uuid;
 
+use crate::collab::Collab;
 use crate::model::{
-    CreateNotebookRequest, CreatePageRequest, Notebook, NotebookSummary, Page, default_title,
+    CreateNotebookRequest, CreatePageRequest, Notebook, NotebookSummary, Page, PageVersion,
+    PageVersionContent, VersionsQuery, default_title,
 };
 use crate::service::NotebooksService;
 
@@ -29,6 +34,8 @@ use crate::service::NotebooksService;
 pub struct NotebooksHttpState {
     pub notebooks: NotebooksService,
     pub identity: IdentityService,
+    /// Open rooms, so a restored version reaches every editor.
+    pub collab: Collab,
 }
 
 impl FromRef<NotebooksHttpState> for IdentityService {
@@ -44,6 +51,12 @@ pub fn router(state: NotebooksHttpState) -> Router {
         .route("/notebooks/{id}", get(read_notebook))
         .route("/notebooks/{id}/pages", post(create_page))
         .route("/pages/{id}", get(read_page))
+        .route("/pages/{id}/versions", get(list_versions))
+        .route("/pages/{id}/versions/{version}", get(read_version))
+        .route(
+            "/pages/{id}/versions/{version}/restore",
+            post(restore_version),
+        )
         .with_state(state)
 }
 
@@ -105,6 +118,43 @@ async fn read_page(
     state
         .notebooks
         .page(auth.user_id.as_uuid(), id)
+        .await
+        .map(Json)
+}
+
+async fn list_versions(
+    State(state): State<NotebooksHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+    Query(query): Query<VersionsQuery>,
+) -> Result<Json<Vec<PageVersion>>, AppError> {
+    state
+        .notebooks
+        .versions(auth.user_id.as_uuid(), id, query.before)
+        .await
+        .map(Json)
+}
+
+async fn read_version(
+    State(state): State<NotebooksHttpState>,
+    Authenticated(auth): Authenticated,
+    Path((id, version)): Path<(Uuid, i32)>,
+) -> Result<Json<PageVersionContent>, AppError> {
+    state
+        .notebooks
+        .version(auth.user_id.as_uuid(), id, version)
+        .await
+        .map(Json)
+}
+
+async fn restore_version(
+    State(state): State<NotebooksHttpState>,
+    Authenticated(auth): Authenticated,
+    Path((id, version)): Path<(Uuid, i32)>,
+) -> Result<Json<PageVersion>, AppError> {
+    state
+        .notebooks
+        .restore_version(auth.user_id.as_uuid(), id, version, &state.collab)
         .await
         .map(Json)
 }

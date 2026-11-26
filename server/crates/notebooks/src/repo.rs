@@ -273,3 +273,62 @@ pub async fn plain_texts(
     .fetch_all(conn)
     .await
 }
+
+/// One snapshot as the version history lists it.
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+pub struct VersionRow {
+    pub version: i32,
+    pub created_at: DateTime<Utc>,
+    pub plain_text: String,
+}
+
+/// A page's snapshots newest first, older than `before` if given, at most `limit`.
+///
+/// # Errors
+/// Database errors.
+pub async fn versions(
+    conn: impl PgExecutor<'_>,
+    page: Uuid,
+    before: Option<i32>,
+    limit: i64,
+) -> sqlx::Result<Vec<VersionRow>> {
+    sqlx::query_as(
+        "SELECT version, created_at, plain_text FROM page_snapshots
+         WHERE page_id = $1 AND ($2::integer IS NULL OR version < $2)
+         ORDER BY version DESC LIMIT $3",
+    )
+    .bind(page)
+    .bind(before)
+    .bind(limit)
+    .fetch_all(conn)
+    .await
+}
+
+/// One snapshot of a page with its state.
+///
+/// # Errors
+/// Database errors.
+pub async fn snapshot(
+    conn: impl PgExecutor<'_>,
+    page: Uuid,
+    version: i32,
+) -> sqlx::Result<Option<(VersionRow, Vec<u8>)>> {
+    let row: Option<(i32, DateTime<Utc>, String, Vec<u8>)> = sqlx::query_as(
+        "SELECT version, created_at, plain_text, state FROM page_snapshots
+         WHERE page_id = $1 AND version = $2",
+    )
+    .bind(page)
+    .bind(version)
+    .fetch_optional(conn)
+    .await?;
+    Ok(row.map(|(version, created_at, plain_text, state)| {
+        (
+            VersionRow {
+                version,
+                created_at,
+                plain_text,
+            },
+            state,
+        )
+    }))
+}

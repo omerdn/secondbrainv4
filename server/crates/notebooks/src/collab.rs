@@ -40,7 +40,7 @@ use yrs::sync::{
 };
 use yrs::updates::decoder::{Decode, DecoderV1};
 use yrs::updates::encoder::{Encode, Encoder, EncoderV1};
-use yrs::{ClientID, Doc, Update};
+use yrs::{ClientID, Doc, Transact, Update};
 
 use crate::{repo, snapshots};
 
@@ -185,6 +185,45 @@ impl Collab {
             .await
             .map_err(|err| AppError::Internal(Box::new(err)))?;
         Ok(snapshots::encode(&doc))
+    }
+
+    /// Makes `page` hold the content of `target` with a new update by `author` (Y3, T2.5.4):
+    /// stored first, then applied to the open room, which passes it to every editor. Concurrent
+    /// edits merge with it. Returns whether anything changed.
+    ///
+    /// # Errors
+    /// [`AppError::Internal`]; nothing is applied then.
+    pub async fn restore(&self, page: Uuid, target: &Doc, author: Uuid) -> Result<bool, AppError> {
+        let internal = |err: Box<dyn std::error::Error + Send + Sync>| AppError::Internal(err);
+        // Held throughout, so no room opens from storage between writing and applying.
+        let rooms = self.rooms.lock().await;
+        let room = rooms.get(&page).cloned();
+        let current = match &room {
+            Some(room) => {
+                let state = snapshots::encode(room.lock().doc());
+                snapshots::rebuild(Some(&state), &[]).map_err(|err| internal(Box::new(err)))?
+            }
+            None => snapshots::load(&self.pool, page)
+                .await
+                .map_err(|err| internal(Box::new(err)))?,
+        };
+        let update = snapshots::revert_update(&current, target);
+        if update.is_empty() {
+            return Ok(false);
+        }
+        repo::append_update(&self.pool, page, &update, author, self.clock.now())
+            .await
+            .map_err(|err| internal(Box::new(err)))?;
+        if let Some(room) = room {
+            let decoded = Update::decode_v1(&update).map_err(|err| internal(Box::new(err)))?;
+            room.lock()
+                .doc()
+                .transact_mut()
+                .apply_update(decoded)
+                .map_err(|err| internal(Box::new(err)))?;
+        }
+        drop(rooms);
+        Ok(true)
     }
 
     /// Writes `update` for `page` (Y3), and asks for compaction every
