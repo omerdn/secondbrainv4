@@ -112,10 +112,10 @@ describe("wide layout (≥ md)", () => {
 
   it("describes what each placeholder section will hold (T0.7.5)", async () => {
     setWidth(1280);
-    await signedIn("/routines");
-    await header("Rutinler");
+    await signedIn("/goals");
+    await header("Hedefler");
     expect(screen.getByText(i18n.t("common.comingSoon.title"))).toBeOnTheScreen();
-    expect(screen.getByText(i18n.t("common.comingSoon.sections.routines"))).toBeOnTheScreen();
+    expect(screen.getByText(i18n.t("common.comingSoon.sections.goals"))).toBeOnTheScreen();
   });
 
   it("keeps the sign-out action in the account card of the settings", async () => {
