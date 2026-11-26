@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { View } from "react-native";
 
 import { kindLabel } from "./labels";
+import { useStatusLine } from "./statusLines";
+import { StatusLineText } from "./StatusLineText";
 
 export interface ItemCardProps {
   item: Item;
@@ -13,9 +15,11 @@ export interface ItemCardProps {
   onPress?: () => void;
 }
 
-/** The card every item kind is listed with: kind, state, title, description and tags. */
+/** The card every item kind is listed with: kind, state, title, latest status line (S3),
+ * description and tags. */
 export function ItemCard({ item, tags = [], onPress }: ItemCardProps) {
   const { t } = useTranslation();
+  const line = useStatusLine(item.id);
   const kind = t(`items.kinds.${kindLabel(item.kind)}`);
   const state =
     item.deleted_at !== null
@@ -39,6 +43,7 @@ export function ItemCard({ item, tags = [], onPress }: ItemCardProps) {
         <Text className="font-semibold" numberOfLines={2}>
           {item.title}
         </Text>
+        {line !== null ? <StatusLineText line={line} /> : null}
         {item.description !== null ? (
           <Text variant="label" tone="muted" className="font-normal" numberOfLines={2}>
             {item.description}

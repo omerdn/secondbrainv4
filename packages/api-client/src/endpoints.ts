@@ -34,6 +34,7 @@ import type {
   ItemFilter,
   ItemLink,
   ItemListState,
+  ItemStatusLine,
   LinkGoalRequest,
   LinkPreview,
   LoginRequest,
@@ -218,6 +219,9 @@ export function endpoints(api: ApiClient) {
       createPage: (id: string, body: CreatePageRequest, options?: MutationOptions) =>
         api.post<NotebookPage>(`/notebooks/${encodeURIComponent(id)}/pages`, body, options),
       page: (id: string) => api.get<NotebookPage>(`/pages/${encodeURIComponent(id)}`),
+      /** Latest process page lines of the visible items among `ids`, at most 100 (PRD S3). */
+      processLines: (ids: readonly string[]) =>
+        api.get<ItemStatusLine[]>("/process-lines", { query: { ids: ids.join(",") } }),
     },
     goals: {
       /** Both dates are required (PRD D1). */

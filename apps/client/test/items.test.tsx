@@ -1,5 +1,7 @@
 import type { Item, ItemLink, Tag } from "@secondbrain/api-types";
+import { ApiProvider } from "@secondbrain/api-client/react";
 import { ThemeProvider } from "@secondbrain/ui";
+import { QueryClient } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import { act } from "expo-router/testing-library";
 
@@ -50,7 +52,15 @@ const link = (target: Item): ItemLink => ({
 
 const ready = <T,>(value: T): Loadable<T> => ({ status: "ready", value });
 
-const inTheme = (ui: React.ReactElement) => render(<ThemeProvider>{ui}</ThemeProvider>);
+// Cards look up their status line (S3); the fake server has none.
+const testApi = fakeServer({}).api;
+const testQueries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+const wrap = (ui: React.ReactElement) => (
+  <ApiProvider api={testApi} queryClient={testQueries} idempotencyKey={() => "key"}>
+    <ThemeProvider>{ui}</ThemeProvider>
+  </ApiProvider>
+);
+const inTheme = (ui: React.ReactElement) => render(wrap(ui));
 
 beforeEach(async () => {
   resetCredentials();
@@ -122,20 +132,16 @@ describe("ItemDetail", () => {
   it("names the owner", async () => {
     const { rerender } = await inTheme(<ItemDetail {...props} />);
     expect(screen.getByText("Sen")).toBeTruthy();
-    await rerender(
-      <ThemeProvider>
-        <ItemDetail {...props} ownedByMe={false} />
-      </ThemeProvider>,
-    );
+    await rerender(wrap(<ItemDetail {...props} ownedByMe={false} />));
     expect(screen.getByText("Başka bir kişi")).toBeTruthy();
     await rerender(
-      <ThemeProvider>
+      wrap(
         <ItemDetail
           {...props}
           ownedByMe={false}
           item={item({ owner: { type: "team", team_id: "x" } })}
-        />
-      </ThemeProvider>,
+        />,
+      ),
     );
     expect(screen.getByText("Takım")).toBeTruthy();
   });
