@@ -1,6 +1,14 @@
-import type { Item, Routine } from "@secondbrain/api-types";
+import type { Item, Routine, RoutineDay } from "@secondbrain/api-types";
 import { act, fireEvent, screen, waitFor, within } from "expo-router/testing-library";
 
+import {
+  canMark,
+  completionShare,
+  heatLevel,
+  heatmapStart,
+  heatmapWeeks,
+  weekStart,
+} from "@/features/routines/checkin";
 import { describePlan } from "@/features/routines/describe";
 import {
   addReminder,
@@ -12,7 +20,7 @@ import {
   REMINDER_LIMIT,
   validateForm,
 } from "@/features/routines/recurrence";
-import { todayIn } from "@/lib/dates";
+import { addDays, todayIn } from "@/lib/dates";
 import { i18n } from "@/lib/i18n";
 
 import { fakeServer, json, memoryTokenStore, resetCredentials, user } from "./support/api";
@@ -296,6 +304,8 @@ describe("routines screen (R1-R3, R13)", () => {
       fakeServer({
         "GET /me": () => json(200, user),
         "GET /routines/r1": () => json(200, routine),
+        "GET /routines/r1/completions": () => json(200, []),
+        "GET /routines/r1/streak": () => json(200, { current: 0, today_pending: false }),
       }),
       "/routines/r1",
     );
@@ -315,5 +325,144 @@ describe("routines screen (R1-R3, R13)", () => {
       "/routines/r1",
     );
     expect(await screen.findByText(i18n.t("items.detail.notFound"))).toBeTruthy();
+  });
+});
+
+const rday = (date: string, done: number, target = 4, scheduled = true): RoutineDay => ({
+  date,
+  scheduled,
+  target,
+  done,
+  complete: scheduled && done >= target,
+});
+
+describe("check-in and heatmap model (R4, R7, R8)", () => {
+  it("darkens with the completion share and keeps unscheduled days apart (R8)", () => {
+    expect(heatLevel(rday("2026-11-23", 0))).toBe(0);
+    expect(heatLevel(rday("2026-11-23", 1))).toBe(1);
+    expect(heatLevel(rday("2026-11-23", 2))).toBe(2);
+    expect(heatLevel(rday("2026-11-23", 3))).toBe(3);
+    expect(heatLevel(rday("2026-11-23", 4))).toBe(4);
+    expect(heatLevel(rday("2026-11-23", 9))).toBe(4);
+    expect(heatLevel(rday("2026-11-23", 0, 1, false))).toBe("off");
+    // The shade never gets lighter as more is done.
+    let last = 0;
+    for (let done = 0; done <= 8; done += 1) {
+      const level = heatLevel(rday("2026-11-23", done, 8));
+      expect(level).not.toBe("off");
+      expect(Number(level)).toBeGreaterThanOrEqual(last);
+      last = Number(level);
+    }
+  });
+
+  it("counts partial days (R4)", () => {
+    expect(completionShare({ done: 5, target: 8 })).toBe(5 / 8);
+    expect(completionShare({ done: 12, target: 8 })).toBe(1);
+    expect(completionShare({ done: 0, target: 0 })).toBe(0);
+  });
+
+  it("marks only the last 3 days (R7)", () => {
+    expect(canMark("2026-11-23", "2026-11-23")).toBe(true);
+    expect(canMark("2026-11-20", "2026-11-23")).toBe(true);
+    expect(canMark("2026-11-19", "2026-11-23")).toBe(false);
+    expect(canMark("2026-11-24", "2026-11-23")).toBe(false);
+    expect(canMark("2026-12-30", "2027-01-02")).toBe(true);
+  });
+
+  it("lays out weeks Monday first, up to today", () => {
+    expect(weekStart("2026-11-26")).toBe("2026-11-23");
+    expect(weekStart("2026-11-23")).toBe("2026-11-23");
+    expect(weekStart("2026-11-29")).toBe("2026-11-23");
+    expect(heatmapStart("2026-11-26", 2)).toBe("2026-11-16");
+    const weeks = heatmapWeeks([rday("2026-11-16", 1), rday("2026-11-26", 4)], "2026-11-26", 2);
+    expect(weeks).toHaveLength(2);
+    expect(weeks[0]?.[0]?.date).toBe("2026-11-16");
+    expect(weeks[0]?.[1]).toBeNull();
+    expect(weeks[1]?.[3]?.date).toBe("2026-11-26");
+    // Friday to Sunday are still ahead.
+    expect(weeks[1]?.slice(4)).toEqual([null, null, null]);
+  });
+});
+
+describe("routine check-in (R4, R8, R9)", () => {
+  const daily: Routine = {
+    ...routine,
+    daily_target: 2,
+    versions: [
+      { ...routine.versions[0]!, rrule: "FREQ=DAILY", daily_target: 2, valid_from: "2026-01-01" },
+    ],
+    start_date: "2026-01-01",
+  };
+
+  function checkInServer() {
+    const today = todayIn("Europe/Istanbul");
+    const done = new Map<string, number>([[addDays(today, -10), 1]]);
+    let streak = 0;
+    const days = (from: string, to: string) => {
+      const result: RoutineDay[] = [];
+      for (let day = from; day <= to; day = addDays(day, 1)) {
+        result.push(rday(day, done.get(day) ?? 0, 2));
+      }
+      return result;
+    };
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /routines/r1": () => json(200, daily),
+      "GET /routines/r1/completions": (call) => {
+        const query = new URL(`http://x${call.path}`).searchParams;
+        return json(200, days(query.get("from") ?? today, query.get("to") ?? today));
+      },
+      "GET /routines/r1/streak": () =>
+        json(200, { current: streak, today_pending: (done.get(today) ?? 0) < 2 }),
+      "POST /routines/r1/completions": (call) => {
+        const date = (call.body as { date: string }).date;
+        done.set(date, (done.get(date) ?? 0) + 1);
+        if (date === today && done.get(date) === 2) {
+          streak = 1;
+        }
+        return json(201, rday(date, done.get(date) ?? 0, 2));
+      },
+      "DELETE /routines/r1/completions": (call) => {
+        const date = new URL(`http://x${call.path}`).searchParams.get("date") ?? today;
+        done.set(date, Math.max((done.get(date) ?? 0) - 1, 0));
+        return json(200, rday(date, done.get(date) ?? 0, 2));
+      },
+    });
+    return { server, today };
+  }
+
+  it("shows partial progress with +1 and the streak once the day is complete", async () => {
+    const { server, today } = checkInServer();
+    await open(server, "/routines/r1");
+    expect(await screen.findByText("0 / 2")).toBeTruthy();
+    expect(await screen.findByText("Seri: 0 tekrar")).toBeTruthy();
+    expect(screen.getByText("Bugünü tamamlarsan seri sürer.")).toBeTruthy();
+    await fireEvent.press(screen.getByRole("button", { name: "Bugün için +1" }));
+    expect(await screen.findByText("1 / 2")).toBeTruthy();
+    await fireEvent.press(screen.getByRole("button", { name: "Bugün için +1" }));
+    expect(await screen.findByText("2 / 2")).toBeTruthy();
+    expect(await screen.findByText("Seri: 1 tekrar")).toBeTruthy();
+    expect(screen.getByText("Tamamlandı")).toBeTruthy();
+    const posts = server.calls.filter((call) => call.method === "POST");
+    expect(posts.map((call) => call.body)).toEqual([{ date: today }, { date: today }]);
+    await fireEvent.press(screen.getByRole("button", { name: "Geri al" }));
+    expect(await screen.findByText("1 / 2")).toBeTruthy();
+    expect(
+      server.calls.some((call) => call.method === "DELETE" && call.path.includes(`date=${today}`)),
+    ).toBe(true);
+  });
+
+  it("picks a day from the heatmap and refuses days older than 3", async () => {
+    const { server, today } = checkInServer();
+    await open(server, "/routines/r1");
+    await screen.findByText("0 / 2");
+    const old = addDays(today, -10);
+    const oldLabel = new RegExp(`: 1 / 2$`);
+    await fireEvent.press(screen.getByRole("button", { name: oldLabel }));
+    expect(await screen.findByText("1 / 2")).toBeTruthy();
+    expect(screen.getByText("Sadece son 3 gün işaretlenebilir.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /için \+1$/ })).toBeDisabled();
+    expect(server.calls.some((call) => call.method === "POST")).toBe(false);
+    expect(old < today).toBe(true);
   });
 });

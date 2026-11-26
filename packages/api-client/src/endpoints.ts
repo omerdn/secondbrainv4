@@ -11,6 +11,7 @@ import type {
   AppleNativeRequest,
   Board,
   CreateBoardColumnRequest,
+  CompleteRoutineRequest,
   CreateRoutineRequest,
   CreateSavedViewRequest,
   CreateSubtaskRequest,
@@ -34,6 +35,8 @@ import type {
   RegisterRequest,
   ResetPasswordRequest,
   Routine,
+  RoutineDay,
+  RoutineStreak,
   SavedView,
   SessionInfo,
   Subtask,
@@ -179,6 +182,19 @@ export function endpoints(api: ApiClient) {
       create: (body: CreateRoutineRequest, options?: MutationOptions) =>
         api.post<Routine>("/routines", body, options),
       get: (id: string) => api.get<Routine>(`/routines/${encodeURIComponent(id)}`),
+      /** Adds to a day, today when `date` is absent; up to 3 days back (PRD R4, R7). */
+      complete: (id: string, body: CompleteRoutineRequest, options?: MutationOptions) =>
+        api.post<RoutineDay>(`/routines/${encodeURIComponent(id)}/completions`, body, options),
+      /** Takes back the latest mark of a day. */
+      undo: (id: string, date: string | undefined, options?: MutationOptions) =>
+        api.delete<RoutineDay>(`/routines/${encodeURIComponent(id)}/completions`, {
+          ...options,
+          query: { date },
+        }),
+      /** Local days, both ends included, oldest first. */
+      days: (id: string, query: { from?: string; to?: string } = {}) =>
+        api.get<RoutineDay[]>(`/routines/${encodeURIComponent(id)}/completions`, { query }),
+      streak: (id: string) => api.get<RoutineStreak>(`/routines/${encodeURIComponent(id)}/streak`),
     },
     trackers: {
       create: (body: CreateTrackerRequest, options?: MutationOptions) =>
