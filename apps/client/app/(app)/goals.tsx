@@ -1,5 +1,5 @@
-import { PlaceholderScreen } from "@/features/shell";
+import { GoalsScreen } from "@/features/goals";
 
 export default function Page() {
-  return <PlaceholderScreen section="goals" />;
+  return <GoalsScreen />;
 }
