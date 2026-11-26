@@ -51,6 +51,8 @@ where
     realtime::sessions::register(&mut dispatcher, pool.clone(), realtime::Notifier::default());
     realtime::access::register(&mut dispatcher, pool.clone(), realtime::Notifier::default());
     items::register_link_cleanup(&mut dispatcher, items.clone());
+    let collab = notebooks::collab::Collab::new(pool.clone(), clock.clone());
+    notebooks::collab::register_revocation(&mut dispatcher, collab.clone());
     let (stop_dispatcher, dispatcher_stopped) = tokio::sync::oneshot::channel::<()>();
     let dispatcher_pool = pool.clone();
     let dispatcher_task = tokio::spawn(async move {
@@ -263,15 +265,12 @@ where
             public_url: config.public_api_url.clone(),
         }));
     }
-    if config.collab_spike_enabled {
-        // Spike T0.6.2: no page permissions or persistence yet (E2.5).
-        tracing::warn!("collab spike enabled: /collab/{{page_id}} has no page permissions");
-        modules = modules.merge(notebooks::collab::router(notebooks::collab::CollabState {
-            collab: notebooks::collab::Collab::new(),
-            identity,
-            allowed_origins: config.cors_origins.clone(),
-        }));
-    }
+    modules = modules.merge(notebooks::collab::router(notebooks::collab::CollabState {
+        collab,
+        identity,
+        permissions: access_engine.permissions(),
+        allowed_origins: config.cors_origins.clone(),
+    }));
     let result = server::serve(
         listener,
         http::router_with(modules, &config.cors_origins),

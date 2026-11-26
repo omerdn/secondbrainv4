@@ -130,3 +130,37 @@ pub async fn pages_of(conn: impl PgExecutor<'_>, notebook: Uuid) -> sqlx::Result
     .fetch_all(conn)
     .await
 }
+
+/// Stores one Yjs update of a page (Y3). Append-only.
+///
+/// # Errors
+/// Database errors.
+pub async fn append_update(
+    conn: impl PgExecutor<'_>,
+    page: Uuid,
+    update: &[u8],
+    author: Uuid,
+    now: DateTime<Utc>,
+) -> sqlx::Result<()> {
+    sqlx::query(
+        "INSERT INTO page_updates (page_id, update, created_by, created_at) VALUES ($1, $2, $3, $4)",
+    )
+    .bind(page)
+    .bind(update)
+    .bind(author)
+    .bind(now)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// A page's stored updates, in the order they were written.
+///
+/// # Errors
+/// Database errors.
+pub async fn page_updates(conn: impl PgExecutor<'_>, page: Uuid) -> sqlx::Result<Vec<Vec<u8>>> {
+    sqlx::query_scalar("SELECT update FROM page_updates WHERE page_id = $1 ORDER BY id")
+        .bind(page)
+        .fetch_all(conn)
+        .await
+}

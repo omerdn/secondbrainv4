@@ -184,7 +184,8 @@ cargo test --workspace
 
 Kapsam (`access`, `tracking`, `recurrence`, `goals` için ≥ %90 beklenir): `cargo install cargo-llvm-cov --locked` ve `rustup component add llvm-tools-preview` bir kez, sonra `cargo llvm-cov -p <crate> --summary-only`. Stable toolchain bölge (region) ve satır kapsamını verir; gerçek dal sayacı (`--branch`) nightly ister. Bölge kapsamı her dal kolunu ayrı saydığı için ölçü olarak bölge kapsamı kullanılır.
 
-## Ortak düzenleme spike'ı (`/collab/{page_id}`, T0.6.2)
-- `notebooks::collab`: yrs ile y-sync (ADR-0019). Sayfa başına bellekte bir belge; yetki ve kalıcılık **yok** (E2.5).
-- Sadece `COLLAB_SPIKE_ENABLED=true` iken bağlanır (varsayılan kapalı; açılınca açılışta uyarı loglanır). Staging ve üretimde açmayın.
+## Ortak düzenleme (`/collab/{page_id}`, T2.5.2)
+- `notebooks::collab`: yrs ile y-sync (ADR-0019). Bağlantıda sayfada VIEW gerekir (yoksa 404); EDIT yoksa bağlantı salt okunurdur, gönderdiği belge güncellemeleri atılır.
+- **Veri kaybı yok (Y3):** gelen her güncelleme önce `page_updates`'e yazılır, sonra uygulanıp diğerlerine iletilir; yazılamazsa bağlantı kapanır ve istemci yeniden bağlanınca tekrar gönderir. Oda, sayfanın ilk bağlantısında kayıtlı güncellemelerden kurulur; son bağlantı kapanınca bellekten atılır.
+- **Erişim kaybı (V10):** `AccessRevoked` olayı, o kullanıcının sayfadaki bağlantılarını kapatır. Odalar tek süreçte yaşar (tek VDS, ADR-0021); birden çok sunucu örneğine geçilirse bu olay realtime köprüsüyle yayılmalı.
 - İstemci: web'de `y-websocket` doğrudan; mobilde React Native soketi açar, WebView'daki editöre çerçeveleri aktarır (`apps/client/src/lib/editor`). Mobil editör paketi: `pnpm --filter @secondbrain/client editor:build`.

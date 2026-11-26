@@ -11,7 +11,7 @@ const DEMO_PAGE = "01a20000-0000-7000-8000-000000000001";
 
 /**
  * Spike T0.6.2 (ADR-0019): two clients edit the same page through `/collab/{page_id}`.
- * Development only; needs `COLLAB_SPIKE_ENABLED=true` on the server and a signed-in user.
+ * Development only; needs a signed-in user who can see the page.
  */
 export default function EditorSpike() {
   const { state } = useSession();

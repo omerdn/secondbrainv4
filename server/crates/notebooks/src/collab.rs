@@ -1,17 +1,26 @@
-//! Collaborative page editing over y-sync (spike T0.6.2, ADR-0005, ARCHITECTURE §9).
+//! Collaborative page editing over y-sync (ADR-0005, ADR-0019, ARCHITECTURE §9, T2.5.2).
 //!
 //! `GET /collab/{page_id}` upgrades to a WebSocket that speaks the y-sync protocol in binary
 //! frames, exactly what Yjs' `y-websocket` provider expects: sync step 1/2, updates and
-//! awareness (live cursors). The server keeps one [`yrs`] document per page in memory and
+//! awareness (live cursors). The server keeps one [`yrs`] document per page being edited and
 //! fans out every document and awareness change to all connections of that page.
 //!
-//! **Spike limits** (resolved in E2.5): no page permission check (VIEW/EDIT), no persistence
-//! (`page_updates`, snapshots), rooms live until the process exits. The route is therefore only
-//! mounted when explicitly enabled for development (`COLLAB_SPIKE_ENABLED`).
+//! - **Permissions:** the handshake needs VIEW on the page (otherwise 404, V9). Without EDIT the
+//!   connection is read-only: it receives everything, and the document updates it sends are
+//!   dropped.
+//! - **No data loss (Y3):** every update is written to `page_updates` *before* it is applied and
+//!   passed on. If the write fails the connection closes without applying it; the client keeps
+//!   the change and sends it again after reconnecting. A room is rebuilt from the stored updates
+//!   when the first connection of a page opens, so a restart loses nothing.
+//! - **Access loss (V10):** [`Collab::revoke`] closes the connections of users who lost access to
+//!   a page; [`register_revocation`] calls it on `AccessRevoked`. A room is dropped from memory
+//!   when its last connection closes.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use access::{PermissionService, Perms};
 use axum::Router;
 use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
 use axum::extract::{FromRef, Path, State};
@@ -21,12 +30,19 @@ use axum::routing::get;
 use futures_util::{SinkExt, StreamExt};
 use identity::IdentityService;
 use identity::http::Authenticated;
-use kernel::AppError;
-use tokio::sync::broadcast;
+use items::ItemsAccessContext;
+use kernel::{AppError, SharedClock};
+use sqlx::PgPool;
+use tokio::sync::{broadcast, watch};
 use uuid::Uuid;
-use yrs::sync::{Awareness, AwarenessUpdate, DefaultProtocol, Message, Protocol, SyncMessage};
+use yrs::sync::{
+    Awareness, AwarenessUpdate, DefaultProtocol, Message, MessageReader, Protocol, SyncMessage,
+};
+use yrs::updates::decoder::{Decode, DecoderV1};
 use yrs::updates::encoder::{Encode, Encoder, EncoderV1};
-use yrs::{ClientID, Doc};
+use yrs::{ClientID, Doc, ReadTxn, StateVector, Transact, Update};
+
+use crate::repo;
 
 /// Largest frame accepted from a client. Large pastes arrive as a single update.
 const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
@@ -35,16 +51,33 @@ const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
 /// resynchronises with sync step 1).
 const BROADCAST_CAPACITY: usize = 256;
 
-/// One page being edited: its document, awareness and the fan-out channel.
+/// One open connection: whose it is and how to close it.
+struct Member {
+    user: Uuid,
+    close: watch::Sender<bool>,
+}
+
+/// One page being edited: its document, awareness, the fan-out channel and its connections.
 struct Room {
     awareness: Mutex<Awareness>,
     updates: broadcast::Sender<Arc<Vec<u8>>>,
+    members: Mutex<HashMap<u64, Member>>,
 }
 
 impl Room {
-    fn new() -> Arc<Self> {
+    /// A room holding `stored`, the page's updates in order.
+    fn new(stored: &[Vec<u8>]) -> Result<Arc<Self>, yrs::encoding::read::Error> {
         let (updates, _) = broadcast::channel(BROADCAST_CAPACITY);
         let doc = Doc::new();
+        {
+            let mut txn = doc.transact_mut();
+            for update in stored {
+                // Stored updates were decoded before they were written; one that no longer
+                // applies would be a bug, and dropping it would lose data, so it fails the room.
+                txn.apply_update(Update::decode_v1(update)?)
+                    .map_err(|_| yrs::encoding::read::Error::Custom("stored update".into()))?;
+            }
+        }
         {
             let tx = updates.clone();
             doc.observe_update_v1("fan-out", move |_, event| {
@@ -63,10 +96,11 @@ impl Room {
                 }
             });
         }
-        Arc::new(Self {
+        Ok(Arc::new(Self {
             awareness: Mutex::new(awareness),
             updates,
-        })
+            members: Mutex::new(HashMap::new()),
+        }))
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Awareness> {
@@ -74,12 +108,19 @@ impl Room {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }
+
+    fn members(&self) -> std::sync::MutexGuard<'_, HashMap<u64, Member>> {
+        self.members.lock().unwrap_or_else(PoisonError::into_inner)
+    }
 }
 
-/// Rooms by page id. Cheap to clone.
-#[derive(Clone, Default)]
+/// Rooms by page id, plus where updates are stored. Cheap to clone.
+#[derive(Clone)]
 pub struct Collab {
-    rooms: Arc<Mutex<HashMap<Uuid, Arc<Room>>>>,
+    pool: PgPool,
+    clock: SharedClock,
+    rooms: Arc<tokio::sync::Mutex<HashMap<Uuid, Arc<Room>>>>,
+    next_id: Arc<AtomicU64>,
 }
 
 impl std::fmt::Debug for Collab {
@@ -89,36 +130,94 @@ impl std::fmt::Debug for Collab {
 }
 
 impl Collab {
-    pub fn new() -> Self {
-        Self::default()
+    #[must_use]
+    pub fn new(pool: PgPool, clock: SharedClock) -> Self {
+        Self {
+            pool,
+            clock,
+            rooms: Arc::default(),
+            next_id: Arc::new(AtomicU64::new(1)),
+        }
     }
 
-    fn room(&self, page: Uuid) -> Arc<Room> {
-        self.rooms
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .entry(page)
-            .or_insert_with(Room::new)
-            .clone()
+    /// The page's room, loaded from its stored updates if nobody is editing it.
+    async fn room(&self, page: Uuid) -> Result<Arc<Room>, AppError> {
+        let mut rooms = self.rooms.lock().await;
+        if let Some(room) = rooms.get(&page) {
+            return Ok(room.clone());
+        }
+        let stored = repo::page_updates(&self.pool, page)
+            .await
+            .map_err(|err| AppError::Internal(Box::new(err)))?;
+        let room = Room::new(&stored).map_err(|err| AppError::Internal(Box::new(err)))?;
+        rooms.insert(page, room.clone());
+        Ok(room)
     }
 
-    /// The page's current content as a Yjs update (tests and future persistence).
-    pub fn snapshot(&self, page: Uuid) -> Vec<u8> {
-        use yrs::{ReadTxn, StateVector, Transact};
-        let room = self.room(page);
+    /// Forgets the room when its last connection has gone; it is reloaded on the next one.
+    async fn release(&self, page: Uuid, id: u64) {
+        let mut rooms = self.rooms.lock().await;
+        let Some(room) = rooms.get(&page) else { return };
+        let empty = {
+            let mut members = room.members();
+            members.remove(&id);
+            members.is_empty()
+        };
+        if empty {
+            rooms.remove(&page);
+        }
+    }
+
+    /// Closes the connections of `users` to `page` at once (V10). Returns how many closed.
+    pub async fn revoke(&self, page: Uuid, users: &[Uuid]) -> usize {
+        let rooms = self.rooms.lock().await;
+        let Some(room) = rooms.get(&page) else {
+            return 0;
+        };
+        let members = room.members();
+        members
+            .values()
+            .filter(|member| users.contains(&member.user))
+            .map(|member| member.close.send(true))
+            .filter(Result::is_ok)
+            .count()
+    }
+
+    /// The page's current content as a Yjs update, from the stored updates (tests and
+    /// snapshots).
+    ///
+    /// # Errors
+    /// [`AppError::Internal`].
+    pub async fn snapshot(&self, page: Uuid) -> Result<Vec<u8>, AppError> {
+        let stored = repo::page_updates(&self.pool, page)
+            .await
+            .map_err(|err| AppError::Internal(Box::new(err)))?;
+        let room = Room::new(&stored).map_err(|err| AppError::Internal(Box::new(err)))?;
         let awareness = room.lock();
         let txn = awareness.doc().transact();
-        txn.encode_state_as_update_v1(&StateVector::default())
+        Ok(txn.encode_state_as_update_v1(&StateVector::default()))
+    }
+
+    /// Writes `update` for `page` (Y3).
+    async fn persist(&self, page: Uuid, update: &[u8], author: Uuid) -> sqlx::Result<()> {
+        repo::append_update(&self.pool, page, update, author, self.clock.now()).await
     }
 }
 
 /// Everything the route needs.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CollabState {
     pub collab: Collab,
     pub identity: IdentityService,
+    pub permissions: PermissionService<ItemsAccessContext>,
     /// Browser origins allowed to open a cookie-authenticated connection (the CORS origins).
     pub allowed_origins: Vec<String>,
+}
+
+impl std::fmt::Debug for CollabState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CollabState").finish_non_exhaustive()
+    }
 }
 
 impl FromRef<CollabState> for IdentityService {
@@ -135,12 +234,12 @@ pub fn router(state: CollabState) -> Router {
 }
 
 /// Authenticated like `/ws`: bearer token, or the session cookie from an allowed origin
-/// (cross-site WebSocket hijacking).
+/// (cross-site WebSocket hijacking). Needs VIEW on a page; EDIT makes it writable.
 async fn upgrade(
     State(state): State<CollabState>,
     Path(page): Path<Uuid>,
     headers: HeaderMap,
-    Authenticated(_auth): Authenticated,
+    Authenticated(auth): Authenticated,
     ws: WebSocketUpgrade,
 ) -> Result<Response, AppError> {
     if !headers.contains_key(header::AUTHORIZATION)
@@ -148,10 +247,42 @@ async fn upgrade(
     {
         return Err(AppError::Forbidden);
     }
-    let room = state.collab.room(page);
+    let user = auth.user_id.as_uuid();
+    let pool = &state.collab.pool;
+    let internal = |err: sqlx::Error| AppError::Internal(Box::new(err));
+    if !state
+        .permissions
+        .check(pool, user, page, Perms::VIEW)
+        .await
+        .map_err(internal)?
+    {
+        return Err(AppError::NotFound);
+    }
+    repo::get_page(pool, page)
+        .await
+        .map_err(internal)?
+        .ok_or(AppError::NotFound)?;
+    let editable = state
+        .permissions
+        .check(pool, user, page, Perms::EDIT)
+        .await
+        .map_err(internal)?;
+    let collab = state.collab.clone();
+    let room = collab.room(page).await?;
+    let id = collab.next_id.fetch_add(1, Ordering::Relaxed);
+    let (close, closed) = watch::channel(false);
+    room.members().insert(id, Member { user, close });
+    let link = Link {
+        collab,
+        room,
+        page,
+        id,
+        user,
+        editable,
+    };
     Ok(ws
         .max_message_size(MAX_MESSAGE_BYTES)
-        .on_upgrade(move |socket| connection(socket, room)))
+        .on_upgrade(move |socket| link.run(socket, closed)))
 }
 
 fn origin_allowed(origin: Option<&HeaderValue>, allowed: &[String]) -> bool {
@@ -163,83 +294,155 @@ fn origin_allowed(origin: Option<&HeaderValue>, allowed: &[String]) -> bool {
     }
 }
 
-async fn connection(socket: WebSocket, room: Arc<Room>) {
-    let (mut sink, mut stream) = socket.split();
-    let mut updates = room.updates.subscribe();
-    // Awareness clients announced by this connection, removed when it closes.
-    let mut clients: HashSet<ClientID> = HashSet::new();
+/// One connection to a room.
+struct Link {
+    collab: Collab,
+    room: Arc<Room>,
+    page: Uuid,
+    id: u64,
+    user: Uuid,
+    editable: bool,
+}
 
-    let greeting = {
-        let awareness = room.lock();
-        let mut encoder = EncoderV1::new();
-        DefaultProtocol
-            .start(&awareness, &mut encoder)
-            .map(|()| encoder.to_vec())
-    };
-    let Ok(greeting) = greeting else { return };
-    if sink.send(WsMessage::Binary(greeting.into())).await.is_err() {
-        return;
-    }
+/// What to do with one incoming message.
+enum Step {
+    /// Answer it from the room.
+    Handle(Message),
+    /// A document update to store before applying (writable connections only).
+    Store(Vec<u8>),
+    /// A document update from a read-only connection, or an empty one: dropped.
+    Skip,
+}
 
-    loop {
-        tokio::select! {
-            incoming = stream.next() => {
-                let data = match incoming {
-                    Some(Ok(WsMessage::Binary(data))) => data,
-                    Some(Ok(WsMessage::Ping(_) | WsMessage::Pong(_) | WsMessage::Text(_))) => continue,
-                    Some(Ok(WsMessage::Close(_)) | Err(_)) | None => break,
-                };
-                remember_awareness_clients(&data, &mut clients);
-                let replies = {
-                    let mut awareness = room.lock();
-                    DefaultProtocol.handle(&mut awareness, &data)
-                };
-                match replies {
-                    Ok(replies) => {
-                        for reply in replies {
-                            if sink.send(WsMessage::Binary(reply.encode_v1().into())).await.is_err() {
-                                break;
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        tracing::warn!(error = %err, "collab message rejected");
-                        break;
-                    }
+impl Link {
+    fn classify(&self, message: Message) -> Result<Step, yrs::encoding::read::Error> {
+        match message {
+            Message::Sync(SyncMessage::SyncStep2(update) | SyncMessage::Update(update)) => {
+                // Decoded first, so nothing malformed is ever stored.
+                let decoded = Update::decode_v1(&update)?;
+                if !self.editable || decoded.is_empty() {
+                    Ok(Step::Skip)
+                } else {
+                    Ok(Step::Store(update))
                 }
             }
-            outgoing = updates.recv() => match outgoing {
-                Ok(message) => {
-                    if sink.send(WsMessage::Binary(message.as_ref().clone().into())).await.is_err() {
-                        break;
-                    }
-                }
-                // Too slow: close; the client reconnects and resynchronises.
-                Err(broadcast::error::RecvError::Lagged(_)) => break,
-                Err(broadcast::error::RecvError::Closed) => break,
-            },
+            other => Ok(Step::Handle(other)),
         }
     }
 
-    // Live cursors of this connection disappear for everyone else.
-    if !clients.is_empty() {
-        let mut awareness = room.lock();
-        for client in clients {
-            awareness.remove_state(client);
+    async fn run(self, socket: WebSocket, mut closed: watch::Receiver<bool>) {
+        self.serve(socket, &mut closed).await;
+        self.collab.release(self.page, self.id).await;
+    }
+
+    async fn serve(&self, socket: WebSocket, closed: &mut watch::Receiver<bool>) {
+        let (mut sink, mut stream) = socket.split();
+        let mut updates = self.room.updates.subscribe();
+        // Awareness clients announced by this connection, removed when it closes.
+        let mut clients: HashSet<ClientID> = HashSet::new();
+
+        let greeting = {
+            let awareness = self.room.lock();
+            let mut encoder = EncoderV1::new();
+            DefaultProtocol
+                .start(&awareness, &mut encoder)
+                .map(|()| encoder.to_vec())
+        };
+        let Ok(greeting) = greeting else { return };
+        if sink.send(WsMessage::Binary(greeting.into())).await.is_err() {
+            return;
+        }
+
+        'connection: loop {
+            tokio::select! {
+                _ = closed.changed() => break,
+                incoming = stream.next() => {
+                    let data = match incoming {
+                        Some(Ok(WsMessage::Binary(data))) => data,
+                        Some(Ok(WsMessage::Ping(_) | WsMessage::Pong(_) | WsMessage::Text(_))) => continue,
+                        Some(Ok(WsMessage::Close(_)) | Err(_)) | None => break,
+                    };
+                    let mut decoder = DecoderV1::from(data.as_ref());
+                    for message in MessageReader::new(&mut decoder) {
+                        let Ok(message) = message else { break 'connection };
+                        if let Message::Awareness(AwarenessUpdate { clients: entries }) = &message {
+                            clients.extend(entries.keys().copied());
+                        }
+                        let step = match self.classify(message) {
+                            Ok(step) => step,
+                            Err(err) => {
+                                tracing::warn!(error = %err, "collab message rejected");
+                                break 'connection;
+                            }
+                        };
+                        let reply = match step {
+                            Step::Skip => None,
+                            Step::Store(update) => {
+                                // Y3: stored before anyone sees it; on failure the client
+                                // keeps the change and sends it again after reconnecting.
+                                if let Err(err) = self.collab.persist(self.page, &update, self.user).await {
+                                    tracing::error!(error = %err, "page update not stored");
+                                    break 'connection;
+                                }
+                                let message = Message::Sync(SyncMessage::Update(update));
+                                let mut awareness = self.room.lock();
+                                Some(DefaultProtocol.handle_message(&mut awareness, message))
+                            }
+                            Step::Handle(message) => {
+                                let mut awareness = self.room.lock();
+                                Some(DefaultProtocol.handle_message(&mut awareness, message))
+                            }
+                        };
+                        match reply {
+                            None | Some(Ok(None)) => {}
+                            Some(Ok(Some(reply))) => {
+                                if sink.send(WsMessage::Binary(reply.encode_v1().into())).await.is_err() {
+                                    break 'connection;
+                                }
+                            }
+                            Some(Err(err)) => {
+                                tracing::warn!(error = %err, "collab message rejected");
+                                break 'connection;
+                            }
+                        }
+                    }
+                }
+                outgoing = updates.recv() => match outgoing {
+                    Ok(message) => {
+                        if sink.send(WsMessage::Binary(message.as_ref().clone().into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    // Too slow: close; the client reconnects and resynchronises.
+                    Err(broadcast::error::RecvError::Lagged(_) | broadcast::error::RecvError::Closed) => break,
+                },
+            }
+        }
+        let _ = sink.send(WsMessage::Close(None)).await;
+
+        // Live cursors of this connection disappear for everyone else.
+        if !clients.is_empty() {
+            let mut awareness = self.room.lock();
+            for client in clients {
+                awareness.remove_state(client);
+            }
         }
     }
 }
 
-/// Records which awareness client ids a connection speaks for.
-fn remember_awareness_clients(data: &[u8], clients: &mut HashSet<ClientID>) {
-    use yrs::sync::MessageReader;
-    use yrs::updates::decoder::DecoderV1;
-    let mut decoder = DecoderV1::from(data);
-    for message in MessageReader::new(&mut decoder).flatten() {
-        if let Message::Awareness(AwarenessUpdate { clients: entries }) = message {
-            clients.extend(entries.keys().copied());
-        }
-    }
+/// Closes collab connections on `AccessRevoked` (V10; call from `app::run`). Rooms live in one
+/// process, which is the deployment today (ADR-0021).
+pub fn register_revocation(dispatcher: &mut db::outbox::Dispatcher, collab: Collab) {
+    dispatcher.subscribe(
+        "notebooks.close-revoked-collab",
+        move |event: access::AccessRevoked, _| {
+            let collab = collab.clone();
+            async move {
+                collab.revoke(event.item_id, &event.user_ids).await;
+                Ok(())
+            }
+        },
+    );
 }
 
 #[cfg(test)]
