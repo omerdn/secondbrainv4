@@ -250,6 +250,14 @@ where
         access_engine.permissions(),
         realtime::Notifier::default(),
     );
+    // Search asks each module to search its own tables (T2.7.5, ADR-0007).
+    let search_service = search::SearchService::new(
+        items.clone(),
+        vec![
+            std::sync::Arc::new(items.clone()),
+            std::sync::Arc::new(notebooks_service.clone()),
+        ],
+    );
     // The Today screen reads through the modules' services (T2.7.1, ADR-0007).
     let today_service = today::TodayService::new(
         pool.clone(),
@@ -270,7 +278,7 @@ where
                 }))
                 .merge(notebooks::http::router(
                     notebooks::http::NotebooksHttpState {
-                        notebooks: notebooks_service,
+                        notebooks: notebooks_service.clone(),
                         identity: identity.clone(),
                         collab: collab.clone(),
                         process: process_pages.clone(),
@@ -290,6 +298,10 @@ where
                 }))
                 .merge(sessions::http::router(sessions::http::SessionsHttpState {
                     sessions: sessions_service.clone(),
+                    identity: identity.clone(),
+                }))
+                .merge(search::http::router(search::http::SearchHttpState {
+                    search: search_service,
                     identity: identity.clone(),
                 }))
                 .merge(today::http::router(today::http::HomeHttpState {

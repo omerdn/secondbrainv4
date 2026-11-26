@@ -9,6 +9,7 @@ mod invitations;
 mod links;
 mod model;
 pub mod purge;
+mod search;
 mod service;
 mod tags;
 mod touch;

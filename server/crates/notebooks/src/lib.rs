@@ -13,6 +13,7 @@ pub mod http;
 mod model;
 pub mod process;
 pub mod repo;
+mod search;
 mod service;
 pub mod snapshots;
 
