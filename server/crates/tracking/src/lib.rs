@@ -5,6 +5,7 @@
 
 mod aggregate;
 mod definitions;
+mod events;
 pub mod http;
 mod model;
 mod progress;
@@ -14,6 +15,7 @@ mod summary;
 
 pub use aggregate::{DateWindow, aggregate, aggregate_period, start_of_day, window_for};
 pub use definitions::{CreateTrackerRequest, TrackerView, UNIT_MAX_CHARS, UpdateTrackerRequest};
+pub use events::EntryNoted;
 pub use model::{
     Aggregation, Direction, NewEntry, NewTracker, OwnerKind, Period, Tracker, TrackerEntry,
 };
@@ -22,6 +24,7 @@ pub use progress::{
     TrackerStatus, tracker_status,
 };
 pub use service::{
-    CreateEntryRequest, EntryView, ListEntriesQuery, NOTE_MAX_CHARS, TrackerEntries,
+    CreateEntryRequest, EntryView, ListEntriesQuery, NOTE_MAX_CHARS, NoteSource, NotesFuture,
+    TrackerEntries,
 };
 pub use summary::{TrackerSummary, summarize};

@@ -332,3 +332,28 @@ pub async fn snapshot(
         )
     }))
 }
+
+/// The process page of `item`, if it has one (S1).
+///
+/// # Errors
+/// Database errors.
+pub async fn process_page_of(conn: impl PgExecutor<'_>, item: Uuid) -> sqlx::Result<Option<Uuid>> {
+    sqlx::query_scalar("SELECT item_id FROM pages WHERE process_of_item_id = $1")
+        .bind(item)
+        .fetch_optional(conn)
+        .await
+}
+
+/// Serializes process page creation for one item until the transaction ends.
+///
+/// # Errors
+/// Database errors.
+pub async fn lock_process_page(conn: &mut PgConnection, item: Uuid) -> sqlx::Result<()> {
+    sqlx::query(
+        "SELECT pg_advisory_xact_lock(hashtextextended('notebooks:process:' || $1::text, 0))",
+    )
+    .bind(item)
+    .execute(conn)
+    .await?;
+    Ok(())
+}

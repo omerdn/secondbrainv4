@@ -29,7 +29,7 @@ const SWEEP_LIMIT: i64 = 500;
 /// Longest plain text kept for search.
 const PLAIN_TEXT_MAX_CHARS: usize = 200_000;
 /// Root of the TipTap document (y-prosemirror); `content` is a plain text root used in tests.
-const PROSEMIRROR_ROOT: &str = "default";
+pub(crate) const PROSEMIRROR_ROOT: &str = "default";
 const TEXT_ROOT: &str = "content";
 
 /// Compacts one page.
@@ -213,14 +213,7 @@ pub fn revert_update(current: &Doc, target: &Doc) -> Vec<u8> {
     if encode_content(current) == encode_content(target) {
         return Vec::new();
     }
-    // A copy with its own client id, so the change never collides with an editor's.
-    let scratch = Doc::new();
-    {
-        let mut txn = scratch.transact_mut();
-        if let Ok(update) = Update::decode_v1(&encode(current)) {
-            let _ = txn.apply_update(update);
-        }
-    }
+    let scratch = scratch_copy(current);
     let before = scratch.transact().state_vector();
     let fragment = scratch.get_or_insert_xml_fragment(PROSEMIRROR_ROOT);
     let text = scratch.get_or_insert_text(TEXT_ROOT);
@@ -239,6 +232,18 @@ pub fn revert_update(current: &Doc, target: &Doc) -> Vec<u8> {
         }
     }
     scratch.transact().encode_state_as_update_v1(&before)
+}
+
+/// A copy of `doc` with its own client id, so a server change never collides with an editor's.
+pub(crate) fn scratch_copy(doc: &Doc) -> Doc {
+    let scratch = Doc::new();
+    {
+        let mut txn = scratch.transact_mut();
+        if let Ok(update) = Update::decode_v1(&encode(doc)) {
+            let _ = txn.apply_update(update);
+        }
+    }
+    scratch
 }
 
 /// The content of `doc` as comparable text: its structure, attributes and formatting.

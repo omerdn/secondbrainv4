@@ -187,13 +187,31 @@ impl Collab {
         Ok(snapshots::encode(&doc))
     }
 
-    /// Makes `page` hold the content of `target` with a new update by `author` (Y3, T2.5.4):
-    /// stored first, then applied to the open room, which passes it to every editor. Concurrent
-    /// edits merge with it. Returns whether anything changed.
+    /// Makes `page` hold the content of `target` with a new update by `author` (Y3, T2.5.4).
+    /// Returns whether anything changed.
     ///
     /// # Errors
     /// [`AppError::Internal`]; nothing is applied then.
     pub async fn restore(&self, page: Uuid, target: &Doc, author: Uuid) -> Result<bool, AppError> {
+        self.change(page, author, |current| {
+            snapshots::revert_update(current, target)
+        })
+        .await
+    }
+
+    /// A change the server makes to `page` as `author`: `make` builds an update from the current
+    /// document (empty for none). The update is stored first, then applied to the open room,
+    /// which passes it to every editor (Y3); concurrent edits merge with it. Returns whether
+    /// anything changed.
+    ///
+    /// # Errors
+    /// [`AppError::Internal`]; nothing is applied then.
+    pub async fn change(
+        &self,
+        page: Uuid,
+        author: Uuid,
+        make: impl FnOnce(&Doc) -> Vec<u8>,
+    ) -> Result<bool, AppError> {
         let internal = |err: Box<dyn std::error::Error + Send + Sync>| AppError::Internal(err);
         // Held throughout, so no room opens from storage between writing and applying.
         let rooms = self.rooms.lock().await;
@@ -207,7 +225,7 @@ impl Collab {
                 .await
                 .map_err(|err| internal(Box::new(err)))?,
         };
-        let update = snapshots::revert_update(&current, target);
+        let update = make(&current);
         if update.is_empty() {
             return Ok(false);
         }

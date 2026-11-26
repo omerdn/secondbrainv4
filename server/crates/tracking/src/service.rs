@@ -1,7 +1,11 @@
 //! Tracker entries: add, list, delete (PRD T2, T1.3.4). Every authorization goes through
 //! `access::PermissionService`; facts about the item come from `ItemsService` (ADR-0007).
 
+use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use access::{PermissionService, Perms};
 use chrono::{DateTime, Duration, NaiveDate, Utc};
@@ -18,8 +22,24 @@ use sqlx::PgPool;
 use ts_rs::TS;
 use uuid::Uuid;
 
+use crate::events::EntryNoted;
 use crate::model::{NewEntry, OwnerKind, TrackerEntry};
 use crate::repo;
+
+/// Notes by block id, as [`NoteSource::notes`] returns them.
+pub type NotesFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<HashMap<Uuid, String>, AppError>> + Send + 'a>>;
+
+/// Where a linked note lives: the lines of an item's process page (T3). Implemented by
+/// `notebooks`; tracking never reads its tables (ADR-0007).
+pub trait NoteSource: Send + Sync {
+    /// The current text of the lines `blocks` of `item`'s process page. A line that is gone is
+    /// missing from the result.
+    fn notes(&self, item: Uuid, blocks: Vec<Uuid>) -> NotesFuture<'_>;
+}
+
+/// Entries whose notes have not reached a process page, per sweep.
+const UNLINKED_PER_SWEEP: i64 = 100;
 
 /// Longest entry note (T2: "short").
 pub const NOTE_MAX_CHARS: usize = 500;
@@ -73,6 +93,20 @@ pub struct EntryView {
     pub local_date: NaiveDate,
     pub note: Option<String>,
     pub created_at: DateTime<Utc>,
+}
+
+impl EntryView {
+    /// The view of `entry`; a linked note comes from its line in `notes` (T3).
+    fn with_notes(entry: TrackerEntry, notes: &HashMap<Uuid, String>) -> Self {
+        let note = match entry.note_block_id {
+            Some(block) => notes.get(&block).cloned(),
+            None => entry.note.clone(),
+        };
+        Self {
+            note,
+            ..Self::from(entry)
+        }
+    }
 }
 
 impl From<TrackerEntry> for EntryView {
@@ -156,6 +190,7 @@ pub struct TrackerEntries {
     pub(crate) permissions: PermissionService<ItemsAccessContext>,
     pub(crate) items: ItemsService,
     pub(crate) identity: IdentityService,
+    pub(crate) notes: Option<Arc<dyn NoteSource>>,
 }
 
 impl TrackerEntries {
@@ -173,7 +208,64 @@ impl TrackerEntries {
             permissions,
             items,
             identity,
+            notes: None,
         }
+    }
+
+    /// Reads linked notes from `notes`, the process pages (T3). Without it, entries show the
+    /// note they were stored with.
+    #[must_use]
+    pub fn with_notes(mut self, notes: Arc<dyn NoteSource>) -> Self {
+        self.notes = Some(notes);
+        self
+    }
+
+    /// The linked notes of `entries` of `item`.
+    async fn linked_notes(
+        &self,
+        item: Uuid,
+        entries: &[TrackerEntry],
+    ) -> Result<HashMap<Uuid, String>, AppError> {
+        let blocks: Vec<Uuid> = entries.iter().filter_map(|e| e.note_block_id).collect();
+        match &self.notes {
+            Some(source) if !blocks.is_empty() => source.notes(item, blocks).await,
+            _ => Ok(HashMap::new()),
+        }
+    }
+
+    /// Links `entry`'s note to its process page line `block` (T3). Called by `notebooks` once
+    /// the line is written; repeating it changes nothing.
+    ///
+    /// # Errors
+    /// [`AppError::Internal`].
+    pub async fn link_note(&self, entry: Uuid, block: Uuid) -> Result<(), AppError> {
+        repo::set_note_block(&self.pool, entry, block)
+            .await
+            .map_err(internal)?;
+        Ok(())
+    }
+
+    /// Notes that should be on a process page and are not yet, as the events that put them
+    /// there (older entries, or a failed attempt).
+    ///
+    /// # Errors
+    /// [`AppError::Internal`].
+    pub async fn unlinked_notes(&self) -> Result<Vec<EntryNoted>, AppError> {
+        let entries = repo::unlinked_notes(&self.pool, UNLINKED_PER_SWEEP)
+            .await
+            .map_err(internal)?;
+        Ok(entries
+            .into_iter()
+            .filter_map(|entry| {
+                Some(EntryNoted {
+                    entry_id: entry.id,
+                    item_id: entry.tracker_item_id,
+                    user_id: entry.user_id,
+                    local_date: entry.local_date,
+                    note: entry.note?,
+                })
+            })
+            .collect())
     }
 
     /// Adds an entry (EDIT). Its `local_date` is the actor's calendar day at `occurred_at`.
@@ -213,6 +305,19 @@ impl TrackerEntries {
             .touch(&mut tx, tracker, TouchAction::EntryLogged)
             .await
             .map_err(internal)?;
+        if let Some(note) = &stored.note {
+            // T3: the note goes to the process page; until then the entry shows its copy.
+            let event = EntryNoted {
+                entry_id: stored.id,
+                item_id: tracker,
+                user_id: actor,
+                local_date: stored.local_date,
+                note: note.clone(),
+            };
+            db::outbox::publish(&mut tx, &event)
+                .await
+                .map_err(internal)?;
+        }
         tx.commit().await.map_err(internal)?;
         Ok(stored.into())
     }
@@ -241,7 +346,11 @@ impl TrackerEntries {
         let entries = repo::page_entries(&self.pool, tracker, days, after, page.fetch_limit())
             .await
             .map_err(internal)?;
-        let views = entries.into_iter().map(EntryView::from).collect();
+        let notes = self.linked_notes(tracker, &entries).await?;
+        let views = entries
+            .into_iter()
+            .map(|entry| EntryView::with_notes(entry, &notes))
+            .collect();
         Ok(Page::from_overfetch(
             views,
             page.limit,

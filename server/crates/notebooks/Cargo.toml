@@ -24,6 +24,7 @@ kernel = { path = "../kernel" }
 serde.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
+tracking = { path = "../tracking" }
 tokio.workspace = true
 tracing.workspace = true
 ts-rs.workspace = true
@@ -33,4 +34,6 @@ yrs.workspace = true
 [dev-dependencies]
 db = { path = "../db", features = ["testing"] }
 futures-util.workspace = true
+rust_decimal.workspace = true
+serde_json.workspace = true
 tokio-tungstenite.workspace = true

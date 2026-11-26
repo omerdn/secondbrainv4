@@ -9,6 +9,8 @@
 //! | GET  | `/notebooks/{id}` | 200 [`Notebook`]; VIEW; visible pages only |
 //! | POST | `/notebooks/{id}/pages` | 201 [`Page`]; EDIT; owned by the notebook's owner (Y5) |
 //! | GET  | `/pages/{id}` | 200 [`Page`]; VIEW |
+//! | GET  | `/items/{id}/process-page` | 200 [`ProcessPage`] with the latest line; VIEW on the item (S3) |
+//! | POST | `/items/{id}/process-page` | 200 [`ProcessPage`], created on the first note; EDIT (S1) |
 //! | GET  | `/pages/{id}/versions?before=` | 200 [`PageVersion`]`[]`, newest first; VIEW (Y3) |
 //! | GET  | `/pages/{id}/versions/{version}` | 200 [`PageVersionContent`]; VIEW (Y3) |
 //! | POST | `/pages/{id}/versions/{version}/restore` | 200 [`PageVersion`], the new latest; EDIT (Y3) |
@@ -27,6 +29,7 @@ use crate::model::{
     CreateNotebookRequest, CreatePageRequest, Notebook, NotebookSummary, Page, PageVersion,
     PageVersionContent, VersionsQuery, default_title,
 };
+use crate::process::{ProcessPage, ProcessPages};
 use crate::service::NotebooksService;
 
 /// State of the notebook routes.
@@ -36,6 +39,7 @@ pub struct NotebooksHttpState {
     pub identity: IdentityService,
     /// Open rooms, so a restored version reaches every editor.
     pub collab: Collab,
+    pub process: ProcessPages,
 }
 
 impl FromRef<NotebooksHttpState> for IdentityService {
@@ -51,6 +55,10 @@ pub fn router(state: NotebooksHttpState) -> Router {
         .route("/notebooks/{id}", get(read_notebook))
         .route("/notebooks/{id}/pages", post(create_page))
         .route("/pages/{id}", get(read_page))
+        .route(
+            "/items/{id}/process-page",
+            get(read_process_page).post(open_process_page),
+        )
         .route("/pages/{id}/versions", get(list_versions))
         .route("/pages/{id}/versions/{version}", get(read_version))
         .route(
@@ -155,6 +163,30 @@ async fn restore_version(
     state
         .notebooks
         .restore_version(auth.user_id.as_uuid(), id, version, &state.collab)
+        .await
+        .map(Json)
+}
+
+async fn read_process_page(
+    State(state): State<NotebooksHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ProcessPage>, AppError> {
+    state
+        .process
+        .get(auth.user_id.as_uuid(), id)
+        .await
+        .map(Json)
+}
+
+async fn open_process_page(
+    State(state): State<NotebooksHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ProcessPage>, AppError> {
+    state
+        .process
+        .open(auth.user_id.as_uuid(), id)
         .await
         .map(Json)
 }

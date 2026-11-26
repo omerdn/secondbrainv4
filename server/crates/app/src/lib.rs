@@ -53,15 +53,6 @@ where
     items::register_link_cleanup(&mut dispatcher, items.clone());
     let collab = notebooks::collab::Collab::new(pool.clone(), clock.clone());
     notebooks::collab::register_revocation(&mut dispatcher, collab.clone());
-    let (stop_dispatcher, dispatcher_stopped) = tokio::sync::oneshot::channel::<()>();
-    let dispatcher_pool = pool.clone();
-    let dispatcher_task = tokio::spawn(async move {
-        dispatcher
-            .run(&dispatcher_pool, async {
-                let _ = dispatcher_stopped.await;
-            })
-            .await;
-    });
 
     // `Config` guarantees `resend` is set exactly when `EMAIL_DRIVER=resend`.
     let email_sender: kernel::SharedEmailSender = match &config.resend {
@@ -128,6 +119,46 @@ where
     }
     notebooks::snapshots::register(&mut worker, &mut scheduler, pool.clone(), clock.clone())
         .map_err(RunError::Schedule)?;
+    // Process pages (T2.5.5): entry notes become lines of the item's process page (T3), and
+    // entries read their notes back from there.
+    let notebooks_service = notebooks::NotebooksService::new(
+        pool.clone(),
+        clock.clone(),
+        access_engine.clone(),
+        items.clone(),
+    );
+    let process_pages = notebooks::process::ProcessPages::new(
+        pool.clone(),
+        notebooks_service.clone(),
+        (items.clone(), identity.clone()),
+        collab.clone(),
+        &access_engine,
+    );
+    let tracker_entries = tracking::TrackerEntries::new(
+        pool.clone(),
+        clock.clone(),
+        access_engine.permissions(),
+        items.clone(),
+        identity.clone(),
+    )
+    .with_notes(std::sync::Arc::new(process_pages.clone()));
+    notebooks::process::register(
+        &mut dispatcher,
+        (&mut worker, &mut scheduler),
+        process_pages.clone(),
+        tracker_entries.clone(),
+    )
+    .map_err(RunError::Schedule)?;
+    // Every subscriber is registered; start delivering.
+    let (stop_dispatcher, dispatcher_stopped) = tokio::sync::oneshot::channel::<()>();
+    let dispatcher_pool = pool.clone();
+    let dispatcher_task = tokio::spawn(async move {
+        dispatcher
+            .run(&dispatcher_pool, async {
+                let _ = dispatcher_stopped.await;
+            })
+            .await;
+    });
     scheduler
         .add(
             "idempotency-cleanup",
@@ -192,14 +223,10 @@ where
                 }))
                 .merge(notebooks::http::router(
                     notebooks::http::NotebooksHttpState {
-                        notebooks: notebooks::NotebooksService::new(
-                            pool.clone(),
-                            clock.clone(),
-                            access_engine.clone(),
-                            items.clone(),
-                        ),
+                        notebooks: notebooks_service,
                         identity: identity.clone(),
                         collab: collab.clone(),
+                        process: process_pages,
                     },
                 ))
                 .merge(goals::http::router(goals::http::GoalsHttpState {
@@ -242,13 +269,7 @@ where
                     identity: identity.clone(),
                 }))
                 .merge(tracking::http::router(tracking::http::TrackingHttpState {
-                    entries: tracking::TrackerEntries::new(
-                        pool.clone(),
-                        clock.clone(),
-                        access_engine.permissions(),
-                        items,
-                        identity.clone(),
-                    ),
+                    entries: tracker_entries,
                     identity: identity.clone(),
                 })),
             idempotency,
