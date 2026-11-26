@@ -9,9 +9,10 @@ import { View } from "react-native";
 import { Screen } from "@/features/shell";
 
 import { GoalLinks } from "./GoalLinks";
+import { GoalProgressCard } from "./GoalProgressCard";
 import { formatDate } from "./model";
 
-/** A goal: its dates and linked items (PRD D1-D3). */
+/** A goal: its dates, progress (PRD D4, D6) and linked items (D1-D3). */
 export function GoalDetailScreen({ id }: { id: string }) {
   const { t, i18n } = useTranslation();
   const api = useApi();
@@ -61,6 +62,7 @@ export function GoalDetailScreen({ id }: { id: string }) {
           </Text>
           {item.description !== null ? <Text>{item.description}</Text> : null}
         </Card>
+        <GoalProgressCard goalId={id} />
         <GoalLinks goal={goal.data} />
         <View className="self-start">
           <Button

@@ -110,3 +110,18 @@ export function formatDate(day: string, locale: string): string {
     timeZone: "UTC",
   }).format(new Date(`${day}T00:00:00Z`));
 }
+
+/** `share` (0 to 1) as a whole percentage. */
+export function percent(share: number): number {
+  return Math.round(Math.min(Math.max(share, 0), 10) * 100);
+}
+
+/** How the pace reads (D4): ahead of or on plan, a little behind, or well behind. */
+export type PaceTone = "ahead" | "onTrack" | "behind";
+
+export function paceTone(pace: number): PaceTone {
+  if (pace >= 1) {
+    return "ahead";
+  }
+  return pace >= 0.8 ? "onTrack" : "behind";
+}
