@@ -56,6 +56,7 @@ import type {
   TimerCommand,
   Today,
   Calendar,
+  SearchHit,
   HomePreferences,
   UpdateHomePreferences,
   WorkSession,
@@ -231,6 +232,10 @@ export function endpoints(api: ApiClient) {
       /** Latest process page lines of the visible items among `ids`, at most 100 (PRD S3). */
       processLines: (ids: readonly string[]) =>
         api.get<ItemStatusLine[]>("/process-lines", { query: { ids: ids.join(",") } }),
+    },
+    search: {
+      /** Items the caller can view that match `q`, best first (PRD AR1, AR2). */
+      query: (q: string) => api.get<SearchHit[]>("/search", { query: { q } }),
     },
     calendar: {
       /** Task dates, routine occurrences and goal ranges of `from..=to`, at most 62 days (C1). */

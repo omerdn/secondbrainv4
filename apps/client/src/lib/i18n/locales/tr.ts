@@ -379,6 +379,17 @@ export const tr = {
     editorSoon: "Sayfa düzenleyici mobilde yakında gelecek; şimdilik web'de düzenleyebilirsin.",
     errors: { required: "Bu alan gerekli.", tooLong: "En fazla 500 karakter olabilir." },
   },
+  search: {
+    open: "Ara",
+    shortcut: "⌘K / Ctrl K",
+    title: "Ara",
+    label: "Ne arıyorsun?",
+    hint: "Başlık, açıklama, etiket ve sayfa içeriklerinde arar.",
+    failed: "Arama yapılamadı. Tekrar dene.",
+    none: '"{{query}}" için sonuç yok.',
+    byTag: "Etiket: {{tag}}",
+    fields: { title: "Başlık", tag: "Etiket", description: "Açıklama", content: "Sayfa içeriği" },
+  },
   calendar: {
     loadFailed: "Takvim yüklenemedi",
     views: { day: "Gün", week: "Hafta", month: "Ay" },
