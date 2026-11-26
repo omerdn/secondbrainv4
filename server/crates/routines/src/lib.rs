@@ -7,6 +7,7 @@
 mod completions;
 pub mod http;
 mod model;
+mod progress;
 pub mod repo;
 mod service;
 mod streak;
@@ -19,5 +20,6 @@ pub use model::{
     ChangePlanRequest, CreateRoutineRequest, DAILY_TARGET_MAX, PlanVersionView, REMINDER_LIMIT,
     RoutineView, UpdateRoutineRequest, parse_reminders, parse_rules, parse_timezone, target_on,
 };
+pub use progress::{RoutineProgress, overlap, routine_progress};
 pub use service::RoutinesService;
 pub use streak::{RoutineStreak, StreakDay, routine_streak, streak};

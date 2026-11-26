@@ -790,3 +790,30 @@ async fn r9_days_without_an_occurrence_do_not_break_the_streak() {
     assert_eq!(result.current, 2);
     assert!(!result.today_pending);
 }
+
+#[tokio::test]
+async fn d5_the_provider_reads_the_overlap_and_caps_each_day() {
+    use tracking::{DateRange, ProgressProvider};
+    let w = World::new().await;
+    let id = with_target(&w, 2).await;
+    for (date, count) in [(day(20), 3), (day(21), 1), (day(22), 2)] {
+        let request = CompleteRoutineRequest {
+            date: Some(date),
+            count: Some(count),
+        };
+        w.routines.complete(w.owner, id, request).await.unwrap();
+    }
+    let provider = routines::RoutineProgress::new(w._db.pool().clone());
+    let goal = DateRange::new(day(21), day(30)).unwrap();
+    let p = provider.progress(id, goal, day(23)).await.unwrap();
+    // 21–30 November: ten occurrences of 2; the 20th is outside the goal (D5).
+    assert_eq!((p.done, p.total, p.expected_to_date), (3.0, 20.0, 6.0));
+    // A goal before the routine starts gets nothing.
+    let before = DateRange::new(day(1) - Duration::days(10), day(1) - Duration::days(1)).unwrap();
+    let p = provider.progress(id, before, day(23)).await.unwrap();
+    assert_eq!((p.done, p.total), (0.0, 0.0));
+    assert!(matches!(
+        provider.progress(Uuid::now_v7(), goal, day(23)).await,
+        Err(AppError::NotFound)
+    ));
+}
