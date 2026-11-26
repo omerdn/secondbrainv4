@@ -35,6 +35,7 @@ import type {
   ItemLink,
   ItemListState,
   LinkGoalRequest,
+  LinkPreview,
   LoginRequest,
   MoveBoardTaskRequest,
   Notebook,
@@ -189,6 +190,10 @@ export function endpoints(api: ApiClient) {
         api.delete(`/board/columns/${encodeURIComponent(id)}`, options),
       moveTask: (taskId: string, body: MoveBoardTaskRequest, options?: MutationOptions) =>
         api.put<Board>(`/board/tasks/${encodeURIComponent(taskId)}`, body, options),
+    },
+    embeds: {
+      /** An allowed embed or a link card for a pasted link (PRD Y4, ADR-0013). */
+      preview: (url: string) => api.get<LinkPreview>("/embeds/preview", { query: { url } }),
     },
     notebooks: {
       /** The caller's notebooks, default first; creates the default one once (PRD Y1). */

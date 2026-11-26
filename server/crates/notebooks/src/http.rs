@@ -9,6 +9,7 @@
 //! | GET  | `/notebooks/{id}` | 200 [`Notebook`]; VIEW; visible pages only |
 //! | POST | `/notebooks/{id}/pages` | 201 [`Page`]; EDIT; owned by the notebook's owner (Y5) |
 //! | GET  | `/pages/{id}` | 200 [`Page`]; VIEW |
+//! | GET  | `/embeds/preview?url=` | 200 [`Preview`]: an allowed embed or a link card (Y4) |
 //! | GET  | `/items/{id}/process-page` | 200 [`ProcessPage`] with the latest line; VIEW on the item (S3) |
 //! | POST | `/items/{id}/process-page` | 200 [`ProcessPage`], created on the first note; EDIT (S1) |
 //! | GET  | `/pages/{id}/versions?before=` | 200 [`PageVersion`]`[]`, newest first; VIEW (Y3) |
@@ -25,6 +26,7 @@ use kernel::AppError;
 use uuid::Uuid;
 
 use crate::collab::Collab;
+use crate::embeds::{self, FetchPolicy, Preview, PreviewError, PreviewQuery};
 use crate::model::{
     CreateNotebookRequest, CreatePageRequest, Notebook, NotebookSummary, Page, PageVersion,
     PageVersionContent, VersionsQuery, default_title,
@@ -55,6 +57,7 @@ pub fn router(state: NotebooksHttpState) -> Router {
         .route("/notebooks/{id}", get(read_notebook))
         .route("/notebooks/{id}/pages", post(create_page))
         .route("/pages/{id}", get(read_page))
+        .route("/embeds/preview", get(preview_link))
         .route(
             "/items/{id}/process-page",
             get(read_process_page).post(open_process_page),
@@ -189,4 +192,32 @@ async fn open_process_page(
         .open(auth.user_id.as_uuid(), id)
         .await
         .map(Json)
+}
+
+/// Y4: what the editor inserts for a pasted link. A page that cannot be read (or may not be,
+/// SSRF) becomes a bare link card, so the answer does not tell which addresses are inside.
+async fn preview_link(
+    Authenticated(_): Authenticated,
+    Query(query): Query<PreviewQuery>,
+) -> Result<Json<Preview>, AppError> {
+    match embeds::preview(&query.url, FetchPolicy::PUBLIC).await {
+        Ok(preview) => Ok(Json(preview)),
+        Err(PreviewError::InvalidUrl) => {
+            Err(kernel::ValidationErrors::from(kernel::FieldError::new(
+                "url",
+                kernel::FieldErrorCode::Invalid,
+                "not a valid http(s) link",
+            ))
+            .into())
+        }
+        Err(PreviewError::Blocked | PreviewError::Unreachable) => Ok(Json(Preview::Link {
+            url: embeds::parse_link(&query.url)
+                .map(|url| url.to_string())
+                .unwrap_or_default(),
+            title: None,
+            description: None,
+            image: None,
+            site_name: None,
+        })),
+    }
 }

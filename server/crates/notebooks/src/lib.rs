@@ -3,10 +3,12 @@
 //! - Notebooks and pages (T2.5.1, PRD Y1, Y2, Y5): detail rows of `notebook` and `page` items;
 //!   items are only reached through [`items::ItemsService`] (ADR-0007).
 //! - [`collab`]: `GET /collab/{page_id}`, y-sync over WebSocket on [`yrs`] (T2.5.2).
+//! - [`embeds`]: allowed embeds and SSRF-guarded link previews (T2.5.8, PRD Y4, ADR-0013).
 //! - [`process`]: process pages and entry notes on them (T2.5.5, PRD S1–S3, T3).
 //! - [`snapshots`]: compaction, plain text and the version history (T2.5.3, T2.5.4, PRD Y3).
 
 pub mod collab;
+pub mod embeds;
 pub mod http;
 mod model;
 pub mod process;

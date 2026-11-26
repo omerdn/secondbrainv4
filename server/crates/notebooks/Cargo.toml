@@ -21,6 +21,7 @@ identity = { path = "../identity" }
 items = { path = "../items" }
 jobs = { path = "../jobs" }
 kernel = { path = "../kernel" }
+reqwest.workspace = true
 serde.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
