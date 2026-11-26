@@ -1,5 +1,5 @@
-import { PlaceholderScreen } from "@/features/shell";
+import { RoutinesScreen } from "@/features/routines";
 
 export default function Page() {
-  return <PlaceholderScreen section="routines" />;
+  return <RoutinesScreen />;
 }

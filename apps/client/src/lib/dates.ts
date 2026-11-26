@@ -15,3 +15,32 @@ export function addDays(day: string, delta: number): string {
   parsed.setUTCDate(parsed.getUTCDate() + delta);
   return parsed.toISOString().slice(0, 10);
 }
+
+/** The device's IANA time zone, or `UTC` when the platform does not say. */
+export function deviceTimeZone(): string {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return typeof zone === "string" && zone !== "" ? zone : "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+/** The calendar day of `now` in `timeZone` as `YYYY-MM-DD`; UTC for an unknown zone. */
+export function todayIn(timeZone: string, now: Date = new Date()): string {
+  const format = (zone: string) => {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: zone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(now);
+    const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+    return `${part("year")}-${part("month")}-${part("day")}`;
+  };
+  try {
+    return format(timeZone);
+  } catch {
+    return format("UTC");
+  }
+}

@@ -11,6 +11,7 @@ import type {
   AppleNativeRequest,
   Board,
   CreateBoardColumnRequest,
+  CreateRoutineRequest,
   CreateSavedViewRequest,
   CreateSubtaskRequest,
   CreateTagRequest,
@@ -32,6 +33,7 @@ import type {
   Page,
   RegisterRequest,
   ResetPasswordRequest,
+  Routine,
   SavedView,
   SessionInfo,
   Subtask,
@@ -171,6 +173,12 @@ export function endpoints(api: ApiClient) {
         api.delete(`/board/columns/${encodeURIComponent(id)}`, options),
       moveTask: (taskId: string, body: MoveBoardTaskRequest, options?: MutationOptions) =>
         api.put<Board>(`/board/tasks/${encodeURIComponent(taskId)}`, body, options),
+    },
+    routines: {
+      /** Creates the routine with its first plan version (PRD R1-R3, R13). */
+      create: (body: CreateRoutineRequest, options?: MutationOptions) =>
+        api.post<Routine>("/routines", body, options),
+      get: (id: string) => api.get<Routine>(`/routines/${encodeURIComponent(id)}`),
     },
     trackers: {
       create: (body: CreateTrackerRequest, options?: MutationOptions) =>

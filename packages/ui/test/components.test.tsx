@@ -136,6 +136,8 @@ describe("Sheet", () => {
     );
     expect(screen.getByText("body")).toBeOnTheScreen();
     expect(screen.getByRole("header")).toHaveTextContent("Filters");
+    // Long content scrolls inside a sheet no taller than the window allows.
+    expect(screen.getByTestId("sheet-body")).toContainElement(screen.getByText("body"));
     // Hidden from screen readers (the sheet is accessibilityViewIsModal); the close button is
     // the accessible way out.
     await fireEvent.press(screen.getByTestId("sheet-backdrop", { includeHiddenElements: true }));

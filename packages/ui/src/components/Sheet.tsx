@@ -4,6 +4,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -17,6 +18,9 @@ import { Text } from "./Text";
 export const DIALOG_MIN_WIDTH = 768;
 
 export type SheetLayout = "sheet" | "dialog";
+
+/** Share of the window height the sheet may take; longer content scrolls inside it. */
+export const SHEET_MAX_HEIGHT = 0.9;
 
 /** Bottom sheet on narrow screens, centered dialog on wide ones (pure; see tests). */
 export function sheetLayout(windowWidth: number): SheetLayout {
@@ -55,7 +59,8 @@ export function Sheet({
   footer,
   closeLabel = "Close",
 }: SheetProps) {
-  const layout = sheetLayout(useWindowDimensions().width);
+  const window = useWindowDimensions();
+  const layout = sheetLayout(window.width);
   const dialog = layout === "dialog";
   return (
     <Modal
@@ -86,6 +91,7 @@ export function Sheet({
                 "gap-4 bg-surface-raised p-6",
                 dialog ? "w-full max-w-lg rounded-xl" : "rounded-t-xl pb-10",
               )}
+              style={{ maxHeight: window.height * SHEET_MAX_HEIGHT }}
             >
               <View className="flex-row items-center justify-between gap-4">
                 <Text variant="heading" className="flex-1">
@@ -93,7 +99,13 @@ export function Sheet({
                 </Text>
                 <Button title={closeLabel} variant="ghost" size="sm" onPress={onClose} />
               </View>
-              <View>{children}</View>
+              <ScrollView
+                testID="sheet-body"
+                style={{ flexShrink: 1 }}
+                keyboardShouldPersistTaps="handled"
+              >
+                {children}
+              </ScrollView>
               {footer !== undefined ? (
                 <View className="flex-row justify-end gap-2">{footer}</View>
               ) : null}

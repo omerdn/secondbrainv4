@@ -1,0 +1,319 @@
+import type { Item, Routine } from "@secondbrain/api-types";
+import { act, fireEvent, screen, waitFor, within } from "expo-router/testing-library";
+
+import { describePlan } from "@/features/routines/describe";
+import {
+  addReminder,
+  buildRrule,
+  emptyForm,
+  isYearlyDate,
+  nextOccurrences,
+  normalizeTime,
+  REMINDER_LIMIT,
+  validateForm,
+} from "@/features/routines/recurrence";
+import { todayIn } from "@/lib/dates";
+import { i18n } from "@/lib/i18n";
+
+import { fakeServer, json, memoryTokenStore, resetCredentials, user } from "./support/api";
+import { renderApp } from "./support/router";
+
+const at = "2026-11-23T12:00:00Z";
+
+const item: Item = {
+  id: "r1",
+  kind: "routine",
+  title: "Su iç",
+  description: null,
+  owner: { type: "user", user_id: "u1" },
+  created_by: "u1",
+  created_at: at,
+  updated_at: at,
+  last_touched_at: at,
+  archived_at: null,
+  deleted_at: null,
+};
+
+const routine: Routine = {
+  item,
+  timezone: "Europe/Istanbul",
+  daily_target: 8,
+  start_date: "2026-11-23",
+  end_date: null,
+  reminder_times: ["08:00", "20:30"],
+  versions: [
+    {
+      id: "v1",
+      rrule: "FREQ=WEEKLY;BYDAY=MO,TH",
+      daily_target: 8,
+      valid_from: "2026-11-23",
+      valid_to: null,
+    },
+  ],
+};
+
+const form = (changes: Partial<ReturnType<typeof emptyForm>> = {}) => ({
+  ...emptyForm("2026-11-23", "Europe/Istanbul"),
+  title: "Su iç",
+  ...changes,
+});
+
+const open = (server: ReturnType<typeof fakeServer>, url: string) =>
+  renderApp(server.api, url, { tokenStore: memoryTokenStore("t") });
+
+beforeEach(async () => {
+  resetCredentials();
+  await act(async () => {
+    await i18n.changeLanguage("tr");
+  });
+});
+
+describe("routine plan model (R1-R3, R13)", () => {
+  it("writes every recurrence kind as the server reads it (R1)", () => {
+    expect(buildRrule(form(), 1)).toBe("FREQ=DAILY");
+    expect(buildRrule(form(), 3)).toBe("FREQ=DAILY;INTERVAL=3");
+    expect(buildRrule(form({ frequency: "weekly", weekdays: ["TH", "MO"] }), 2)).toBe(
+      "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TH",
+    );
+    expect(buildRrule(form({ frequency: "monthly", monthDays: [-1, 20, 15] }), 1)).toBe(
+      "FREQ=MONTHLY;BYMONTHDAY=-1,15,20",
+    );
+    expect(
+      buildRrule(
+        form({
+          frequency: "yearly",
+          yearlyDates: [
+            { month: 9, day: 1 },
+            { month: 3, day: 8 },
+          ],
+        }),
+        1,
+      ),
+    ).toBe("FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=8\nFREQ=YEARLY;BYMONTH=9;BYMONTHDAY=1");
+    expect(buildRrule(form({ frequency: "weekly" }), 1)).toBe("");
+  });
+
+  it("previews the same days the server schedules", () => {
+    const start = "2026-11-23"; // a Monday
+    expect(nextOccurrences("FREQ=DAILY;INTERVAL=3", start, start, 3)).toEqual([
+      "2026-11-23",
+      "2026-11-26",
+      "2026-11-29",
+    ]);
+    expect(nextOccurrences("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TH", start, start, 4)).toEqual([
+      "2026-11-23",
+      "2026-11-26",
+      "2026-12-07",
+      "2026-12-10",
+    ]);
+    // The last day of the month, February included; the 31st is skipped in short months.
+    expect(nextOccurrences("FREQ=MONTHLY;BYMONTHDAY=-1", "2027-01-15", "2027-01-15", 3)).toEqual([
+      "2027-01-31",
+      "2027-02-28",
+      "2027-03-31",
+    ]);
+    expect(nextOccurrences("FREQ=MONTHLY;BYMONTHDAY=31", "2027-01-01", "2027-01-01", 2)).toEqual([
+      "2027-01-31",
+      "2027-03-31",
+    ]);
+    expect(
+      nextOccurrences(
+        "FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=8\nFREQ=YEARLY;BYMONTH=9;BYMONTHDAY=1",
+        start,
+        start,
+        3,
+      ),
+    ).toEqual(["2027-03-08", "2027-09-01", "2028-03-08"]);
+    // Nothing before the start, nothing after the end.
+    expect(nextOccurrences("FREQ=DAILY", "2026-12-01", start, 1)).toEqual(["2026-12-01"]);
+    expect(nextOccurrences("FREQ=DAILY", start, start, 5, "2026-11-24")).toEqual([
+      "2026-11-23",
+      "2026-11-24",
+    ]);
+    expect(nextOccurrences("FREQ=SECONDLY", start, start, 5)).toEqual([]);
+  });
+
+  it("builds the create request", () => {
+    const result = validateForm(
+      form({ dailyTarget: "8", reminders: ["08:00"], endDate: "2026-12-31", interval: "2" }),
+    );
+    expect(result.request).toEqual({
+      title: "Su iç",
+      timezone: "Europe/Istanbul",
+      rrule: "FREQ=DAILY;INTERVAL=2",
+      daily_target: 8,
+      start_date: "2026-11-23",
+      end_date: "2026-12-31",
+      reminder_times: ["08:00"],
+    });
+  });
+
+  it("says what is wrong with each field", () => {
+    expect(
+      validateForm({ ...form(), title: " ", interval: "0", dailyTarget: "x", startDate: "" })
+        .errors,
+    ).toEqual({
+      title: "required",
+      interval: "intervalRange",
+      dailyTarget: "wholeNumber",
+      startDate: "required",
+    });
+    expect(validateForm(form({ frequency: "weekly" })).errors).toEqual({ weekdays: "pickWeekday" });
+    expect(validateForm(form({ frequency: "monthly" })).errors).toEqual({
+      monthDays: "pickMonthDay",
+    });
+    expect(validateForm(form({ frequency: "yearly" })).errors).toEqual({ yearlyDates: "pickDate" });
+    expect(validateForm(form({ dailyTarget: "101" })).errors).toEqual({
+      dailyTarget: "targetRange",
+    });
+    expect(validateForm(form({ endDate: "2026-11-22" })).errors).toEqual({
+      endDate: "endBeforeStart",
+    });
+  });
+
+  it("reads reminder times and dates", () => {
+    expect(normalizeTime("7:5")).toBe("07:05");
+    expect(normalizeTime("20.30")).toBe("20:30");
+    expect(normalizeTime("24:00")).toBeNull();
+    expect(normalizeTime("abc")).toBeNull();
+    expect(addReminder(["20:00"], "08:00")).toEqual(["08:00", "20:00"]);
+    expect(addReminder(["08:00"], "08:00")).toEqual(["08:00"]);
+    const full = Array.from(
+      { length: REMINDER_LIMIT },
+      (_, i) => `${String(i).padStart(2, "0")}:00`,
+    );
+    expect(addReminder(full, "23:30")).toHaveLength(REMINDER_LIMIT);
+    expect(isYearlyDate({ month: 2, day: 29 })).toBe(true);
+    expect(isYearlyDate({ month: 4, day: 31 })).toBe(false);
+  });
+
+  it("describes plans in words", () => {
+    const t = i18n.t.bind(i18n);
+    expect(describePlan("FREQ=DAILY", t, "tr")).toBe("Her gün");
+    expect(describePlan("FREQ=DAILY;INTERVAL=3", t, "tr")).toBe("3 günde bir");
+    expect(describePlan("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TH", t, "tr")).toBe(
+      "2 haftada bir: Pzt, Per",
+    );
+    expect(describePlan("FREQ=MONTHLY;BYMONTHDAY=15,-1", t, "tr")).toBe("Her ay: 15, Son gün");
+    expect(describePlan("FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=8", t, "tr")).toBe("Her yıl: 8 Mart");
+    expect(describePlan("nonsense", t, "tr")).toBe("Özel plan");
+  });
+
+  it("finds today in the routine's zone", () => {
+    const late = new Date("2026-11-23T22:30:00Z");
+    expect(todayIn("Europe/Istanbul", late)).toBe("2026-11-24");
+    expect(todayIn("America/New_York", late)).toBe("2026-11-23");
+    expect(todayIn("Not/AZone", late)).toBe("2026-11-23");
+  });
+});
+
+describe("routines screen (R1-R3, R13)", () => {
+  it("explains an empty list", async () => {
+    await open(
+      fakeServer({
+        "GET /me": () => json(200, user),
+        "GET /items/filter": () => json(200, { items: [], next_cursor: null }),
+      }),
+      "/routines",
+    );
+    expect(await screen.findByText("Henüz rutinin yok")).toBeTruthy();
+  });
+
+  it("creates a weekly routine with reminders after showing its preview", async () => {
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /items/filter": () => json(200, { items: [], next_cursor: null }),
+      "POST /routines": () => json(201, routine),
+      "GET /routines/r1": () => json(200, routine),
+    });
+    await open(server, "/routines");
+    await fireEvent.press(await screen.findByRole("button", { name: "Yeni rutin" }));
+    await fireEvent.changeText(screen.getByLabelText("Ad"), "Su iç");
+    await fireEvent.press(screen.getByRole("button", { name: "Haftalık" }));
+    expect(screen.getByText("Önizleme için planı tamamla.")).toBeTruthy();
+    await fireEvent.press(screen.getByRole("button", { name: "Pzt" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Per" }));
+    await fireEvent.changeText(screen.getByLabelText("Günlük hedef (kaç kez)"), "8");
+    await fireEvent.changeText(screen.getByLabelText("Başlangıç (YYYY-AA-GG)"), "2026-11-23");
+    await fireEvent.changeText(screen.getByLabelText("Saat dilimi"), "Europe/Istanbul");
+    await fireEvent.changeText(screen.getByLabelText("Hatırlatma saati (SS:DD)"), "8:00");
+    await fireEvent.press(screen.getByRole("button", { name: "Saati ekle" }));
+    await fireEvent.changeText(screen.getByLabelText("Hatırlatma saati (SS:DD)"), "25:00");
+    await fireEvent.press(screen.getByRole("button", { name: "Saati ekle" }));
+    expect(screen.getByText("Saati SS:DD olarak yaz.")).toBeTruthy();
+    const preview = screen.getByLabelText("Sonraki tekrarlar");
+    expect(within(preview).getByText("Her hafta: Pzt, Per")).toBeTruthy();
+    await fireEvent.press(screen.getByRole("button", { name: "Oluştur" }));
+    expect(await screen.findByRole("header", { name: "Su iç" })).toBeTruthy();
+    const post = server.calls.find((call) => call.method === "POST");
+    expect(post?.body).toEqual({
+      title: "Su iç",
+      timezone: "Europe/Istanbul",
+      rrule: "FREQ=WEEKLY;BYDAY=MO,TH",
+      daily_target: 8,
+      start_date: "2026-11-23",
+      reminder_times: ["08:00"],
+    });
+  });
+
+  it("adds yearly dates and the last day of the month", async () => {
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /items/filter": () => json(200, { items: [], next_cursor: null }),
+      "POST /routines": () => json(201, routine),
+      "GET /routines/r1": () => json(200, routine),
+    });
+    await open(server, "/routines");
+    await fireEvent.press(await screen.findByRole("button", { name: "Yeni rutin" }));
+    await fireEvent.changeText(screen.getByLabelText("Ad"), "Fatura");
+    await fireEvent.press(screen.getByRole("button", { name: "Aylık" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Son gün" }));
+    expect(
+      within(screen.getByLabelText("Sonraki tekrarlar")).getByText("Her ay: Son gün"),
+    ).toBeTruthy();
+    await fireEvent.press(screen.getByRole("button", { name: "Yıllık" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Mart" }));
+    await fireEvent.changeText(screen.getByLabelText("Gün"), "8");
+    await fireEvent.press(screen.getByRole("button", { name: "Tarihi ekle" }));
+    await fireEvent.changeText(screen.getByLabelText("Gün"), "31");
+    await fireEvent.press(screen.getByRole("button", { name: "Şubat" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Tarihi ekle" }));
+    expect(screen.getByText("Geçerli bir ay ve gün seç.")).toBeTruthy();
+    await fireEvent.changeText(screen.getByLabelText("Kaç yılda bir"), "2");
+    await fireEvent.press(screen.getByRole("button", { name: "Oluştur" }));
+    await waitFor(() => {
+      expect(server.calls.some((call) => call.method === "POST")).toBe(true);
+    });
+    const post = server.calls.find((call) => call.method === "POST");
+    expect(post?.body).toMatchObject({
+      title: "Fatura",
+      rrule: "FREQ=YEARLY;INTERVAL=2;BYMONTH=3;BYMONTHDAY=8",
+    });
+  });
+
+  it("shows a routine's plan, preview and reminders", async () => {
+    await open(
+      fakeServer({
+        "GET /me": () => json(200, user),
+        "GET /routines/r1": () => json(200, routine),
+      }),
+      "/routines/r1",
+    );
+    expect(await screen.findByRole("header", { name: "Su iç" })).toBeTruthy();
+    expect(screen.getByText("Her hafta: Pzt, Per")).toBeTruthy();
+    expect(screen.getByText("Günde 8 kez")).toBeTruthy();
+    expect(screen.getByText("08:00, 20:30")).toBeTruthy();
+    expect(screen.getByText("Saat dilimi: Europe/Istanbul")).toBeTruthy();
+  });
+
+  it("does not reveal a routine it cannot see", async () => {
+    await open(
+      fakeServer({
+        "GET /me": () => json(200, user),
+        "GET /routines/r1": () => json(404, { error: { code: "not_found", message: "not found" } }),
+      }),
+      "/routines/r1",
+    );
+    expect(await screen.findByText(i18n.t("items.detail.notFound"))).toBeTruthy();
+  });
+});
