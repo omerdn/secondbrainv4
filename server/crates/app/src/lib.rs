@@ -186,6 +186,17 @@ where
                     items: items.clone(),
                     identity: identity.clone(),
                 }))
+                .merge(notebooks::http::router(
+                    notebooks::http::NotebooksHttpState {
+                        notebooks: notebooks::NotebooksService::new(
+                            pool.clone(),
+                            clock.clone(),
+                            access_engine.clone(),
+                            items.clone(),
+                        ),
+                        identity: identity.clone(),
+                    },
+                ))
                 .merge(goals::http::router(goals::http::GoalsHttpState {
                     goals: goals::GoalsService::new(
                         pool.clone(),
