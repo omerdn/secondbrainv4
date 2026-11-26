@@ -12,7 +12,7 @@ mod progress;
 pub mod repo;
 mod service;
 
-pub use active::ActiveGoal;
+pub use active::{ActiveGoal, GoalSpan};
 pub use calc::{GoalResult, Part, PartResult, goal_progress, ratio};
 pub use model::{
     CONTRIBUTING_KINDS, CreateGoalRequest, Goal, GoalLink, LINKABLE_KINDS, LinkGoalRequest,

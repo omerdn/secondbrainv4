@@ -38,9 +38,9 @@ pub struct TodayService {
     pool: PgPool,
     clock: SharedClock,
     items: ItemsService,
-    tasks: TasksService,
-    routines: RoutinesService,
-    goals: GoalsService,
+    pub(crate) tasks: TasksService,
+    pub(crate) routines: RoutinesService,
+    pub(crate) goals: GoalsService,
     process: ProcessPages,
     sessions: WorkSessions,
 }

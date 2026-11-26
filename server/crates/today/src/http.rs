@@ -3,6 +3,7 @@
 //! | Method | Path | Response |
 //! |---|---|---|
 //! | GET | `/today?today=` | 200 [`Today`] (H1–H6) |
+//! | GET | `/calendar?from=&to=` | 200 [`Calendar`] (C1); at most 62 days |
 //! | GET | `/today/preferences` | 200 [`HomePreferences`] |
 //! | PUT | `/today/preferences` | 200 [`HomePreferences`]; body [`UpdateHomePreferences`] (H4) |
 
@@ -13,6 +14,7 @@ use identity::IdentityService;
 use identity::http::Authenticated;
 use kernel::AppError;
 
+use crate::calendar::{Calendar, CalendarQuery};
 use crate::model::{HomePreferences, Today, TodayQuery, UpdateHomePreferences};
 use crate::service::TodayService;
 
@@ -31,6 +33,7 @@ impl FromRef<HomeHttpState> for IdentityService {
 pub fn router(state: HomeHttpState) -> Router {
     Router::new()
         .route("/today", get(read_today))
+        .route("/calendar", get(read_calendar))
         .route(
             "/today/preferences",
             get(read_preferences).put(update_preferences),
@@ -69,6 +72,18 @@ async fn update_preferences(
     state
         .today
         .set_forgotten_days(auth.user_id.as_uuid(), request.forgotten_days)
+        .await
+        .map(Json)
+}
+
+async fn read_calendar(
+    State(state): State<HomeHttpState>,
+    Authenticated(auth): Authenticated,
+    Query(query): Query<CalendarQuery>,
+) -> Result<Json<Calendar>, AppError> {
+    state
+        .today
+        .calendar(auth.user_id.as_uuid(), query.from, query.to)
         .await
         .map(Json)
 }

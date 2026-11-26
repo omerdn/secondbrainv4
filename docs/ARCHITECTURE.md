@@ -85,7 +85,7 @@
 │  │  ├─ goals/          # hedefler, ağırlıklar, ilerleme hesabı
 │  │  ├─ notebooks/      # defterler, sayfalar, collab sunucusu (yrs)
 │  │  ├─ sessions/       # Work Session
-│  │  ├─ today/          # "Bugün" ekranı: modüllerin servislerinden derlenir (H1–H6)
+│  │  ├─ today/          # "Bugün" ekranı ve takvim: modüllerin servislerinden derlenir (H1–H6, C1)
 │  │  ├─ social/         # dürtme, emoji tepkileri
 │  │  ├─ teams/          # takımlar, roller, yetki matrisi
 │  │  ├─ notifications/  # bildirim merkezi, push, e-posta, tercihler
