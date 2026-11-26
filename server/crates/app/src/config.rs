@@ -49,9 +49,7 @@ pub struct Config {
     pub apple: Option<AppleSettings>,
     /// Take the client IP for rate limits from proxy headers (`TRUST_PROXY_HEADERS`).
     pub trust_proxy_headers: bool,
-    /// Mounts the collaborative editing spike `/collab/{page_id}` (`COLLAB_SPIKE_ENABLED`).
     /// It has no page permissions yet (T0.6.2, E2.5): development only, never in production.
-    pub collab_spike_enabled: bool,
     /// Access recompute tuning (`ACCESS_SYNC_LIMIT`, T1.1.4).
     pub access: access::AccessConfig,
 }
@@ -347,7 +345,6 @@ impl Config {
         };
 
         let trust_proxy_headers: bool = parse(&lookup, "TRUST_PROXY_HEADERS", false)?;
-        let collab_spike_enabled: bool = parse(&lookup, "COLLAB_SPIKE_ENABLED", false)?;
         let access = access::AccessConfig {
             sync_limit: parse(
                 &lookup,
@@ -378,7 +375,6 @@ impl Config {
         Ok(Self {
             cors_origins,
             trust_proxy_headers,
-            collab_spike_enabled,
             access,
             apple,
             public_api_url,
@@ -974,16 +970,6 @@ mod tests {
 
     fn config_ok(vars: &[(&str, &str)]) -> Config {
         config(vars).unwrap()
-    }
-
-    #[test]
-    fn the_collab_spike_is_off_by_default() {
-        assert!(!config(&[]).unwrap().collab_spike_enabled);
-        assert!(
-            config(&[("COLLAB_SPIKE_ENABLED", "true")])
-                .unwrap()
-                .collab_spike_enabled
-        );
     }
 
     #[test]

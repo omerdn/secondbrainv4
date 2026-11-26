@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 access = { path = "../access" }
+db = { path = "../db" }
 axum = { workspace = true, features = ["ws"] }
 chrono.workspace = true
 futures-util.workspace = true
@@ -28,4 +29,5 @@ yrs.workspace = true
 
 [dev-dependencies]
 db = { path = "../db", features = ["testing"] }
+futures-util.workspace = true
 tokio-tungstenite.workspace = true

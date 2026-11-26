@@ -270,7 +270,7 @@
     - `AccessRevoked` ile bağlantı kapatma (V10),
     - mobilde araç çubuğunun klavyeyle birlikte görünmesi (spike'ta klavye araç çubuğunu kapatıyor),
     - BP4: kopma sonrası yerel değişikliklerin gönderilmesi; y-websocket ve Yjs bunu doğal olarak yapar, kilit katmanıyla birlikte doğrulanmalı.
-  - Uç nokta şu an sadece `COLLAB_SPIKE_ENABLED=true` iken bağlanır (varsayılan kapalı). Staging ve üretimde açılmaz.
+  - Uç nokta spike'ta sadece `COLLAB_SPIKE_ENABLED=true` iken bağlanıyordu; T2.5.2 yetki ve kalıcılığı ekleyince bayrak kaldırıldı ve uç nokta her zaman bağlanır.
 - **Alternatifler:**
   - Token'ı URL'de ya da `Sec-WebSocket-Protocol` başlığında WebView'a vermek: token WebView'a ve loglara sızar; reddedildi.
   - Yjs'i React Native tarafında çalıştırıp WebView'a sadece ProseMirror adımlarını göndermek: iki taraflı ProseMirror ↔ Yjs eşlemesini yeniden yazmak gerekir; reddedildi.
