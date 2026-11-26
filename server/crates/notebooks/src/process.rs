@@ -52,6 +52,17 @@ pub struct StatusLine {
     pub date: Option<NaiveDate>,
 }
 
+/// The latest line of one item's process page, for cards (S3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
+pub struct ItemStatusLine {
+    pub item_id: Uuid,
+    pub line: StatusLine,
+}
+
+/// Items one status line request may ask for.
+pub const MAX_STATUS_LINE_ITEMS: usize = 100;
+
 /// An item's process page with its latest line.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[ts(export)]
@@ -294,6 +305,53 @@ impl ProcessPages {
             .map_err(internal)?
             .ok_or(AppError::NotFound)?;
         self.view(actor, page).await
+    }
+
+    /// The latest lines of `items`' process pages, for cards (S3). Only items and pages the
+    /// caller can see count; anything else is left out as if it had no line.
+    ///
+    /// # Errors
+    /// [`AppError::Validation`] for too many items, or [`AppError::Internal`].
+    pub async fn latest_lines(
+        &self,
+        actor: Uuid,
+        items: &[Uuid],
+    ) -> Result<Vec<ItemStatusLine>, AppError> {
+        if items.len() > MAX_STATUS_LINE_ITEMS {
+            return Err(kernel::ValidationErrors::from(kernel::FieldError::new(
+                "ids",
+                kernel::FieldErrorCode::TooLong,
+                format!("at most {MAX_STATUS_LINE_ITEMS} items"),
+            ))
+            .into());
+        }
+        let visible: HashSet<Uuid> = self
+            .permissions
+            .list_accessible(&self.pool, actor, Perms::VIEW)
+            .await
+            .map_err(internal)?
+            .into_iter()
+            .collect();
+        let asked: Vec<Uuid> = items
+            .iter()
+            .copied()
+            .filter(|id| visible.contains(id))
+            .collect();
+        let pages = repo::process_pages_of(&self.pool, &asked)
+            .await
+            .map_err(internal)?;
+        let mut lines = Vec::new();
+        for (item_id, page) in pages {
+            // The page must be visible too: an unlinked page no longer follows its item (V2).
+            if !visible.contains(&page) {
+                continue;
+            }
+            let doc = snapshots::load(&self.pool, page).await.map_err(internal)?;
+            if let Some(line) = latest_line(&doc) {
+                lines.push(ItemStatusLine { item_id, line });
+            }
+        }
+        Ok(lines)
     }
 
     /// The item's process page, created when someone starts writing about it (EDIT, S1).

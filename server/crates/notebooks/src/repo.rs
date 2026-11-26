@@ -357,3 +357,19 @@ pub async fn lock_process_page(conn: &mut PgConnection, item: Uuid) -> sqlx::Res
     .await?;
     Ok(())
 }
+
+/// The process pages of `items` that have one: `(item, page)`.
+///
+/// # Errors
+/// Database errors.
+pub async fn process_pages_of(
+    conn: impl PgExecutor<'_>,
+    items: &[Uuid],
+) -> sqlx::Result<Vec<(Uuid, Uuid)>> {
+    sqlx::query_as(
+        "SELECT process_of_item_id, item_id FROM pages WHERE process_of_item_id = ANY($1)",
+    )
+    .bind(items)
+    .fetch_all(conn)
+    .await
+}

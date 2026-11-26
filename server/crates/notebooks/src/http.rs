@@ -10,6 +10,7 @@
 //! | POST | `/notebooks/{id}/pages` | 201 [`Page`]; EDIT; owned by the notebook's owner (Y5) |
 //! | GET  | `/pages/{id}` | 200 [`Page`]; VIEW |
 //! | GET  | `/embeds/preview?url=` | 200 [`Preview`]: an allowed embed or a link card (Y4) |
+//! | GET  | `/process-lines?ids=a,b` | 200 [`ItemStatusLine`]`[]`: latest lines of visible items (S3) |
 //! | GET  | `/items/{id}/process-page` | 200 [`ProcessPage`] with the latest line; VIEW on the item (S3) |
 //! | POST | `/items/{id}/process-page` | 200 [`ProcessPage`], created on the first note; EDIT (S1) |
 //! | GET  | `/pages/{id}/versions?before=` | 200 [`PageVersion`]`[]`, newest first; VIEW (Y3) |
@@ -31,7 +32,7 @@ use crate::model::{
     CreateNotebookRequest, CreatePageRequest, Notebook, NotebookSummary, Page, PageVersion,
     PageVersionContent, VersionsQuery, default_title,
 };
-use crate::process::{ProcessPage, ProcessPages};
+use crate::process::{ItemStatusLine, ProcessPage, ProcessPages};
 use crate::service::NotebooksService;
 
 /// State of the notebook routes.
@@ -58,6 +59,7 @@ pub fn router(state: NotebooksHttpState) -> Router {
         .route("/notebooks/{id}/pages", post(create_page))
         .route("/pages/{id}", get(read_page))
         .route("/embeds/preview", get(preview_link))
+        .route("/process-lines", get(process_lines))
         .route(
             "/items/{id}/process-page",
             get(read_process_page).post(open_process_page),
@@ -220,4 +222,35 @@ async fn preview_link(
             site_name: None,
         })),
     }
+}
+
+/// `GET /process-lines` query: comma-separated item ids.
+#[derive(Debug, serde::Deserialize)]
+struct ProcessLinesQuery {
+    ids: String,
+}
+
+async fn process_lines(
+    State(state): State<NotebooksHttpState>,
+    Authenticated(auth): Authenticated,
+    Query(query): Query<ProcessLinesQuery>,
+) -> Result<Json<Vec<ItemStatusLine>>, AppError> {
+    let ids: Vec<Uuid> = query
+        .ids
+        .split(',')
+        .filter(|id| !id.is_empty())
+        .map(str::parse)
+        .collect::<Result<_, _>>()
+        .map_err(|_| {
+            AppError::from(kernel::ValidationErrors::from(kernel::FieldError::new(
+                "ids",
+                kernel::FieldErrorCode::Invalid,
+                "comma-separated item ids",
+            )))
+        })?;
+    state
+        .process
+        .latest_lines(auth.user_id.as_uuid(), &ids)
+        .await
+        .map(Json)
 }

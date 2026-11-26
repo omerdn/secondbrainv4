@@ -59,6 +59,7 @@ export type * from "./generated/ItemFilterDateField";
 export type * from "./generated/ItemLink";
 export type * from "./generated/ItemListState";
 export type * from "./generated/ItemOwner";
+export type * from "./generated/ItemStatusLine";
 export type * from "./generated/LinkDirection";
 export type * from "./generated/LinkGoalRequest";
 export type * from "./generated/LinkPreview";

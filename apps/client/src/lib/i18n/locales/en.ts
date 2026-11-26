@@ -124,6 +124,12 @@ export const en: Catalog = {
     failed: "That didn't work. Try again.",
   },
   items: {
+    statusLine: {
+      today: "today",
+      yesterday: "yesterday",
+      daysAgo_one: "{{count}} day ago",
+      daysAgo_other: "{{count}} days ago",
+    },
     kinds: {
       task: "Task",
       routine: "Routine",

@@ -5,6 +5,8 @@ import { useTranslation } from "react-i18next";
 import { View } from "react-native";
 
 import { ItemCard } from "./ItemCard";
+import { useStatusLine } from "./statusLines";
+import { StatusLineText } from "./StatusLineText";
 import { kindLabel, type RoleLabel } from "./labels";
 import { WhyPanel } from "./WhyPanel";
 
@@ -77,6 +79,7 @@ export function ItemDetail({
   onEditTags,
 }: ItemDetailProps) {
   const { t } = useTranslation();
+  const line = useStatusLine(item.id);
   const owner =
     item.owner.type === "team"
       ? t("items.owner.team")
@@ -100,6 +103,7 @@ export function ItemDetail({
           </Text>
         ) : null}
       </View>
+      {line !== null ? <StatusLineText line={line} /> : null}
       {item.description !== null ? <Text>{item.description}</Text> : null}
       <Section title={t("items.detail.owner")}>
         <Text>{owner}</Text>

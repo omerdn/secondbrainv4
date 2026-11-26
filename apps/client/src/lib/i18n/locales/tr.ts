@@ -126,6 +126,12 @@ export const tr = {
     failed: "İşlem yapılamadı. Tekrar dene.",
   },
   items: {
+    statusLine: {
+      today: "bugün",
+      yesterday: "dün",
+      daysAgo_one: "{{count}} gün önce",
+      daysAgo_other: "{{count}} gün önce",
+    },
     kinds: {
       task: "Görev",
       routine: "Rutin",

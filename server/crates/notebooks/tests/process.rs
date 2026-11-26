@@ -355,3 +355,42 @@ async fn v2_the_page_follows_the_item_and_others_learn_nothing() {
     assert_eq!(links[0].item.id, tracker);
     let _ = Update::decode_v1(&w.collab.snapshot(page).await.unwrap()).unwrap();
 }
+
+#[tokio::test]
+async fn s3_cards_get_latest_lines_only_for_what_the_caller_sees() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com").await;
+    let bob = w.user("bob@example.com").await;
+    let noted = w.tracker(ada).await;
+    let silent = w.tracker(ada).await;
+    w.add(ada, noted, Some("Barre'da kaldım")).await;
+    w.deliver().await;
+
+    let lines = w.process.latest_lines(ada, &[noted, silent]).await.unwrap();
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0].item_id, noted);
+    assert_eq!(lines[0].line.text, "Barre'da kaldım");
+    // Bob cannot see the item: nothing, as if it had no line.
+    assert!(
+        w.process
+            .latest_lines(bob, &[noted, silent, Uuid::now_v7()])
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    // Once the page is unlinked from the item it no longer follows it (V2): only the owner of
+    // the page still sees the line.
+    let page = w.process.get(ada, noted).await.unwrap().page.item.id;
+    w.items.unlink(ada, page, noted).await.unwrap();
+    assert_eq!(
+        w.process.latest_lines(ada, &[noted]).await.unwrap().len(),
+        1
+    );
+    let too_many: Vec<Uuid> = (0..=notebooks::process::MAX_STATUS_LINE_ITEMS)
+        .map(|_| Uuid::now_v7())
+        .collect();
+    assert!(matches!(
+        w.process.latest_lines(ada, &too_many).await,
+        Err(AppError::Validation(_))
+    ));
+}
