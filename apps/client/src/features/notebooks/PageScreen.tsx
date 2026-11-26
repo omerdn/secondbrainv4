@@ -1,23 +1,27 @@
 import { ApiError } from "@secondbrain/api-client";
 import { useApi, useIdempotentMutation } from "@secondbrain/api-client/react";
 import type { Item } from "@secondbrain/api-types";
-import { Button, Card, EmptyState, Text } from "@secondbrain/ui";
+import { Button, EmptyState, Text } from "@secondbrain/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type Href, useRouter } from "expo-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { View } from "react-native";
 
+import { useSession } from "@/features/auth";
 import { Screen } from "@/features/shell";
 
 import { NameSheet } from "./NameSheet";
+import { PageEditor } from "./PageEditor";
 
-/** A page of a notebook: rename or delete it; the editor comes with T2.5.7. */
+/** A page of a notebook: its collaborative editor (web, T2.5.7), rename and delete. The mobile
+ * editor comes with T4.2.2 (ADR-0024). */
 export function PageScreen({ id }: { id: string }) {
   const { t } = useTranslation();
   const api = useApi();
   const client = useQueryClient();
   const router = useRouter();
+  const { state: session } = useSession();
   const [renaming, setRenaming] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const page = useQuery({ queryKey: ["page", id], queryFn: () => api.notebooks.page(id) });
@@ -122,9 +126,13 @@ export function PageScreen({ id }: { id: string }) {
             {t("notebooks.saveFailed")}
           </Text>
         ) : null}
-        <Card>
-          <Text tone="muted">{t("notebooks.editorSoon")}</Text>
-        </Card>
+        {session.status === "signedIn" ? (
+          <PageEditor
+            key={item.id}
+            pageId={item.id}
+            user={{ id: session.user.id, name: session.user.display_name }}
+          />
+        ) : null}
       </View>
       <NameSheet
         visible={renaming}
