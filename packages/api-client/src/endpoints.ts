@@ -49,7 +49,12 @@ import type {
   RoutineDay,
   RoutineStreak,
   SavedView,
+  OpenSessionRequest,
   SessionInfo,
+  SessionStats,
+  SessionSummary,
+  TimerCommand,
+  WorkSession,
   Subtask,
   Tag,
   Task,
@@ -222,6 +227,25 @@ export function endpoints(api: ApiClient) {
       /** Latest process page lines of the visible items among `ids`, at most 100 (PRD S3). */
       processLines: (ids: readonly string[]) =>
         api.get<ItemStatusLine[]>("/process-lines", { query: { ids: ids.join(",") } }),
+    },
+    sessions: {
+      /** The open work session, opened if none is (PRD W1). */
+      open: (body: OpenSessionRequest, options?: MutationOptions) =>
+        api.post<WorkSession>("/sessions", body, options),
+      /** The open work session; a 404 when there is none. */
+      current: () => api.get<WorkSession>("/sessions/current"),
+      get: (id: string) => api.get<WorkSession>(`/sessions/${encodeURIComponent(id)}`),
+      /** Start, pause, resume, stop or switch the item (PRD W2, W3). */
+      command: (id: string, body: TimerCommand, options?: MutationOptions) =>
+        api.post<WorkSession>(`/sessions/${encodeURIComponent(id)}/timer`, body, options),
+      /** "Oturumu kapat" (PRD W1). */
+      close: (id: string, options?: MutationOptions) =>
+        api.post<WorkSession>(`/sessions/${encodeURIComponent(id)}/close`, undefined, options),
+      /** Past sessions, newest first (PRD W5). */
+      history: (before?: string) => api.get<SessionSummary[]>("/sessions", { query: { before } }),
+      /** Work and break time per local day and item (PRD W5). */
+      stats: (range: { from?: string; to?: string } = {}) =>
+        api.get<SessionStats>("/sessions/stats", { query: range }),
     },
     goals: {
       /** Both dates are required (PRD D1). */

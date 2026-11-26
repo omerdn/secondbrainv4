@@ -6,6 +6,7 @@ export {
   type LinkOpener,
   type NetworkSource,
   useConnectivity,
+  useServerEvent,
 } from "./ConnectivityProvider";
 export type { Link, LinkHandlers } from "./link";
 export type { ConnectivityState } from "./machine";

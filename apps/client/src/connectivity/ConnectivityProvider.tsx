@@ -269,3 +269,21 @@ export function useConnectivity(): Connectivity {
   if (value === null) throw new Error("useConnectivity must be used inside ConnectivityProvider");
   return value;
 }
+
+/**
+ * Calls `handler` with the data of every `/ws` event named `name` (such as `session.timer`,
+ * which carries state rather than ids). Does nothing outside the provider.
+ */
+export function useServerEvent(name: string, handler: (data: unknown) => void): void {
+  const value = useContext(ConnectivityContext);
+  const handlerRef = useRef(handler);
+  handlerRef.current = handler;
+  const addMessageListener = value?.addMessageListener;
+  useEffect(() => {
+    if (addMessageListener === undefined) return undefined;
+    return addMessageListener((message) => {
+      const event = eventOf(message);
+      if (event?.name === name) handlerRef.current(event.data);
+    });
+  }, [addMessageListener, name]);
+}
