@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { SearchEntry } from "./SearchEntry";
 import { Sidebar } from "./Sidebar";
 import { TabBar } from "./TabBar";
 
@@ -13,20 +14,28 @@ import { TabBar } from "./TabBar";
 export function AppShell({
   account,
   sidebarExtra,
+  onSearch,
   children,
 }: {
   account: string | null;
   /** Shown in the sidebar under the sections (pinned saved views). */
   sidebarExtra?: ReactNode;
+  /** Opens global search; its entry is in the sidebar, or above the screen on phones. */
+  onSearch?: () => void;
   children: ReactNode;
 }) {
   const compact = useBreakpoint() === "compact";
   const insets = useSafeAreaInsets();
   return (
     <View className={compact ? "flex-1 bg-background" : "flex-1 flex-row bg-background"}>
-      {compact ? null : <Sidebar account={account} extra={sidebarExtra} />}
+      {compact ? null : <Sidebar account={account} extra={sidebarExtra} onSearch={onSearch} />}
       {/* The top inset sits here so anything above a screen (banners) clears the notch too. */}
       <View className="flex-1" style={{ paddingTop: insets.top }}>
+        {compact && onSearch !== undefined ? (
+          <View className="px-4 pt-2">
+            <SearchEntry onPress={onSearch} variant="bar" />
+          </View>
+        ) : null}
         {children}
       </View>
       {compact ? <TabBar /> : null}

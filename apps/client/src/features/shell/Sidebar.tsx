@@ -8,9 +8,18 @@ import { APP_NAME } from "@/lib/app-info";
 
 import { destinations, isActive, settings } from "./nav";
 import { NavItem } from "./NavItem";
+import { SearchEntry } from "./SearchEntry";
 
 /** Left navigation from the `md` breakpoint on (web, desktop, tablets). */
-export function Sidebar({ account, extra }: { account: string | null; extra?: ReactNode }) {
+export function Sidebar({
+  account,
+  extra,
+  onSearch,
+}: {
+  account: string | null;
+  extra?: ReactNode;
+  onSearch?: () => void;
+}) {
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   return (
@@ -23,6 +32,11 @@ export function Sidebar({ account, extra }: { account: string | null; extra?: Re
       <View className="px-4 py-4">
         <Text variant="heading">{APP_NAME}</Text>
       </View>
+      {onSearch === undefined ? null : (
+        <View className="px-2 pb-2">
+          <SearchEntry onPress={onSearch} variant="sidebar" />
+        </View>
+      )}
       <ScrollView contentContainerClassName="gap-0.5 px-2">
         {destinations.map((d) => (
           <NavItem

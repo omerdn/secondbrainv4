@@ -377,6 +377,17 @@ export const en: Catalog = {
     editorSoon: "The page editor is coming to mobile soon; edit on the web for now.",
     errors: { required: "This field is required.", tooLong: "At most 500 characters." },
   },
+  search: {
+    open: "Search",
+    shortcut: "⌘K / Ctrl K",
+    title: "Search",
+    label: "What are you looking for?",
+    hint: "Searches titles, descriptions, tags and page contents.",
+    failed: "Search failed. Try again.",
+    none: 'No results for "{{query}}".',
+    byTag: "Tag: {{tag}}",
+    fields: { title: "Title", tag: "Tag", description: "Description", content: "Page content" },
+  },
   calendar: {
     loadFailed: "Could not load the calendar",
     views: { day: "Day", week: "Week", month: "Month" },
