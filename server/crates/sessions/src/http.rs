@@ -4,12 +4,16 @@
 //! | Method | Path | Response |
 //! |---|---|---|
 //! | POST | `/sessions` | 200 [`WorkSession`]: the open one, opened if needed (W1) |
+//! | GET  | `/sessions?before=` | 200 [`SessionSummary`]`[]`, newest first (W5) |
+//! | GET  | `/sessions/stats?from=&to=` | 200 [`SessionStats`]: per local day and item (W5) |
 //! | GET  | `/sessions/current` | 200 [`WorkSession`]; 404 when none is open |
 //! | GET  | `/sessions/{id}` | 200 [`WorkSession`]; participants only |
 //! | POST | `/sessions/{id}/timer` | 200 [`WorkSession`]; body [`Command`] (W2, W3) |
 //! | POST | `/sessions/{id}/close` | 200 [`WorkSession`] (W1) |
 
-use axum::extract::{FromRef, Path, State};
+use std::str::FromStr;
+
+use axum::extract::{FromRef, Path, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use identity::IdentityService;
@@ -17,8 +21,9 @@ use identity::http::Authenticated;
 use kernel::AppError;
 use uuid::Uuid;
 
-use crate::model::{OpenRequest, WorkSession};
+use crate::model::{HistoryQuery, OpenRequest, SessionSummary, StatsQuery, WorkSession};
 use crate::service::WorkSessions;
+use crate::stats::SessionStats;
 use crate::timer::Command;
 
 #[derive(Clone)]
@@ -35,7 +40,8 @@ impl FromRef<SessionsHttpState> for IdentityService {
 
 pub fn router(state: SessionsHttpState) -> Router {
     Router::new()
-        .route("/sessions", post(open))
+        .route("/sessions", post(open).get(history))
+        .route("/sessions/stats", get(stats))
         .route("/sessions/current", get(current))
         .route("/sessions/{id}", get(read))
         .route("/sessions/{id}/timer", post(command))
@@ -111,6 +117,33 @@ async fn close(
     state
         .sessions
         .close(auth.user_id.as_uuid(), id)
+        .await
+        .map(Json)
+}
+
+async fn history(
+    State(state): State<SessionsHttpState>,
+    Authenticated(auth): Authenticated,
+    Query(query): Query<HistoryQuery>,
+) -> Result<Json<Vec<SessionSummary>>, AppError> {
+    state
+        .sessions
+        .history(auth.user_id.as_uuid(), query.before)
+        .await
+        .map(Json)
+}
+
+/// In the caller's time zone (their profile).
+async fn stats(
+    State(state): State<SessionsHttpState>,
+    Authenticated(auth): Authenticated,
+    Query(query): Query<StatsQuery>,
+) -> Result<Json<SessionStats>, AppError> {
+    let user = state.identity.current_user(auth.user_id).await?;
+    let timezone = chrono_tz::Tz::from_str(&user.timezone).unwrap_or(chrono_tz::UTC);
+    state
+        .sessions
+        .stats(auth.user_id.as_uuid(), (query.from, query.to), timezone)
         .await
         .map(Json)
 }
