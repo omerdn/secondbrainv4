@@ -1,8 +1,9 @@
 import { ApiError } from "@secondbrain/api-client";
 import { useApi, useIdempotentMutation } from "@secondbrain/api-client/react";
-import type { Item, PomodoroConfig, TimerCommand, WorkSession } from "@secondbrain/api-types";
+import type { PomodoroConfig, TimerCommand, WorkSession } from "@secondbrain/api-types";
 import { Button, Card, EmptyState, Input, Sheet, Text } from "@secondbrain/ui";
-import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { type Href, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, View } from "react-native";
@@ -11,6 +12,7 @@ import { useServerEvent } from "@/connectivity";
 import { Screen } from "@/features/shell";
 import { kindLabel } from "@/lib/items";
 
+import { useItemTitles } from "./itemTitles";
 import {
   clockFace,
   clockOffset,
@@ -56,24 +58,6 @@ function useNow(ticking: boolean, changed: unknown): number {
   return now;
 }
 
-/** Titles of the items the session names; an item the caller cannot see stays unnamed. */
-function useItemTitles(ids: readonly string[]): Map<string, Item> {
-  const api = useApi();
-  const results = useQueries({
-    queries: ids.map((id) => ({
-      queryKey: ["item", id],
-      queryFn: () => api.items.get(id),
-      retry: false,
-    })),
-  });
-  const items = new Map<string, Item>();
-  results.forEach((result, index) => {
-    const id = ids[index];
-    if (id !== undefined && result.data !== undefined) items.set(id, result.data);
-  });
-  return items;
-}
-
 /** Work session timer (PRD W1-W4, ARCHITECTURE §11): the server owns the timer. */
 export function SessionScreen() {
   const { t } = useTranslation();
@@ -95,6 +79,11 @@ export function SessionScreen() {
     void client.invalidateQueries({ queryKey: SESSION_KEY });
   });
 
+  const router = useRouter();
+  const openStats = () => {
+    const href = "/session/stats" as Href;
+    router.push(href);
+  };
   const settle = (next: WorkSession) => {
     client.setQueryData(SESSION_KEY, loaded(next));
   };
@@ -105,6 +94,9 @@ export function SessionScreen() {
 
   return (
     <Screen title={t("nav.session")}>
+      <View className="self-start">
+        <Button title={t("sessions.statsLink")} variant="secondary" size="sm" onPress={openStats} />
+      </View>
       {session.isPending ? (
         <Text tone="muted">{t("common.loading")}</Text>
       ) : session.isError ? (

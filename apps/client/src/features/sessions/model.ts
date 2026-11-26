@@ -141,3 +141,25 @@ export function loggedItems(segments: readonly SessionSegment[]): string[] {
   }
   return ids;
 }
+
+/** Hours and minutes of a total, minutes rounded down (W5). */
+export function hoursAndMinutes(ms: number): { hours: number; minutes: number } {
+  const total = Math.floor(Math.max(0, ms) / 60_000);
+  return { hours: Math.floor(total / 60), minutes: total % 60 };
+}
+
+/** The statistics ranges the screen offers, in days. */
+export const RANGES = [7, 30] as const;
+export type Range = (typeof RANGES)[number];
+
+/** The local days of the last `days` days ending `today`, both ends included. */
+export function rangeOf(today: string, days: Range): { from: string; to: string } {
+  const at = new Date(`${today}T00:00:00Z`);
+  at.setUTCDate(at.getUTCDate() - (days - 1));
+  return { from: at.toISOString().slice(0, 10), to: today };
+}
+
+/** A bar's share of the busiest day, 0..1; nothing to show when no day has work. */
+export function barShare(ms: number, busiest: number): number {
+  return busiest <= 0 ? 0 : Math.min(1, Math.max(0, ms) / busiest);
+}
