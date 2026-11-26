@@ -11,16 +11,21 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+access = { path = "../access" }
 axum = { workspace = true, features = ["ws"] }
+chrono.workspace = true
 futures-util.workspace = true
 identity = { path = "../identity" }
+items = { path = "../items" }
 kernel = { path = "../kernel" }
+serde.workspace = true
+sqlx.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+ts-rs.workspace = true
 uuid.workspace = true
 yrs.workspace = true
 
 [dev-dependencies]
-chrono.workspace = true
 db = { path = "../db", features = ["testing"] }
 tokio-tungstenite.workspace = true

@@ -136,30 +136,80 @@ impl ItemsService {
         actor: Uuid,
         new: NewItem,
     ) -> Result<Item, AppError> {
+        self.create_owned_in(conn, actor, actor, new).await
+    }
+
+    /// [`Self::create_in`] for an item `actor` creates on behalf of `owner`, e.g. a page in
+    /// someone else's notebook belongs to the notebook's owner (PRD Y5). The caller checks that
+    /// `actor` may do so.
+    ///
+    /// # Errors
+    /// [`AppError::Internal`] on database errors.
+    pub async fn create_owned_in(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        actor: Uuid,
+        owner: Uuid,
+        new: NewItem,
+    ) -> Result<Item, AppError> {
         let now = self.clock.now();
         let id = kernel::Id::<()>::new_at(now).as_uuid();
         let row = sqlx::query_as::<_, ItemRow>(sqlx::AssertSqlSafe(format!(
             "INSERT INTO items (id, kind, title, description, owner_user_id, created_by,
                                 created_at, updated_at, last_touched_at)
-             VALUES ($1, $2, $3, $4, $5, $5, $6, $6, $6)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $7)
              RETURNING {COLUMNS}"
         )))
         .bind(id)
         .bind(&new.kind)
         .bind(&new.title)
         .bind(&new.description)
+        .bind(owner)
         .bind(actor)
         .bind(now)
         .fetch_one(&mut *conn)
         .await
         .map_err(internal)?;
         self.access
-            .grant(&mut *conn, RelationTuple::new(id, Relation::Owner, actor))
+            .grant(&mut *conn, RelationTuple::new(id, Relation::Owner, owner))
             .await
             .map_err(internal)?;
         let event = NewActivity::new(Some(actor), id, ActivityKind::Created);
         activity::record(conn, now, event).await.map_err(internal)?;
         Ok(row.into())
+    }
+
+    /// The items among `ids` that `actor` may view, in the order of `ids`; the others are left
+    /// out without a trace (V9).
+    ///
+    /// # Errors
+    /// [`AppError::Internal`] on database errors.
+    pub async fn visible_items(&self, actor: Uuid, ids: &[Uuid]) -> Result<Vec<Item>, AppError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let visible = self
+            .access
+            .permissions()
+            .list_accessible(&self.pool, actor, Perms::VIEW)
+            .await
+            .map_err(internal)?;
+        let rows = sqlx::query_as::<_, ItemRow>(sqlx::AssertSqlSafe(format!(
+            "SELECT {COLUMNS} FROM items WHERE id = ANY($1) AND id = ANY($2)"
+        )))
+        .bind(ids)
+        .bind(&visible)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(internal)?;
+        let mut by_id: std::collections::HashMap<Uuid, Item> = rows
+            .into_iter()
+            .map(|row| {
+                let item: Item = row.into();
+                (item.id, item)
+            })
+            .collect();
+        Ok(ids.iter().filter_map(|id| by_id.remove(id)).collect())
     }
 
     /// The item, if `actor` may view it; otherwise [`AppError::NotFound`] (V9).

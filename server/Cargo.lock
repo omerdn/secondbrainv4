@@ -2178,15 +2178,20 @@ checksum = "38bf9645c8b145698bb0b18a4637dcacbc421ea49bef2317e4fd8065a387cf21"
 name = "notebooks"
 version = "0.0.0"
 dependencies = [
+ "access",
  "axum",
  "chrono",
  "db",
  "futures-util",
  "identity",
+ "items",
  "kernel",
+ "serde",
+ "sqlx",
  "tokio",
  "tokio-tungstenite 0.30.0",
  "tracing",
+ "ts-rs",
  "uuid",
  "yrs",
 ]
