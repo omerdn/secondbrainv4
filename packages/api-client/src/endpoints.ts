@@ -55,6 +55,7 @@ import type {
   SessionSummary,
   TimerCommand,
   Today,
+  Calendar,
   HomePreferences,
   UpdateHomePreferences,
   WorkSession,
@@ -230,6 +231,10 @@ export function endpoints(api: ApiClient) {
       /** Latest process page lines of the visible items among `ids`, at most 100 (PRD S3). */
       processLines: (ids: readonly string[]) =>
         api.get<ItemStatusLine[]>("/process-lines", { query: { ids: ids.join(",") } }),
+    },
+    calendar: {
+      /** Task dates, routine occurrences and goal ranges of `from..=to`, at most 62 days (C1). */
+      get: (from: string, to: string) => api.get<Calendar>("/calendar", { query: { from, to } }),
     },
     today: {
       /** The Today screen on the caller's local day (PRD H1-H6). */

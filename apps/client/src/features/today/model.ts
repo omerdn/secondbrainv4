@@ -1,17 +1,5 @@
 /** Pure helpers of the Today screen (PRD H1-H6). */
 
-/** Where an item opens, by kind; anything else opens the shared item screen. */
-export function itemPath(kind: string, id: string): string {
-  const routes: Record<string, string> = {
-    task: "tasks",
-    routine: "routines",
-    goal: "goals",
-    tracker: "trackers",
-    page: "pages",
-  };
-  return `/${routes[kind] ?? "items"}/${encodeURIComponent(id)}`;
-}
-
 /** A 0..1 ratio as a whole percent. */
 export function percent(ratio: number): number {
   return Number.isFinite(ratio) ? Math.round(ratio * 100) : 0;

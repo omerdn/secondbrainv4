@@ -1,10 +1,19 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import { render } from "@testing-library/react-native";
 import { act, fireEvent, screen } from "expo-router/testing-library";
 import { useWindowDimensions } from "react-native";
 
-import { activeTab, destinations, isActive, moreItems, settings, tabs } from "@/features/shell";
+import {
+  activeTab,
+  destinations,
+  isActive,
+  moreItems,
+  PlaceholderScreen,
+  settings,
+  tabs,
+} from "@/features/shell";
 import { i18n } from "@/lib/i18n";
 
 import { fakeServer, json, memoryTokenStore, resetCredentials, user } from "./support/api";
@@ -115,11 +124,10 @@ describe("wide layout (≥ md)", () => {
   });
 
   it("describes what each placeholder section will hold (T0.7.5)", async () => {
-    setWidth(1280);
-    await signedIn("/calendar");
-    await header(i18n.t("nav.calendar"));
-    expect(screen.getByText(i18n.t("common.comingSoon.title"))).toBeOnTheScreen();
-    expect(screen.getByText(i18n.t("common.comingSoon.sections.calendar"))).toBeOnTheScreen();
+    // Every section has its screen now; the placeholder stays for modules to come.
+    const placeholder = await render(<PlaceholderScreen section="calendar" />);
+    expect(placeholder.getByText(i18n.t("common.comingSoon.title"))).toBeOnTheScreen();
+    expect(placeholder.getByText(i18n.t("common.comingSoon.sections.calendar"))).toBeOnTheScreen();
   });
 
   it("keeps the sign-out action in the account card of the settings", async () => {

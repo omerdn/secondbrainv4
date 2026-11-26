@@ -1,7 +1,8 @@
 import type { Item, RoutineDay, Today } from "@secondbrain/api-types";
 import { act, fireEvent, screen, waitFor } from "expo-router/testing-library";
 
-import { daysFrom, itemPath, parseThreshold, percent } from "@/features/today/model";
+import { daysFrom, parseThreshold, percent } from "@/features/today/model";
+import { itemPath } from "@/lib/items";
 import { deviceTimeZone, todayIn } from "@/lib/dates";
 import { i18n } from "@/lib/i18n";
 

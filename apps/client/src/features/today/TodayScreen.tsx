@@ -19,9 +19,9 @@ import { Pressable, View } from "react-native";
 import { SessionGlanceCard } from "@/features/sessions";
 import { Screen } from "@/features/shell";
 import { deviceTimeZone, todayIn } from "@/lib/dates";
-import { kindLabel, StatusLineText } from "@/lib/items";
+import { itemPath, kindLabel, StatusLineText } from "@/lib/items";
 
-import { daysFrom, itemPath, parseThreshold, percent } from "./model";
+import { daysFrom, parseThreshold, percent } from "./model";
 
 /** The Today screen (PRD H1-H6): everything for the day in one place. */
 export function TodayScreen() {
