@@ -186,6 +186,15 @@ where
                     items: items.clone(),
                     identity: identity.clone(),
                 }))
+                .merge(goals::http::router(goals::http::GoalsHttpState {
+                    goals: goals::GoalsService::new(
+                        pool.clone(),
+                        clock.clone(),
+                        access_engine.permissions(),
+                        items.clone(),
+                    ),
+                    identity: identity.clone(),
+                }))
                 .merge(routines::http::router(routines::http::RoutinesHttpState {
                     routines: routines::RoutinesService::new(
                         pool.clone(),

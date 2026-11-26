@@ -78,6 +78,7 @@ dependencies = [
  "chrono",
  "db",
  "dotenvy",
+ "goals",
  "http-body-util",
  "identity",
  "items",
@@ -1255,6 +1256,25 @@ checksum = "1033caf0b349c518623b5396bfb2cf0bddf44f0306d543a250e5743297aafd10"
 [[package]]
 name = "goals"
 version = "0.0.0"
+dependencies = [
+ "access",
+ "axum",
+ "chrono",
+ "db",
+ "http-body-util",
+ "identity",
+ "items",
+ "kernel",
+ "proptest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tower",
+ "ts-rs",
+ "uuid",
+]
 
 [[package]]
 name = "governor"

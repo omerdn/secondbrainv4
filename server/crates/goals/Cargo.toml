@@ -9,3 +9,24 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+access = { path = "../access" }
+axum.workspace = true
+chrono.workspace = true
+identity = { path = "../identity" }
+items = { path = "../items" }
+kernel = { path = "../kernel" }
+rust_decimal.workspace = true
+serde.workspace = true
+sqlx.workspace = true
+ts-rs.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+db = { path = "../db", features = ["testing"] }
+http-body-util.workspace = true
+proptest.workspace = true
+serde_json.workspace = true
+tower.workspace = true
+tokio.workspace = true
