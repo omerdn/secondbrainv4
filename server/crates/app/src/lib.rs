@@ -268,6 +268,15 @@ where
                     ),
                     identity: identity.clone(),
                 }))
+                .merge(sessions::http::router(sessions::http::SessionsHttpState {
+                    sessions: sessions::WorkSessions::new(
+                        pool.clone(),
+                        clock.clone(),
+                        access_engine.permissions(),
+                        realtime::Notifier::default(),
+                    ),
+                    identity: identity.clone(),
+                }))
                 .merge(tracking::http::router(tracking::http::TrackingHttpState {
                     entries: tracker_entries,
                     identity: identity.clone(),
