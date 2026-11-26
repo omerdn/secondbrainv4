@@ -18,7 +18,7 @@ use sqlx::PgPool;
 use ts_rs::TS;
 use uuid::Uuid;
 
-use crate::model::{NewEntry, TrackerEntry};
+use crate::model::{NewEntry, OwnerKind, TrackerEntry};
 use crate::repo;
 
 /// Longest entry note (T2: "short").
@@ -289,10 +289,16 @@ impl TrackerEntries {
                 "the item is in the trash; restore it first".into(),
             ));
         }
-        repo::get_tracker(&self.pool, tracker)
+        let definition = repo::get_tracker(&self.pool, tracker)
             .await
             .map_err(internal)?
             .ok_or(AppError::NotFound)?;
+        // A routine's entries follow its own rules, such as the 3-day limit (R7).
+        if definition.owner_kind != OwnerKind::Standalone {
+            return Err(AppError::Conflict(
+                "this tracker is managed by its owner".into(),
+            ));
+        }
         Ok(())
     }
 }

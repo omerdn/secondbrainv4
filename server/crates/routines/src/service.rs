@@ -59,10 +59,10 @@ fn schedule(timezone: chrono_tz::Tz, versions: &[PlanVersionView]) -> Result<Sch
 /// Shared handle; cheap to clone.
 #[derive(Clone)]
 pub struct RoutinesService {
-    pool: PgPool,
-    clock: SharedClock,
-    permissions: PermissionService<ItemsAccessContext>,
-    items: ItemsService,
+    pub(crate) pool: PgPool,
+    pub(crate) clock: SharedClock,
+    pub(crate) permissions: PermissionService<ItemsAccessContext>,
+    pub(crate) items: ItemsService,
 }
 
 impl RoutinesService {
@@ -129,6 +129,10 @@ impl RoutinesService {
         )
         .await
         .map_err(internal)?;
+        // Completions live on the routine's own tracker (§5.6).
+        crate::completions::ensure_tracker(&mut tx, item.id, daily_target, now)
+            .await
+            .map_err(internal)?;
         tx.commit().await.map_err(internal)?;
         self.routine(actor, item.id).await
     }
@@ -302,7 +306,7 @@ impl RoutinesService {
     }
 
     /// EDIT on a routine that is not in the trash. An item that is not a routine is not found.
-    async fn require_live(&self, actor: Uuid, id: Uuid) -> Result<(), AppError> {
+    pub(crate) async fn require_live(&self, actor: Uuid, id: Uuid) -> Result<(), AppError> {
         self.permissions
             .require(&self.pool, actor, id, Perms::EDIT)
             .await?;

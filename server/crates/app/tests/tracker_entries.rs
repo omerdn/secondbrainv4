@@ -720,3 +720,39 @@ async fn v9_a_stranger_cannot_read_the_summary() {
     let response = w.call(Method::GET, &uri, &stranger, None, None).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn r7_a_routines_tracker_cannot_be_written_directly() {
+    let w = World::new().await;
+    let (user, token) = w.user("routine-tracker@example.com").await;
+    let new = NewItem {
+        kind: "routine".into(),
+        title: "Read".into(),
+        description: None,
+    };
+    let item_id = w.items.create(user, new).await.unwrap().id;
+    let definition = NewTracker {
+        item_id,
+        unit: "count".into(),
+        target_value: Decimal::ONE,
+        period: Period::Day,
+        aggregation: Aggregation::Sum,
+        direction: Direction::Increase,
+        owner_kind: OwnerKind::Routine,
+    };
+    repo::insert_tracker(w.db.pool(), &definition, start())
+        .await
+        .unwrap();
+    // Far outside the 3-day limit a routine allows.
+    let response = w
+        .post_entry(
+            item_id,
+            &token,
+            json!({"value": "1", "occurred_at": "2026-01-01T12:00:00Z"}),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let uri = format!("/trackers/{item_id}");
+    let patched = send(&w, Method::PATCH, &uri, &token, json!({"unit": "x"})).await;
+    assert_eq!(patched.status(), StatusCode::CONFLICT);
+}

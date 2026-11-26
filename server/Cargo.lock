@@ -3233,10 +3233,12 @@ dependencies = [
  "kernel",
  "proptest",
  "recurrence",
+ "rust_decimal",
  "serde",
  "serde_json",
  "sqlx",
  "tokio",
+ "tracking",
  "ts-rs",
  "uuid",
 ]
