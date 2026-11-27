@@ -19,6 +19,7 @@ Bu dosya her Claude oturumunda otomatik okunur ve tek başına yeterli olmalıd�
 - Status sütunları: **Backlog → Ready → In progress → In review → Done**. "Todo" sütunu yoktur.
 - `[E0.3] …` başlıklı, `epic` etiketli issue'lar epic'tir; üzerlerinde çalışılmaz. Görevler `[T0.3.1] …` başlıklıdır.
 - **Going to be done in the end** sütunundaki ve `zamanlama:en-son` etiketli işler sırası gelse de alınmaz; sahip en sonda açar (ADR-0024).
+- **Going to be done in the release** sütunundaki ve `zamanlama:sürüm` etiketli işler de alınmaz: v1 sürümünde, herkese açılırken yapılır ve kararları sahibindir (ödeme, paketler, mağazalar).
 
 ## İş akışı (her görev için)
 1. **Seçim:** "In progress" veya "In review"da kalmış bir görev varsa önce onu bitirin. Yoksa Ready, sonra Backlog içinden en düşük faz ve en düşük T-ID'li görevi alın. Issue gövdesindeki "Bağımlılıklar"ın hepsi kapalı olmalıdır; issue numarası olmayan bir bağımlılık açık sayılır. Status'ü "In progress" yapın. Aynı anda tek görev.
