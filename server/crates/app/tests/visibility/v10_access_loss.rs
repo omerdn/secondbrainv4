@@ -58,3 +58,51 @@ async fn revoked_user_is_disconnected() {
     assert_eq!(hub.publish(&Channel::Item(page), &update), 0);
     bridge.stop().await;
 }
+
+/// Ayşe has a page of Ali's notebook open as a member. Ali removes her from the notebook; her
+/// subscription to the page is cut as well (V8, T3.4.1).
+#[tokio::test]
+async fn removing_a_notebook_member_disconnects_them_from_its_pages() {
+    let world = World::new().await;
+    let (ali, _) = world.person("Ali").await;
+    let (ayse, ayse_email) = world.person("Ayse").await;
+    world.befriend(ali, ayse, &ayse_email).await;
+    let (notebook, page) = world
+        .shared_notebook(ali, ayse, items::InvitationRole::Viewer)
+        .await;
+
+    let hub = Hub::new();
+    let bridge = Bridge::start(world.pool(), world.schema(), hub.clone())
+        .await
+        .unwrap();
+    let mut dispatcher = Dispatcher::new(DispatchConfig::default());
+    realtime::access::register(
+        &mut dispatcher,
+        world.pool().clone(),
+        Notifier::new(world.schema()),
+    );
+    // Events from setting the notebook up are not about Ayşe losing anything.
+    dispatcher.dispatch_batch(world.pool()).await.unwrap();
+    let mut connection = hub.connect(UserId::from_uuid(ayse), SessionId::new());
+    hub.subscribe(connection.id, Channel::Item(page));
+
+    world
+        .sharing_items()
+        .remove_member(ali, notebook, ayse)
+        .await
+        .unwrap();
+    dispatcher.dispatch_batch(world.pool()).await.unwrap();
+
+    let message = tokio::time::timeout(std::time::Duration::from_secs(5), connection.outbox.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        message,
+        ServerMessage::Unsubscribed {
+            channel: Channel::Item(page).to_string(),
+            reason: Some(UnsubscribeReason::AccessRevoked),
+        }
+    );
+    bridge.stop().await;
+}
