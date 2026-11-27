@@ -2089,3 +2089,130 @@ async fn endpoints() {
         .await;
     assert_eq!(json_body(restored).await["deleted_at"], Value::Null);
 }
+
+// --- AK4: emoji reactions to friends' completions (T3.5.2) -------------------------------------
+
+/// Ali's task shared with Ayşe as an assignee; Ayşe completes it. The completion event's id.
+async fn shared_completion(w: &World, ali: Uuid, ayse: Uuid) -> (Uuid, Uuid) {
+    w.sharing.befriend(ali, ayse);
+    let task = w.items.create(ali, World::task("Ortak")).await.unwrap();
+    let invitation = w.items.invite(ali, task.id, assignee(ayse)).await.unwrap();
+    w.items
+        .accept_invitation(ayse, invitation.id)
+        .await
+        .unwrap();
+    let mut tx = w.db.pool().begin().await.unwrap();
+    w.items
+        .record_completed(&mut tx, ayse, task.id)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let page = kernel::PageRequest::from_params(kernel::PageParams {
+        limit: Some(50),
+        cursor: None,
+    })
+    .unwrap();
+    let completion = w
+        .items
+        .item_activity(ali, task.id, &page)
+        .await
+        .unwrap()
+        .items
+        .into_iter()
+        .find(|a| a.kind == items::ActivityKind::Completed)
+        .unwrap()
+        .id;
+    (task.id, completion)
+}
+
+fn emoji(e: &str) -> items::ReactRequest {
+    items::ReactRequest { emoji: e.into() }
+}
+
+#[tokio::test]
+async fn ak4_a_friend_reacts_to_a_completion_once_and_can_change_it() {
+    let w = World::new().await;
+    let (ali, ayse) = (Uuid::now_v7(), Uuid::now_v7());
+    let (task, completion) = shared_completion(&w, ali, ayse).await;
+
+    let counts = w.items.react(ali, completion, emoji("🎉")).await.unwrap();
+    assert_eq!(
+        counts,
+        [items::ReactionCount {
+            emoji: "🎉".into(),
+            count: 1,
+            mine: true
+        }]
+    );
+    // Reacting again replaces the reaction: still one per person.
+    let counts = w.items.react(ali, completion, emoji("🔥")).await.unwrap();
+    assert_eq!(counts.len(), 1);
+    assert_eq!(counts[0].emoji, "🔥");
+    // Ayşe sees the count in the activity, but not as hers and not who reacted.
+    let page = kernel::PageRequest::from_params(kernel::PageParams {
+        limit: Some(50),
+        cursor: None,
+    })
+    .unwrap();
+    let theirs = w.items.item_activity(ayse, task, &page).await.unwrap();
+    let event = theirs.items.iter().find(|a| a.id == completion).unwrap();
+    assert_eq!(
+        event.reactions,
+        [items::ReactionCount {
+            emoji: "🔥".into(),
+            count: 1,
+            mine: false
+        }]
+    );
+    let counts = w.items.unreact(ali, completion).await.unwrap();
+    assert!(counts.is_empty());
+}
+
+#[tokio::test]
+async fn ak4_only_visible_completions_of_friends_get_reactions() {
+    let w = World::new().await;
+    let (ali, ayse, stranger) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
+    let (_, completion) = shared_completion(&w, ali, ayse).await;
+
+    // Someone who cannot see the item learns nothing, not even that the event exists (V9).
+    assert!(matches!(
+        w.items.react(stranger, completion, emoji("👏")).await,
+        Err(AppError::NotFound)
+    ));
+    assert!(matches!(
+        w.items.react(ali, Uuid::now_v7(), emoji("👏")).await,
+        Err(AppError::NotFound)
+    ));
+    // One's own completion, another kind of event and an emoji not offered are refused.
+    assert!(matches!(
+        w.items.react(ayse, completion, emoji("👏")).await,
+        Err(AppError::Validation(_))
+    ));
+    assert!(matches!(
+        w.items.react(ali, completion, emoji("💩")).await,
+        Err(AppError::Validation(_))
+    ));
+    let own = w.items.create(ali, World::task("Kendi")).await.unwrap();
+    let page = kernel::PageRequest::from_params(kernel::PageParams {
+        limit: Some(50),
+        cursor: None,
+    })
+    .unwrap();
+    let created = w
+        .items
+        .item_activity(ali, own.id, &page)
+        .await
+        .unwrap()
+        .items[0]
+        .id;
+    assert!(matches!(
+        w.items.react(ali, created, emoji("👏")).await,
+        Err(AppError::Validation(_))
+    ));
+    // Still a member after the friendship ends, but no longer a friend: no reaction.
+    w.sharing.unfriend(ali, ayse);
+    assert!(matches!(
+        w.items.react(ali, completion, emoji("👏")).await,
+        Err(AppError::Forbidden)
+    ));
+}

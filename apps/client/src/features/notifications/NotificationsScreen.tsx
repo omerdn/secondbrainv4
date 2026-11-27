@@ -111,7 +111,13 @@ function NotificationRow({
         })
       : payload.type === "nudge"
         ? t("notifications.nudge", { from: payload.from_name })
-        : t("notifications.routineReminder", { title: payload.title, time: payload.time });
+        : payload.type === "reaction"
+          ? t("notifications.reaction", {
+              from: payload.from_name,
+              emoji: payload.emoji,
+              title: payload.item_title,
+            })
+          : t("notifications.routineReminder", { title: payload.title, time: payload.time });
   const when = new Date(notification.created_at).toLocaleString(i18n.language, {
     dateStyle: "medium",
     timeStyle: "short",
@@ -120,6 +126,9 @@ function NotificationRow({
     onRead();
     if (payload.type === "routine_reminder") {
       const href = itemPath("routine", payload.routine_id) as Href;
+      router.push(href);
+    } else if (payload.type === "reaction") {
+      const href = itemPath(payload.item_kind, payload.item_id) as Href;
       router.push(href);
     }
   };

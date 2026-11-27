@@ -29,6 +29,8 @@
 //! | POST   | `/invitations/{id}/accept`, `/invitations/{id}/decline` | 200 [`Invitation`] |
 //! | GET    | `/items/{id}/activity?limit=&cursor=` | 200 `Page<Activity>`; VIEW (A2) |
 //! | GET    | `/activity?limit=&cursor=` | 200 `Page<Activity>` across visible items (A2) |
+//! | PUT    | `/activity/{id}/reaction` | 200 `ActivityReaction[]`; a friend's completion (AK4) |
+//! | DELETE | `/activity/{id}/reaction` | 200 `ActivityReaction[]`; takes the caller's back |
 //! | GET    | `/items/filter?filter=<json>&limit=&cursor=` | 200 `Page<Item>` (F1) |
 //! | POST   | `/saved-views` | 201 [`SavedView`]; 409 for a taken name (F2) |
 //! | GET    | `/saved-views` | 200 `SavedView[]`: pinned first |
@@ -109,6 +111,7 @@ pub fn router(state: ItemsHttpState) -> Router {
         .route("/invitations/{id}/decline", post(decline_invitation))
         .route("/items/{id}/activity", get(item_activity))
         .route("/activity", get(activity_feed))
+        .route("/activity/{id}/reaction", put(react).delete(unreact))
         .route("/items/filter", get(filter_items))
         .route("/saved-views", post(create_view).get(list_views))
         .route("/saved-views/{id}", patch(update_view).delete(delete_view))
@@ -210,6 +213,31 @@ async fn item_activity(
     state
         .items
         .item_activity(auth.user_id.as_uuid(), id, &page)
+        .await
+        .map(Json)
+}
+
+async fn react(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+    Json(request): Json<crate::reactions::ReactRequest>,
+) -> Result<Json<Vec<crate::reactions::ReactionCount>>, AppError> {
+    state
+        .items
+        .react(auth.user_id.as_uuid(), id, request)
+        .await
+        .map(Json)
+}
+
+async fn unreact(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<crate::reactions::ReactionCount>>, AppError> {
+    state
+        .items
+        .unreact(auth.user_id.as_uuid(), id)
         .await
         .map(Json)
 }

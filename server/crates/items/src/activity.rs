@@ -32,7 +32,7 @@ pub enum ActivityKind {
 }
 
 impl ActivityKind {
-    const fn as_str(self) -> &'static str {
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Created => "created",
             Self::Completed => "completed",
@@ -81,6 +81,8 @@ pub struct Activity {
     pub member_user_id: Option<Uuid>,
     pub member_role: Option<InvitationRole>,
     pub created_at: DateTime<Utc>,
+    /// Emoji reactions to a completion (AK4): counts and the reader's own, never names.
+    pub reactions: Vec<crate::reactions::ReactionCount>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
@@ -185,6 +187,7 @@ impl TryFrom<ActivityRow> for Activity {
             member_user_id: row.payload.0.member_user_id,
             member_role: row.payload.0.member_role,
             created_at: row.created_at,
+            reactions: Vec::new(),
         })
     }
 }
@@ -305,10 +308,15 @@ impl ItemsService {
         .fetch_all(&self.pool)
         .await
         .map_err(internal)?;
-        let events = rows
+        let mut events = rows
             .into_iter()
             .map(Activity::try_from)
             .collect::<Result<Vec<_>, _>>()?;
+        let ids: Vec<Uuid> = events.iter().map(|event| event.id).collect();
+        let mut reactions = self.reactions(actor, &ids).await?;
+        for event in &mut events {
+            event.reactions = reactions.remove(&event.id).unwrap_or_default();
+        }
         Ok(Page::from_overfetch(events, page.limit, |event| {
             (event.created_at, event.id)
         }))

@@ -8,4 +8,4 @@ export type NotificationPayload = { "type": "invitation", invitation_id: string,
 /**
  * `HH:MM` in the routine's time zone.
  */
-time: string, } | { "type": "nudge", from_user: string, from_name: string, };
+time: string, } | { "type": "nudge", from_user: string, from_name: string, } | { "type": "reaction", activity_id: string, item_id: string, item_kind: string, item_title: string, from_user: string, from_name: string, emoji: string, };

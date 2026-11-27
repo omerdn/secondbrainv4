@@ -762,3 +762,119 @@ async fn ak3_a_nudge_becomes_the_friends_notification() {
             .is_empty()
     );
 }
+
+impl World {
+    /// Ada's task shared with Bob as an assignee; Bob completes it. The completion event.
+    async fn completion(&self, ada: Uuid, bob: Uuid) -> (Uuid, Uuid) {
+        let task = self
+            .items
+            .create(
+                ada,
+                NewItem {
+                    kind: "task".into(),
+                    title: "Rapor".into(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap()
+            .id;
+        let invitation = self
+            .items
+            .invite(
+                ada,
+                task,
+                CreateInvitationRequest {
+                    to_user: bob,
+                    role: InvitationRole::Assignee,
+                },
+            )
+            .await
+            .unwrap()
+            .id;
+        self.items.accept_invitation(bob, invitation).await.unwrap();
+        let mut tx = self.db.pool().begin().await.unwrap();
+        self.items
+            .record_completed(&mut tx, bob, task)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        let page = kernel::PageRequest::from_params(kernel::PageParams {
+            limit: Some(50),
+            cursor: None,
+        })
+        .unwrap();
+        let id = self
+            .items
+            .item_activity(ada, task, &page)
+            .await
+            .unwrap()
+            .items
+            .into_iter()
+            .find(|a| a.kind == items::ActivityKind::Completed)
+            .unwrap()
+            .id;
+        (task, id)
+    }
+
+    async fn reactions_of(&self, user: Uuid) -> Vec<NotificationPayload> {
+        self.notifications
+            .list(user, None)
+            .await
+            .unwrap()
+            .notifications
+            .into_iter()
+            .map(|n| n.payload)
+            .filter(|p| matches!(p, NotificationPayload::Reaction { .. }))
+            .collect()
+    }
+}
+
+#[tokio::test]
+async fn ak4_a_reaction_becomes_the_completers_notification() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    let bob = w.user("bob@example.com", "Bob").await;
+    let (task, completion) = w.completion(ada, bob).await;
+    let react = |e: &str| items::ReactRequest { emoji: e.into() };
+    w.items.react(ada, completion, react("🎉")).await.unwrap();
+    // The same emoji again changes nothing and makes no second notification.
+    w.items.react(ada, completion, react("🎉")).await.unwrap();
+    w.deliver().await;
+    w.redeliver_all().await;
+    assert_eq!(
+        w.reactions_of(bob).await,
+        [NotificationPayload::Reaction {
+            activity_id: completion,
+            item_id: task,
+            item_kind: "task".into(),
+            item_title: "Rapor".into(),
+            from_user: ada,
+            from_name: "Ada".into(),
+            emoji: "🎉".into(),
+        }]
+    );
+    assert!(w.reactions_of(ada).await.is_empty());
+}
+
+#[tokio::test]
+async fn ak4_v9_no_reaction_notification_about_an_item_one_no_longer_sees() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    let bob = w.user("bob@example.com", "Bob").await;
+    let (task, completion) = w.completion(ada, bob).await;
+    w.items
+        .react(
+            ada,
+            completion,
+            items::ReactRequest {
+                emoji: "👏".into()
+            },
+        )
+        .await
+        .unwrap();
+    // Bob leaves the task before the notification is made.
+    w.items.remove_member(ada, task, bob).await.unwrap();
+    w.deliver().await;
+    assert!(w.reactions_of(bob).await.is_empty());
+}

@@ -229,3 +229,40 @@ describe("nudges (AK3)", () => {
     });
   });
 });
+
+describe("reactions (AK4)", () => {
+  it("says who reacted to what and opens the item", async () => {
+    const reaction: Notification = {
+      id: "re1",
+      payload: {
+        type: "reaction",
+        activity_id: "a1",
+        item_id: "t9",
+        item_kind: "task",
+        item_title: "Rapor",
+        from_user: "u2",
+        from_name: "Ayşe",
+        emoji: "🎉",
+      },
+      read_at: null,
+      created_at: "2026-11-27T09:00:00Z",
+    };
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /notifications": () => json(200, { notifications: [reaction], unread: 1 }),
+      "POST /notifications/re1/read": () =>
+        json(200, { ...reaction, read_at: "2026-11-27T09:01:00Z" }),
+      "GET /tasks/t9": () => json(404, { error: { code: "not_found", message: "not_found" } }),
+    });
+    await renderApp(server.api, "/notifications", { tokenStore: memoryTokenStore("t") });
+    await fireEvent.press(
+      await screen.findByRole("button", {
+        name: 'Okunmadı: Ayşe, "Rapor" tamamlamana 🎉 bıraktı',
+      }),
+    );
+    await waitFor(() => {
+      expect(server.calls.some((c) => c.path === "/notifications/re1/read")).toBe(true);
+      expect(server.calls.some((c) => c.path.startsWith("/tasks/t9"))).toBe(true);
+    });
+  });
+});
