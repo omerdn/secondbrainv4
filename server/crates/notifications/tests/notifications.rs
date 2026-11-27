@@ -859,6 +859,7 @@ async fn ak4_a_reaction_becomes_the_completers_notification() {
             from_user: ada,
             from_name: "Ada".into(),
             emoji: "🎉".into(),
+            activity_kind: Some("completed".into()),
         }]
     );
     assert!(w.reactions_of(ada).await.is_empty());
@@ -1457,5 +1458,151 @@ mod sharing_changes {
                 from_name: "Ada".into(),
             }]
         );
+    }
+}
+
+// --- T3.5.4: reactions to tracker entries -----------------------------------------------------
+
+mod entry_reactions {
+    use super::*;
+    use rust_decimal::Decimal;
+    use tracking::{
+        Aggregation, CreateEntryRequest, CreateTrackerRequest, Direction, Period, TrackerEntries,
+    };
+
+    impl World {
+        fn trackers(&self) -> TrackerEntries {
+            let access = AccessEngine::new(ItemsAccessContext, AccessConfig::default());
+            TrackerEntries::new(
+                self.db.pool().clone(),
+                self.clock.clone(),
+                access.permissions(),
+                self.items.clone(),
+                self.identity.clone(),
+            )
+        }
+
+        /// Bob's tracker that Ada watches, with one entry of Bob's. The entry's activity id.
+        async fn bobs_entry(&self, ada: Uuid, bob: Uuid) -> (Uuid, Uuid) {
+            let trackers = self.trackers();
+            let tracker = trackers
+                .create_tracker(
+                    bob,
+                    CreateTrackerRequest {
+                        title: "Koşu".into(),
+                        description: None,
+                        unit: "km".into(),
+                        target_value: Decimal::from(20),
+                        period: Period::Week,
+                        aggregation: Aggregation::Sum,
+                        direction: Direction::Increase,
+                    },
+                )
+                .await
+                .unwrap()
+                .item
+                .id;
+            let invitation = self
+                .items
+                .invite(
+                    bob,
+                    tracker,
+                    CreateInvitationRequest {
+                        to_user: ada,
+                        role: InvitationRole::Watcher,
+                    },
+                )
+                .await
+                .unwrap()
+                .id;
+            self.items.accept_invitation(ada, invitation).await.unwrap();
+            trackers
+                .add(
+                    bob,
+                    tracker,
+                    CreateEntryRequest {
+                        value: Decimal::from(5),
+                        occurred_at: None,
+                        note: None,
+                    },
+                )
+                .await
+                .unwrap();
+            let activity: Uuid = sqlx::query_scalar(
+                "SELECT id FROM activity_events WHERE item_id = $1 AND type = 'recorded'",
+            )
+            .bind(tracker)
+            .fetch_one(self.db.pool())
+            .await
+            .unwrap();
+            (tracker, activity)
+        }
+    }
+
+    #[tokio::test]
+    async fn ak4_a_friend_reacts_to_an_entry_and_the_recorder_is_told() {
+        let w = World::new().await;
+        let ada = w.user("ada@example.com", "Ada").await;
+        let bob = w.user("bob@example.com", "Bob").await;
+        let (tracker, activity) = w.bobs_entry(ada, bob).await;
+        w.items
+            .react(
+                ada,
+                activity,
+                items::ReactRequest {
+                    emoji: "💪".into()
+                },
+            )
+            .await
+            .unwrap();
+        w.deliver().await;
+        w.redeliver_all().await;
+        let got = w.reactions_of(bob).await;
+        assert_eq!(
+            got,
+            [NotificationPayload::Reaction {
+                activity_id: activity,
+                item_id: tracker,
+                item_kind: "tracker".into(),
+                item_title: "Koşu".into(),
+                from_user: ada,
+                from_name: "Ada".into(),
+                emoji: "💪".into(),
+                activity_kind: Some("recorded".into()),
+            }]
+        );
+    }
+
+    #[tokio::test]
+    async fn ak4_v9_no_reaction_to_ones_own_entry_or_an_unseen_one() {
+        let w = World::new().await;
+        let ada = w.user("ada@example.com", "Ada").await;
+        let bob = w.user("bob@example.com", "Bob").await;
+        let can = w.user("can@example.com", "Can").await;
+        let (_, activity) = w.bobs_entry(ada, bob).await;
+        assert!(matches!(
+            w.items
+                .react(
+                    bob,
+                    activity,
+                    items::ReactRequest {
+                        emoji: "👏".into()
+                    }
+                )
+                .await,
+            Err(AppError::Validation(_))
+        ));
+        assert!(matches!(
+            w.items
+                .react(
+                    can,
+                    activity,
+                    items::ReactRequest {
+                        emoji: "👏".into()
+                    }
+                )
+                .await,
+            Err(AppError::NotFound)
+        ));
     }
 }

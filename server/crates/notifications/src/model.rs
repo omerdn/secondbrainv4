@@ -130,6 +130,9 @@ pub enum NotificationPayload {
         from_user: Uuid,
         from_name: String,
         emoji: String,
+        /// `recorded` for a tracker entry (T3.5.4); a completion otherwise.
+        #[serde(default)]
+        activity_kind: Option<String>,
     },
     /// Someone assigned the user to part of an item (BL2, G4, T4.3.7).
     Assignment {

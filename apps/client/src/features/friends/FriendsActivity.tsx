@@ -90,7 +90,7 @@ export function FriendsActivity({
       {events.map((event) => (
         <View key={event.id} className="gap-2 border-t border-border pt-2">
           <Text>
-            {t("social.completed", {
+            {t(event.kind === "recorded" ? "social.recorded" : "social.completed", {
               name: names.get(event.actor_id ?? "") ?? "",
               title: event.item_title,
             })}

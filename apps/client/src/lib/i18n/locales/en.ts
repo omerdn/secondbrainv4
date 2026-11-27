@@ -285,6 +285,7 @@ export const en: Catalog = {
   },
   social: {
     friendsActivity: "From your friends",
+    recorded: '{{name}} logged an entry on "{{title}}"',
     completed: '{{name}} completed "{{title}}"',
     reactWith: 'React {{emoji}} to "{{title}}"',
     reactFailed: "Could not send the reaction. Try again.",
@@ -490,6 +491,7 @@ export const en: Catalog = {
       hours: "{{count}} h",
     },
     nudge: "{{from}} nudged you 👋",
+    reactionEntry: '{{from}} left {{emoji}} on your "{{title}}" entry',
     reaction: '{{from}} reacted {{emoji}} to your completion of "{{title}}"',
     accept: "Accept",
     decline: "Decline",

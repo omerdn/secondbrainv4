@@ -3,7 +3,7 @@ import type { Activity, ActivityReaction } from "@secondbrain/api-types";
 /** The emoji the server accepts as reactions (PRD AK4); the same order. */
 export const REACTIONS = ["👏", "🔥", "💪", "🎉", "❤️", "👍"] as const;
 
-/** Completions by friends, newest first, that the reader can react to (AK4). */
+/** Completions and tracker entries by friends, newest first, that the reader can react to (AK4). */
 export function friendCompletions(
   feed: readonly Activity[],
   friendIds: ReadonlySet<string>,
@@ -11,7 +11,7 @@ export function friendCompletions(
 ): Activity[] {
   return feed.filter(
     (event) =>
-      event.kind === "completed" &&
+      (event.kind === "completed" || event.kind === "recorded") &&
       event.actor_id !== null &&
       event.actor_id !== me &&
       friendIds.has(event.actor_id),

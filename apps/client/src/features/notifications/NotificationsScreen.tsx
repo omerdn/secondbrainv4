@@ -113,11 +113,16 @@ function NotificationRow({
       : payload.type === "nudge"
         ? t("notifications.nudge", { from: payload.from_name })
         : payload.type === "reaction"
-          ? t("notifications.reaction", {
-              from: payload.from_name,
-              emoji: payload.emoji,
-              title: payload.item_title,
-            })
+          ? t(
+              payload.activity_kind === "recorded"
+                ? "notifications.reactionEntry"
+                : "notifications.reaction",
+              {
+                from: payload.from_name,
+                emoji: payload.emoji,
+                title: payload.item_title,
+              },
+            )
           : payload.type === "assignment"
             ? payload.subtask_title
               ? t("notifications.assignmentSubtask", {

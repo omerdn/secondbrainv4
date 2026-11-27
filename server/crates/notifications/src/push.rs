@@ -506,9 +506,14 @@ pub fn message_of(payload: &NotificationPayload) -> PushMessage {
             item_title,
             from_name,
             emoji,
+            activity_kind,
             ..
         } => PushMessage {
-            title: format!("{from_name} {emoji} ile tepki verdi"),
+            title: if activity_kind.as_deref() == Some("recorded") {
+                format!("{from_name} kaydına {emoji} ile tepki verdi")
+            } else {
+                format!("{from_name} {emoji} ile tepki verdi")
+            },
             body: item_title.clone(),
             url: "/notifications".into(),
             tag: format!("reaction:{activity_id}"),
@@ -720,6 +725,7 @@ mod tests {
             from_user: Uuid::now_v7(),
             from_name: "Ali".into(),
             emoji: "🎉".into(),
+            activity_kind: None,
         });
         assert_eq!(reaction.title, "Ali 🎉 ile tepki verdi");
         assert_eq!(reaction.body, "Rapor");

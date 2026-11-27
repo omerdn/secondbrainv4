@@ -3,4 +3,4 @@
 /**
  * What happened.
  */
-export type ActivityKind = "created" | "completed" | "assigned" | "shared" | "linked" | "unlinked";
+export type ActivityKind = "created" | "completed" | "assigned" | "shared" | "linked" | "unlinked" | "recorded";

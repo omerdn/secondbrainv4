@@ -10,7 +10,11 @@ export type NotificationPayload = { "type": "invitation", invitation_id: string,
 /**
  * `HH:MM` in the routine's time zone.
  */
-time: string, } | { "type": "nudge", from_user: string, from_name: string, } | { "type": "reaction", activity_id: string, item_id: string, item_kind: string, item_title: string, from_user: string, from_name: string, emoji: string, } | { "type": "assignment", item_id: string, item_kind: string, item_title: string, 
+time: string, } | { "type": "nudge", from_user: string, from_name: string, } | { "type": "reaction", activity_id: string, item_id: string, item_kind: string, item_title: string, from_user: string, from_name: string, emoji: string, 
+/**
+ * `recorded` for a tracker entry (T3.5.4); a completion otherwise.
+ */
+activity_kind: string | null, } | { "type": "assignment", item_id: string, item_kind: string, item_title: string, 
 /**
  * The subtask, when the assignment is to one.
  */

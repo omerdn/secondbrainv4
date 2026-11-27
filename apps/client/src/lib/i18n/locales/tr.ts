@@ -291,6 +291,7 @@ export const tr = {
   },
   social: {
     friendsActivity: "Arkadaşlarından",
+    recorded: '{{name}}, "{{title}}" takibine kayıt girdi',
     completed: '{{name}}, "{{title}}" tamamladı',
     reactWith: '"{{title}}" için {{emoji}} tepkisi',
     reactFailed: "Tepki gönderilemedi. Tekrar dene.",
@@ -496,6 +497,7 @@ export const tr = {
       hours: "{{count}} sa",
     },
     nudge: "{{from}} seni dürttü 👋",
+    reactionEntry: '{{from}}, "{{title}}" kaydına {{emoji}} bıraktı',
     reaction: '{{from}}, "{{title}}" tamamlamana {{emoji}} bıraktı',
     accept: "Kabul et",
     decline: "Reddet",

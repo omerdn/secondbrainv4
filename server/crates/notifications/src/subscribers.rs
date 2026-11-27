@@ -136,6 +136,7 @@ pub fn register(
                     from_user: event.from_user,
                     from_name,
                     emoji: event.emoji,
+                    activity_kind: Some(event.activity_kind),
                 };
                 notifications
                     .deliver(event.to_user, &payload, stored.id)
