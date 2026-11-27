@@ -25,6 +25,8 @@ pub enum Template {
     },
     /// Someone asked the user to be friends (AK1).
     FriendRequest { from_name: String },
+    /// The weekly summary (OZ1, T4.3.5).
+    WeeklySummary(crate::model::WeeklySummary),
 }
 
 /// A queued e-mail to one user (by id: the address is read when it is sent).
@@ -89,6 +91,18 @@ pub fn render(
                  Daveti kabul etmek ya da reddetmek için bildirimlerine bak:\n{web}/notifications\n\n\
                  Kabul etmezsen hiçbir şey değişmez.\n\nRoutune",
                 role_name(role)
+            ),
+        ),
+        Template::WeeklySummary(summary) => (
+            EmailKind::WeeklySummary,
+            format!(
+                "Haftalık özetin: {} – {}",
+                summary.week_start.format("%d.%m"),
+                summary.week_end.format("%d.%m")
+            ),
+            format!(
+                "{greeting}\n\n{}\nAyrıntılar uygulamada:\n{web}/notifications\n\nRoutune",
+                crate::summary_text(summary)
             ),
         ),
         Template::FriendRequest { from_name } => (

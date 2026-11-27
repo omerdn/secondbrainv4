@@ -25,6 +25,8 @@ pub enum EmailKind {
     Invitation,
     /// Someone asked the user to be friends (AK1, T3.7.1).
     FriendRequest,
+    /// The weekly summary (OZ1, T4.3.5).
+    WeeklySummary,
 }
 
 impl EmailKind {
@@ -35,6 +37,7 @@ impl EmailKind {
             Self::ResetPassword => "reset_password",
             Self::Invitation => "invitation",
             Self::FriendRequest => "friend_request",
+            Self::WeeklySummary => "weekly_summary",
         }
     }
 }

@@ -367,6 +367,27 @@ impl IdentityService {
             .map_err(AppError::internal)
     }
 
+    /// Users and their time zones in id order after `after`, at most `limit`: for jobs that run
+    /// at a local time for everyone (the weekly summary, T4.3.5).
+    ///
+    /// # Errors
+    /// [`AppError::Internal`] on database errors.
+    pub async fn timezones_page(
+        &self,
+        after: Option<uuid::Uuid>,
+        limit: i64,
+    ) -> Result<Vec<(uuid::Uuid, String)>, AppError> {
+        sqlx::query_as(
+            "SELECT id, timezone FROM users WHERE ($1::uuid IS NULL OR id > $1)
+             ORDER BY id LIMIT $2",
+        )
+        .bind(after)
+        .bind(limit)
+        .fetch_all(self.pool())
+        .await
+        .map_err(AppError::internal)
+    }
+
     /// Display names of `ids`, for screens that show who is affected (PRD V7). Unknown ids are
     /// absent from the result. Callers decide who may see them.
     ///

@@ -15,6 +15,7 @@ access = { path = "../access" }
 axum.workspace = true
 base64.workspace = true
 chrono.workspace = true
+chrono-tz.workspace = true
 db = { path = "../db" }
 dotenvy.workspace = true
 getrandom.workspace = true
