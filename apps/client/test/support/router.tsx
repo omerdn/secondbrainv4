@@ -11,6 +11,8 @@ import Today from "../../app/(app)/index";
 import ItemDetail from "../../app/(app)/items/[id]";
 import More from "../../app/(app)/more";
 import Notebooks from "../../app/(app)/notebooks";
+import Notifications from "../../app/(app)/notifications/index";
+import NotificationPreferences from "../../app/(app)/notifications/preferences";
 import PageDetail from "../../app/(app)/pages/[id]";
 import Routines from "../../app/(app)/routines";
 import Session from "../../app/(app)/session/index";
@@ -64,6 +66,8 @@ export function renderApp(
       "(app)/trackers": Trackers,
       "(app)/trackers/[id]": TrackerDetail,
       "(app)/notebooks": Notebooks,
+      "(app)/notifications/index": Notifications,
+      "(app)/notifications/preferences": NotificationPreferences,
       "(app)/pages/[id]": PageDetail,
       "(app)/calendar": Calendar,
       "(app)/tags": Tags,

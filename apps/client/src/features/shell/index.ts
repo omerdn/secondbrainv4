@@ -12,3 +12,4 @@ export {
   tabs,
 } from "./nav";
 export { PlaceholderScreen, Screen } from "./Screen";
+export { type NavBadges, NavBadgesContext } from "./badges";

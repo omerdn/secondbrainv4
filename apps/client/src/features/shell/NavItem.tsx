@@ -4,6 +4,7 @@ import { type Href, Link, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { Pressable, View } from "react-native";
 
+import { useNavBadge } from "./badges";
 import type { Destination } from "./nav";
 
 /**
@@ -23,6 +24,7 @@ export function NavItem({
   const colors = themes[useScheme()];
   const { t } = useTranslation();
   const label = t(`nav.${destination.key}`);
+  const badge = useNavBadge(destination.key);
   const tint = active ? colors.primary : colors.muted;
   const iconSize = variant === "tab" ? 24 : 20;
   const router = useRouter();
@@ -56,6 +58,19 @@ export function NavItem({
           {label}
         </Text>
       </View>
+      {badge > 0 ? (
+        <View
+          testID={`nav-badge-${destination.key}`}
+          className={cx(
+            "min-w-5 items-center rounded-full bg-primary px-1.5",
+            variant === "tab" && "absolute right-1/4 top-0.5",
+          )}
+        >
+          <Text variant="caption" className="font-semibold text-white">
+            {badge > 99 ? "99+" : String(badge)}
+          </Text>
+        </View>
+      ) : null}
     </Pressable>
   );
   return variant === "tab" ? (

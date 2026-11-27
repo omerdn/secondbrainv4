@@ -57,6 +57,12 @@ import type {
   Today,
   Calendar,
   SearchHit,
+  Invitation,
+  NotificationKind,
+  NotificationList,
+  Notification,
+  NotificationPreference,
+  UpdateNotificationPreferenceRequest,
   HomePreferences,
   UpdateHomePreferences,
   WorkSession,
@@ -232,6 +238,32 @@ export function endpoints(api: ApiClient) {
       /** Latest process page lines of the visible items among `ids`, at most 100 (PRD S3). */
       processLines: (ids: readonly string[]) =>
         api.get<ItemStatusLine[]>("/process-lines", { query: { ids: ids.join(",") } }),
+    },
+    notifications: {
+      /** The caller's notifications, newest first, and the unread count (PRD BL1). */
+      list: (before?: string) => api.get<NotificationList>("/notifications", { query: { before } }),
+      read: (id: string, options?: MutationOptions) =>
+        api.post<Notification>(`/notifications/${encodeURIComponent(id)}/read`, undefined, options),
+      readAll: (options?: MutationOptions) =>
+        api.post("/notifications/read-all", undefined, options),
+      /** Every type's channels (PRD BL3). */
+      preferences: () => api.get<NotificationPreference[]>("/notifications/preferences"),
+      setPreference: (
+        kind: NotificationKind,
+        body: UpdateNotificationPreferenceRequest,
+        options?: MutationOptions,
+      ) =>
+        api.put<NotificationPreference>(
+          `/notifications/preferences/${encodeURIComponent(kind)}`,
+          body,
+          options,
+        ),
+    },
+    invitations: {
+      accept: (id: string, options?: MutationOptions) =>
+        api.post<Invitation>(`/invitations/${encodeURIComponent(id)}/accept`, undefined, options),
+      decline: (id: string, options?: MutationOptions) =>
+        api.post<Invitation>(`/invitations/${encodeURIComponent(id)}/decline`, undefined, options),
     },
     search: {
       /** Items the caller can view that match `q`, best first (PRD AR1, AR2). */
