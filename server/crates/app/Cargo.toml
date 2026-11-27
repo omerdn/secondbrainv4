@@ -13,35 +13,38 @@ workspace = true
 [dependencies]
 access = { path = "../access" }
 axum.workspace = true
+base64.workspace = true
 chrono.workspace = true
 db = { path = "../db" }
 dotenvy.workspace = true
-identity = { path = "../identity" }
+getrandom.workspace = true
 goals = { path = "../goals" }
+identity = { path = "../identity" }
 items = { path = "../items" }
 jobs = { path = "../jobs" }
 kernel = { path = "../kernel" }
 notebooks = { path = "../notebooks" }
-realtime = { path = "../realtime" }
 notifications = { path = "../notifications" }
+realtime = { path = "../realtime" }
 routines = { path = "../routines" }
 search = { path = "../search" }
-sessions = { path = "../sessions" }
-social = { path = "../social" }
-today = { path = "../today" }
-tasks = { path = "../tasks" }
-tracking = { path = "../tracking" }
-updates = { path = "../updates" }
 sentry.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+sessions = { path = "../sessions" }
 sha2.workspace = true
+social = { path = "../social" }
 sqlx.workspace = true
+tasks = { path = "../tasks" }
+today = { path = "../today" }
 tokio.workspace = true
 tower.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+tracking = { path = "../tracking" }
 ts-rs.workspace = true
+updates = { path = "../updates" }
 uuid.workspace = true
 
 [dev-dependencies]
@@ -49,6 +52,5 @@ db = { path = "../db", features = ["testing"] }
 http-body-util.workspace = true
 rust_decimal.workspace = true
 sentry = { workspace = true, features = ["test"] }
-serde_json.workspace = true
 sqlx.workspace = true
 tokio = { workspace = true, features = ["io-util"] }

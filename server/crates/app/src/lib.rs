@@ -11,6 +11,7 @@ use tokio::net::TcpListener;
 
 pub mod client_policy;
 pub mod config;
+pub mod exports;
 pub mod http;
 pub mod idempotency;
 pub mod server;
@@ -236,6 +237,62 @@ where
     .map_err(RunError::Schedule)?;
     items::purge::register(items.clone(), clock.clone(), &mut worker, &mut scheduler)
         .map_err(RunError::Schedule)?;
+    let goals_service = goals::GoalsService::new(
+        pool.clone(),
+        clock.clone(),
+        access_engine.permissions(),
+        items.clone(),
+    )
+    .with_progress(
+        "task",
+        std::sync::Arc::new(tasks::TaskProgress::new(pool.clone())),
+    )
+    .with_progress(
+        "routine",
+        std::sync::Arc::new(
+            routines::RoutineProgress::new(pool.clone()).with_members(items.clone()),
+        ),
+    )
+    .with_progress(
+        "tracker",
+        std::sync::Arc::new(tracking::TrackerProgress::new(pool.clone())),
+    );
+    let routines_service = routines::RoutinesService::new(
+        pool.clone(),
+        clock.clone(),
+        access_engine.permissions(),
+        items.clone(),
+    );
+    let tasks_service = tasks::TasksService::new(
+        pool.clone(),
+        clock.clone(),
+        access_engine.permissions(),
+        items.clone(),
+    );
+    let sessions_service = sessions::WorkSessions::new(
+        pool.clone(),
+        clock.clone(),
+        access_engine.permissions(),
+        realtime::Notifier::default(),
+    )
+    .with_sharing(std::sync::Arc::new(friendships.clone()));
+    // HS3 (T4.3.2): data exports, read through the modules' services as the user.
+    let exports_service = exports::DataExports::new(
+        pool.clone(),
+        clock.clone(),
+        exports::Sources {
+            identity: identity.clone(),
+            items: items.clone(),
+            tasks: tasks_service.clone(),
+            routines: routines_service.clone(),
+            goals: goals_service.clone(),
+            trackers: tracker_entries.clone(),
+            notebooks: notebooks_service.clone(),
+            sessions: sessions_service.clone(),
+        },
+    );
+    exports::register(exports_service.clone(), &mut worker, &mut scheduler)
+        .map_err(RunError::Schedule)?;
     let (stop_jobs, jobs_stopped) = tokio::sync::watch::channel(false);
     let jobs_task = {
         let pool = pool.clone();
@@ -279,45 +336,6 @@ where
         clock: clock.clone(),
         config: realtime::RealtimeConfig::new(config.cors_origins.clone()),
     });
-    let goals_service = goals::GoalsService::new(
-        pool.clone(),
-        clock.clone(),
-        access_engine.permissions(),
-        items.clone(),
-    )
-    .with_progress(
-        "task",
-        std::sync::Arc::new(tasks::TaskProgress::new(pool.clone())),
-    )
-    .with_progress(
-        "routine",
-        std::sync::Arc::new(
-            routines::RoutineProgress::new(pool.clone()).with_members(items.clone()),
-        ),
-    )
-    .with_progress(
-        "tracker",
-        std::sync::Arc::new(tracking::TrackerProgress::new(pool.clone())),
-    );
-    let routines_service = routines::RoutinesService::new(
-        pool.clone(),
-        clock.clone(),
-        access_engine.permissions(),
-        items.clone(),
-    );
-    let tasks_service = tasks::TasksService::new(
-        pool.clone(),
-        clock.clone(),
-        access_engine.permissions(),
-        items.clone(),
-    );
-    let sessions_service = sessions::WorkSessions::new(
-        pool.clone(),
-        clock.clone(),
-        access_engine.permissions(),
-        realtime::Notifier::default(),
-    )
-    .with_sharing(std::sync::Arc::new(friendships.clone()));
     // Search asks each module to search its own tables (T2.7.5, ADR-0007).
     let search_service = search::SearchService::new(
         items.clone(),
@@ -366,6 +384,10 @@ where
                 }))
                 .merge(sessions::http::router(sessions::http::SessionsHttpState {
                     sessions: sessions_service.clone(),
+                    identity: identity.clone(),
+                }))
+                .merge(exports::http::router(exports::http::ExportsHttpState {
+                    exports: exports_service,
                     identity: identity.clone(),
                 }))
                 .merge(notifications::http::router(

@@ -504,6 +504,17 @@ export const tr = {
     },
   },
   account: {
+    export: {
+      title: "Verilerimi indir",
+      hint: "Görebildiğin her şeyin JSON ve Markdown kopyası hazırlanır. İndirme bağlantısı 24 saat geçerlidir.",
+      pending: "Hazırlanıyor…",
+      ready: "Hazır. Bağlantılar {{until}} tarihine kadar çalışır.",
+      json: "JSON indir",
+      markdown: "Markdown indir",
+      failed: "Hazırlanamadı. Tekrar dene.",
+      request: "Dışa aktarmayı hazırla",
+      requestFailed: "Başlatılamadı. Tekrar dene.",
+    },
     deletion: {
       title: "Hesabı sil",
       hint: "Hesabını silmek istersen 30 gün içinde vazgeçebilirsin. Bu sürede uygulamayı kullanmaya devam edersin.",

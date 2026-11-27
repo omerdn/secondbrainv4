@@ -6,6 +6,7 @@
 
 import type {
   AccountDeletion,
+  DataExport,
   OwnedSharedItem,
   TransferOwnershipRequest,
   AccessExplanation,
@@ -147,6 +148,11 @@ export function endpoints(api: ApiClient) {
         api.delete<AccountDeletion>("/account/deletion", options),
       /** Shared items the caller owns and who would inherit each (HS2.1). */
       sharedItems: () => api.get<OwnedSharedItem[]>("/account/shared-items"),
+      /** The latest data export whose link still works, or `null` (HS3, T4.3.2). */
+      latestExport: () => api.get<DataExport | null>("/account/exports"),
+      /** Queues a data export (or returns the one being built). */
+      requestExport: (options?: MutationOptions) =>
+        api.post<DataExport>("/account/exports", undefined, options),
     },
     items: {
       get: (id: string) => api.get<Item>(`/items/${encodeURIComponent(id)}`),
