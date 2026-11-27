@@ -477,6 +477,8 @@ export const tr = {
     unreadLabel: "Okunmadı: {{text}}",
     invitation: '{{from}} seni bir {{kind}} için davet etti: "{{title}}"',
     routineReminder: 'Hatırlatma: "{{title}}" ({{time}})',
+    assignment: '{{from}} seni "{{title}}" için atadı',
+    assignmentSubtask: '{{from}} seni "{{title}}" içinde "{{subtask}}" adımına atadı',
     weeklySummary: "Haftalık özetin: {{from}} – {{to}}",
     summary: {
       routines: "Rutinler",

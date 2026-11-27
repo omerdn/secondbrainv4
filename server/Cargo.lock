@@ -2681,6 +2681,7 @@ dependencies = [
  "serde_json",
  "social",
  "sqlx",
+ "tasks",
  "thiserror 2.0.21",
  "tokio",
  "tracing",

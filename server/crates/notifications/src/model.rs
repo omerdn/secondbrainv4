@@ -131,6 +131,16 @@ pub enum NotificationPayload {
         from_name: String,
         emoji: String,
     },
+    /// Someone assigned the user to part of an item (BL2, G4, T4.3.7).
+    Assignment {
+        item_id: Uuid,
+        item_kind: String,
+        item_title: String,
+        /// The subtask, when the assignment is to one.
+        subtask_title: Option<String>,
+        from_user: Uuid,
+        from_name: String,
+    },
     /// The weekly summary (OZ1).
     WeeklySummary(WeeklySummary),
 }
@@ -201,6 +211,7 @@ impl NotificationPayload {
     pub const fn kind(&self) -> NotificationKind {
         match self {
             Self::WeeklySummary(_) => NotificationKind::WeeklySummary,
+            Self::Assignment { .. } => NotificationKind::Assignment,
             Self::Invitation { .. } => NotificationKind::Invitation,
             Self::RoutineReminder { .. } => NotificationKind::RoutineReminder,
             Self::Nudge { .. } => NotificationKind::Nudge,

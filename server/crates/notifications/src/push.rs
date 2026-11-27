@@ -450,6 +450,21 @@ pub fn message_of(payload: &NotificationPayload) -> PushMessage {
             url: "/".into(),
             tag: format!("nudge:{from_user}"),
         },
+        NotificationPayload::Assignment {
+            item_id,
+            item_title,
+            subtask_title,
+            from_name,
+            ..
+        } => PushMessage {
+            title: format!("{from_name} seni atadı"),
+            body: match subtask_title {
+                Some(subtask) => format!("{item_title} · {subtask}"),
+                None => item_title.clone(),
+            },
+            url: "/notifications".into(),
+            tag: format!("assignment:{item_id}"),
+        },
         NotificationPayload::WeeklySummary(summary) => PushMessage {
             title: "Haftalık özetin hazır".into(),
             body: format!(
