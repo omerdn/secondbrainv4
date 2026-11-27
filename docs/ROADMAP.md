@@ -62,6 +62,7 @@ Görev satırı formatı: `ID · başlık · alan · boyut`. Altındaki girintil
 - **T0.1.5** · PR ve issue şablonları, commit konvansiyonu · docs · S
   - Conventional Commits
   - PR şablonu: bağlı issue, test notları ve kontrol listesi
+- **T0.1.6** · CLAUDE.md'ye oturumdan bağımsız iş akışı ayrıntıları · docs · S (#58)
 
 ### E0.2 · Sunucu iskeleti · bağımlılık: T0.1.2, T0.1.3
 - **T0.2.1** · `app` crate · backend · S
@@ -142,6 +143,10 @@ Görev satırı formatı: `ID · başlık · alan · boyut`. Altındaki girintil
   - TR varsayılan, EN ikinci dil
 - **T0.4.8** · `features/*` arasındaki import kısıtı · client · S
   - ESLint kuralı (ARCHITECTURE §4.6)
+- **T0.4.9** · Sunucuda CORS (web istemcisi için) · backend · S (#74)
+- **T0.4.10** · E-posta doğrulama ekranı · client · S (#77)
+- **T0.4.11** · Android'de Google ile giriş · client · M (#78)
+  - `zamanlama:en-son` (ADR-0024)
 
 ### E0.5 · Gerçek zamanlı kanal ve bağlantı politikası · bağımlılık: E0.3, T0.4.4
 - **T0.5.1** · `realtime` crate · backend · M
@@ -159,6 +164,9 @@ Görev satırı formatı: `ID · başlık · alan · boyut`. Altındaki girintil
   - Kopma anında tam ekran kilit katmanı
   - Form içeriğinin korunması (BP1–BP5)
 - **T0.5.5** · WS olaylarıyla sorgu geçersiz kılma altyapısı · client · S
+- **T0.5.6** · Oturum bitince WebSocket bağlantılarının kapatılması · backend · S (#85)
+- **T0.5.7** · İstemcinin 4003 (oturum bitti) kapanışına tepki vermesi · client · S (#90)
+- **T0.5.8** · Boş `EXPO_PUBLIC_API_URL` değerinin varsayılana düşmemesi · client · S (#93)
 
 ### E0.6 · Teknik keşifler (spike)
 Her spike'ın sonucu bir ADR olarak yazılır.
@@ -171,6 +179,7 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 - **T0.6.3** · Spike: Tauri 2 ile web build paketleme · infra · S
   - macOS'ta açılıyor
   - Cookie ve WebSocket çalışıyor
+- **T0.6.4** · CORS ve `/ws` için Tauri masaüstü origin'lerine izin · backend · S (#97)
 
 ### E0.7 · Staging ortamı · bağımlılık: T0.2.1
 - **T0.7.1** · Sunucu Dockerfile ve Compose · infra · M
@@ -181,6 +190,11 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 - **T0.7.3** · Yedekleme · infra · S
   - `pg_dump` ve WAL arşivi S3 uyumlu depoya
   - Geri yükleme bir kez denenip dokümante edilir
+- **T0.7.4** · Kullanıcıya görünen uygulama adının Routune olması · client · S (#102)
+- **T0.7.5** · Beta paketleri öncesi mevcut ekranların UX düzeltmeleri · client · S (#104)
+- **T0.7.6** · Routune ikonu, açılış ekranı ve favicon · design · S (#106)
+- **T0.7.7** · Resend e-posta sürücüsü · backend · S (#108)
+- **T0.7.8** · pnpm altında Android release JS paketinin düzeltilmesi · client · S (#110)
 
 ---
 
@@ -263,8 +277,8 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 - **T1.5.5** · "Bunu neden görüyorum?" paneli · client · S
   - V11
 - **T1.5.6** · Çöp kutusu ve arşiv ekranları · client · S
-- **T1.5.7** · Filtre çubuğunda tarih, durum, kişi ve takım · client · S
-  - Veri kaynakları sonraki fazlarda geldiği için E1.5'i bekletmez (görev durumları F2, arkadaşlar F3, takımlar F5)
+- **T1.5.7** · Filtre çubuğunda tarih, durum ve kişi · client · S (#207)
+  - Veri kaynakları sonraki fazlarda geldi (görev durumları F2, arkadaşlar F3); F3 içinde yapılır. Takım filtresi T5.1.7'ye taşındı.
 - **T1.5.8** · Sheet içeriğinin klavyenin üstünde kalması · client · S
 
 ---
@@ -407,6 +421,9 @@ Her spike'ın sonucu bir ADR olarak yazılır.
   - BL1, BL3
 - **T2.8.2** · İstemci: bildirim merkezi · client · S
 
+### Faz içi düzenlemeler (sonradan açılan)
+- **T2.0.1** · Tekrarlayan oturum kurallarının CLAUDE.md'ye taşınması · docs · S (#315)
+
 ---
 
 ## F3 · Sosyal ve ortak kullanım
@@ -450,6 +467,8 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 - **T3.3.3** · İstemci: ortak rutin görünümü · client · M
   - Kim, ne zaman yaptı
   - Rotasyon arayüzü
+- **T3.3.4** · Ortak rutin hatırlatmalarının sorumlulara gitmesi · backend · S (#348)
+  - Rotasyonda o tekrarın sorumlusu; sabit sorumlularda hedefine ulaşmamış kişiler (R13, R6, R5)
 
 ### E3.4 · Ortak defterler · bağımlılık: E3.2
 - **T3.4.1** · Defter üyeliği API · backend · S
@@ -480,6 +499,10 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 ### E3.7 · E-posta · bağımlılık: T0.3.3
 - **T3.7.1** · E-posta sağlayıcısı entegrasyonu · backend · M
   - Davet, doğrulama ve şifre sıfırlama şablonları
+
+### Faz içi düzenlemeler (sonradan açılan)
+- **T3.0.1** · Takım görünürlük testlerinin F5 çıkış kriterlerine taşınması · docs · S (#289)
+- **T3.0.2** · ROADMAP'in açılmış issue'larla eşitlenmesi ve T1.5.7'nin bölünmesi · docs · S (#349)
 
 ---
 
@@ -547,6 +570,10 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 - **T4.4.3** · Beta başlangıcı · docs · S
   - Geri bildirimleri sınıflandırma ve önceliklendirme süreci
 
+### Faz içi düzenlemeler (sonradan açılan)
+- **T4.0.1** · Canlı ortam ve sürüm düzeninin CLAUDE.md'de özetlenmesi · docs · S (#128)
+- **T4.0.2** · Web öncelikli iş akışının yazılması ve platform sürümlerinin ertelenmesi · docs · S (#176)
+
 ---
 
 ## F5 · Takımlar
@@ -572,6 +599,8 @@ Her spike'ın sonucu bir ADR olarak yazılır.
   - Y2
 - **T5.1.6** · Takımdan ayrılma · backend · S
   - TK7
+- **T5.1.7** · Filtre çubuğunda takım · client · S
+  - T1.5.7'den ayrıldı; takım listesi ve kayıtlı görünümde saklama (F1, F3)
 
 ### E5.2 · Takım arayüzü · bağımlılık: E5.1
 - **T5.2.1** · Takım ayarları sayfası · client · L
