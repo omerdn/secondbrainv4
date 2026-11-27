@@ -11,6 +11,7 @@
 //! | POST  | `/routines/{id}/completions` | 201 [`RoutineDay`]; adds to a day (R4, R7); EDIT |
 //! | DELETE | `/routines/{id}/completions?date=` | 200 [`RoutineDay`]; takes back the latest; EDIT |
 //! | GET   | `/routines/{id}/completions?from=&to=` | 200 `RoutineDay[]`; VIEW |
+//! | GET   | `/routines/{id}/completions/people?from=&to=` | 200 [`PeopleDays`]; who did what; VIEW |
 //! | GET   | `/routines/{id}/streak` | 200 [`RoutineStreak`]; R9; VIEW |
 //! | GET   | `/routines/{id}/rotation?from=&to=` | 200 [`RotationView`]; who is responsible (R6); VIEW |
 //! | POST  | `/routines/{id}/rotation/swaps` | 200 [`RotationView`] of the swapped range; own turn or MANAGE |
@@ -25,7 +26,7 @@ use kernel::AppError;
 use uuid::Uuid;
 
 use crate::completions::{
-    CompleteRoutineRequest, RoutineDay, RoutineDaysQuery, UndoCompletionQuery,
+    CompleteRoutineRequest, PeopleDays, RoutineDay, RoutineDaysQuery, UndoCompletionQuery,
 };
 use crate::model::{ChangePlanRequest, CreateRoutineRequest, RoutineView, UpdateRoutineRequest};
 use crate::rotation::{RotationQuery, RotationView, SwapRequest};
@@ -55,6 +56,7 @@ pub fn router(state: RoutinesHttpState) -> Router {
             "/routines/{id}/completions",
             post(complete).get(list_days).delete(undo),
         )
+        .route("/routines/{id}/completions/people", get(list_people_days))
         .route("/routines/{id}/streak", get(read_streak))
         .route("/routines/{id}/rotation", get(read_rotation))
         .route("/routines/{id}/rotation/swaps", post(swap))
@@ -146,6 +148,19 @@ async fn list_days(
     state
         .routines
         .days(auth.user_id.as_uuid(), id, query)
+        .await
+        .map(Json)
+}
+
+async fn list_people_days(
+    State(state): State<RoutinesHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+    Query(query): Query<RoutineDaysQuery>,
+) -> Result<Json<PeopleDays>, AppError> {
+    state
+        .routines
+        .people_days(auth.user_id.as_uuid(), id, query)
         .await
         .map(Json)
 }

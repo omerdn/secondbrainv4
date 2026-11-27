@@ -17,8 +17,8 @@ mod streak;
 mod today;
 
 pub use completions::{
-    BACKDATE_DAYS, COUNT_MAX, CompleteRoutineRequest, DAYS_MAX, RoutineDay, RoutineDaysQuery,
-    UndoCompletionQuery, may_mark_day, routine_day,
+    BACKDATE_DAYS, COUNT_MAX, CompleteRoutineRequest, DAYS_MAX, PeopleDays, PersonDay, RoutineDay,
+    RoutineDaysQuery, UndoCompletionQuery, may_mark_day, people_days, routine_day,
 };
 pub use model::{
     ChangePlanRequest, CreateRoutineRequest, DAILY_TARGET_MAX, PlanVersionView, REMINDER_LIMIT,

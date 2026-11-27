@@ -104,6 +104,8 @@ export type * from "./generated/RoutineAssignment";
 export type * from "./generated/RoutineCompletionMode";
 export type * from "./generated/RoutineDay";
 export type * from "./generated/RoutineOccurrences";
+export type * from "./generated/RoutinePeopleDays";
+export type * from "./generated/RoutinePersonDay";
 export type * from "./generated/RoutinePlanVersion";
 export type * from "./generated/RoutineRotation";
 export type * from "./generated/RoutineRotationQuery";
