@@ -71,6 +71,47 @@ pub struct RoutineDay {
     pub complete: bool,
 }
 
+/// What one person did on one day of a shared routine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[ts(export, rename = "RoutinePersonDay")]
+pub struct PersonDay {
+    #[ts(type = "string")]
+    pub date: NaiveDate,
+    pub user_id: Uuid,
+    pub done: i32,
+}
+
+/// `GET /routines/{id}/completions/people`: who did what in a range (R5, R6, T3.3.3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export, rename = "RoutinePeopleDays")]
+pub struct PeopleDays {
+    /// The people responsible for the routine (the owner when nobody is assigned).
+    pub responsible: Vec<Uuid>,
+    /// Days someone did something, oldest first; within a day, ordered by person.
+    pub days: Vec<PersonDay>,
+}
+
+/// Each person's total per day from `entries`, oldest day first, without empty days.
+#[must_use]
+pub fn people_days(entries: &[tracking::TrackerEntry]) -> Vec<PersonDay> {
+    let mut totals: std::collections::BTreeMap<(NaiveDate, Uuid), i32> =
+        std::collections::BTreeMap::new();
+    for entry in entries {
+        let count = rust_decimal::prelude::ToPrimitive::to_i32(&entry.value.trunc()).unwrap_or(0);
+        let total = totals.entry((entry.local_date, entry.user_id)).or_default();
+        *total = total.saturating_add(count);
+    }
+    totals
+        .into_iter()
+        .filter(|(_, done)| *done > 0)
+        .map(|((date, user_id), done)| PersonDay {
+            date,
+            user_id,
+            done,
+        })
+        .collect()
+}
+
 /// Whether a day can be marked on `today`: from 3 days back up to today, both included (R7).
 #[must_use]
 pub fn may_mark_day(date: NaiveDate, today: NaiveDate) -> bool {
@@ -292,6 +333,53 @@ impl RoutinesService {
         id: Uuid,
         query: RoutineDaysQuery,
     ) -> Result<Vec<RoutineDay>, AppError> {
+        let (row, timezone, from, to) = self.days_range(actor, id, query).await?;
+        let versions = repo::list_versions(&self.pool, id)
+            .await
+            .map_err(internal)?;
+        let schedule = schedule_of(timezone, &versions)?;
+        let entries = tracking::repo::list_entries(&self.pool, id, Some(from), Some(to))
+            .await
+            .map_err(internal)?;
+        let counts = self.counts(&row, &entries).await?;
+        Ok(from
+            .iter_days()
+            .take_while(|date| *date <= to)
+            .map(|date| {
+                let (done, target) = counts.day(date, target_on(&versions, date));
+                routine_day(date, schedule.occurs_on(date), target, done)
+            })
+            .collect())
+    }
+
+    /// Who did what on each day of a range (VIEW, R5, R6, T3.3.3). Only people with VIEW on the
+    /// routine see it, and they already see its members. Without a range: the last 30 days.
+    ///
+    /// # Errors
+    /// As [`Self::days`].
+    pub async fn people_days(
+        &self,
+        actor: Uuid,
+        id: Uuid,
+        query: RoutineDaysQuery,
+    ) -> Result<PeopleDays, AppError> {
+        let (_, _, from, to) = self.days_range(actor, id, query).await?;
+        let entries = tracking::repo::list_entries(&self.pool, id, Some(from), Some(to))
+            .await
+            .map_err(internal)?;
+        Ok(PeopleDays {
+            responsible: self.people(id).await?,
+            days: people_days(&entries),
+        })
+    }
+
+    /// The routine (VIEW) and the checked range of a days query.
+    async fn days_range(
+        &self,
+        actor: Uuid,
+        id: Uuid,
+        query: RoutineDaysQuery,
+    ) -> Result<(repo::RoutineRow, Tz, NaiveDate, NaiveDate), AppError> {
         self.permissions
             .require(&self.pool, actor, id, Perms::VIEW)
             .await?;
@@ -313,22 +401,7 @@ impl RoutinesService {
                 format!("the range must be 1 to {DAYS_MAX} days"),
             ));
         }
-        let versions = repo::list_versions(&self.pool, id)
-            .await
-            .map_err(internal)?;
-        let schedule = schedule_of(timezone, &versions)?;
-        let entries = tracking::repo::list_entries(&self.pool, id, Some(from), Some(to))
-            .await
-            .map_err(internal)?;
-        let counts = self.counts(&row, &entries).await?;
-        Ok(from
-            .iter_days()
-            .take_while(|date| *date <= to)
-            .map(|date| {
-                let (done, target) = counts.day(date, target_on(&versions, date));
-                routine_day(date, schedule.occurs_on(date), target, done)
-            })
-            .collect())
+        Ok((row, timezone, from, to))
     }
 }
 

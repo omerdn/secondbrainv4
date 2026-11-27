@@ -12,6 +12,7 @@ import { todayIn } from "@/lib/dates";
 import { CheckInCard } from "./CheckInCard";
 import { describePlan, formatDay } from "./describe";
 import { nextOccurrences, PREVIEW_COUNT } from "./recurrence";
+import { SharedRoutineCard } from "./SharedRoutineCard";
 
 /** A routine's plan, daily target and reminders (PRD R1-R3, R13). */
 export function RoutineDetailScreen({ id }: { id: string }) {
@@ -71,6 +72,7 @@ export function RoutineDetailScreen({ id }: { id: string }) {
     <Screen title={item.title}>
       <View className="gap-4">
         <CheckInCard routine={routine.data} />
+        <SharedRoutineCard routine={routine.data} />
         <Card className="gap-2">
           <Text variant="label">{t("routines.plan")}</Text>
           <Text>{describePlan(rrule, t, i18n.language)}</Text>

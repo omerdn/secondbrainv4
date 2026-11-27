@@ -47,7 +47,10 @@ import type {
   ResetPasswordRequest,
   Routine,
   RoutineDay,
+  RoutinePeopleDays,
+  RoutineRotationSchedule,
   RoutineStreak,
+  RoutineSwapRequest,
   SavedView,
   OpenSessionRequest,
   SessionInfo,
@@ -68,6 +71,7 @@ import type {
   NotificationList,
   Notification,
   NotificationPreference,
+  UpdateRoutineRequest,
   UpdateNotificationPreferenceRequest,
   HomePreferences,
   UpdateHomePreferences,
@@ -384,6 +388,26 @@ export function endpoints(api: ApiClient) {
       days: (id: string, query: { from?: string; to?: string } = {}) =>
         api.get<RoutineDay[]>(`/routines/${encodeURIComponent(id)}/completions`, { query }),
       streak: (id: string) => api.get<RoutineStreak>(`/routines/${encodeURIComponent(id)}/streak`),
+      /** Time zone, end date, reminders, completion mode and rotation (PRD R5, R6, R13). */
+      update: (id: string, body: UpdateRoutineRequest, options?: MutationOptions) =>
+        api.patch<Routine>(`/routines/${encodeURIComponent(id)}`, body, options),
+      /** Who did what on each day; local days, both ends included (PRD R5, R6). */
+      people: (id: string, query: { from?: string; to?: string } = {}) =>
+        api.get<RoutinePeopleDays>(`/routines/${encodeURIComponent(id)}/completions/people`, {
+          query,
+        }),
+      /** Who is responsible for each occurrence; the next four weeks by default (PRD R6). */
+      rotation: (id: string, query: { from?: string; to?: string } = {}) =>
+        api.get<RoutineRotationSchedule>(`/routines/${encodeURIComponent(id)}/rotation`, {
+          query,
+        }),
+      /** The people on two upcoming occurrences trade places (PRD R6). */
+      swap: (id: string, body: RoutineSwapRequest, options?: MutationOptions) =>
+        api.post<RoutineRotationSchedule>(
+          `/routines/${encodeURIComponent(id)}/rotation/swaps`,
+          body,
+          options,
+        ),
     },
     trackers: {
       create: (body: CreateTrackerRequest, options?: MutationOptions) =>

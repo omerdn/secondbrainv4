@@ -220,3 +220,47 @@ async fn r5_a_personal_routine_counts_its_owner() {
     let day = w.mark(w.ali, id, day(20)).await;
     assert_eq!((day.done, day.target, day.complete), (2, 2, true));
 }
+
+#[tokio::test]
+async fn r5_r6_everyone_sees_who_did_what_and_strangers_see_nothing() {
+    let w = World::new().await;
+    let id = w.shared(Some(CompletionMode::Individual), 2).await;
+    w.mark(w.ayse, id, day(19)).await;
+    w.mark(w.ayse, id, day(20)).await;
+    w.mark(w.can, id, day(20)).await;
+    w.mark(w.ayse, id, day(20)).await;
+    let range = || routines::RoutineDaysQuery {
+        from: Some(day(18)),
+        to: Some(day(20)),
+    };
+    let seen = w.routines.people_days(w.can, id, range()).await.unwrap();
+    let mut responsible = seen.responsible.clone();
+    responsible.sort();
+    let mut expected = vec![w.ayse, w.can];
+    expected.sort();
+    assert_eq!(responsible, expected);
+    let mut on_20: Vec<(Uuid, i32)> = seen
+        .days
+        .iter()
+        .filter(|d| d.date == day(20))
+        .map(|d| (d.user_id, d.done))
+        .collect();
+    on_20.sort();
+    let mut want = vec![(w.ayse, 2), (w.can, 1)];
+    want.sort();
+    assert_eq!(on_20, want);
+    assert_eq!(
+        seen.days.iter().filter(|d| d.date == day(19)).count(),
+        1,
+        "only Ayşe did something on the 19th"
+    );
+    assert!(
+        seen.days.iter().all(|d| d.date != day(18)),
+        "empty days are left out"
+    );
+    // V9: someone who cannot see the routine learns nothing, not even that it exists.
+    assert!(matches!(
+        w.routines.people_days(Uuid::now_v7(), id, range()).await,
+        Err(kernel::AppError::NotFound)
+    ));
+}

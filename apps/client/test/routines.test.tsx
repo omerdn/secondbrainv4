@@ -1,4 +1,10 @@
-import type { Item, Routine, RoutineDay } from "@secondbrain/api-types";
+import type {
+  Item,
+  ItemMembers,
+  Routine,
+  RoutineDay,
+  RoutineRotationSchedule,
+} from "@secondbrain/api-types";
 import { act, fireEvent, screen, waitFor, within } from "expo-router/testing-library";
 
 import {
@@ -20,6 +26,7 @@ import {
   REMINDER_LIMIT,
   validateForm,
 } from "@/features/routines/recurrence";
+import { linesOn, movedUp, recentDays } from "@/features/routines/shared";
 import { addDays, todayIn } from "@/lib/dates";
 import { i18n } from "@/lib/i18n";
 
@@ -466,5 +473,168 @@ describe("routine check-in (R4, R8, R9)", () => {
     expect(screen.getByRole("button", { name: /için \+1$/ })).toBeDisabled();
     expect(server.calls.some((call) => call.method === "POST")).toBe(false);
     expect(old < today).toBe(true);
+  });
+});
+
+describe("shared routine model (R5, R6)", () => {
+  const data = {
+    responsible: ["u2", "u1"],
+    days: [
+      { date: "2026-11-23", user_id: "u1", done: 2 },
+      { date: "2026-11-23", user_id: "u3", done: 1 },
+      { date: "2026-11-22", user_id: "u2", done: 1 },
+    ],
+  };
+
+  it("lists responsible people first, in turn order, then anyone else who helped", () => {
+    expect(linesOn(data, "2026-11-23", ["u1", "u2", "u3"])).toEqual([
+      { userId: "u1", done: 2, responsible: true },
+      { userId: "u2", done: 0, responsible: true },
+      { userId: "u3", done: 1, responsible: false },
+    ]);
+    expect(linesOn(data, "2026-11-21", ["u1", "u2"])).toEqual([
+      { userId: "u1", done: 0, responsible: true },
+      { userId: "u2", done: 0, responsible: true },
+    ]);
+  });
+
+  it("goes back day by day and moves a person up the turn order", () => {
+    expect(recentDays("2026-11-23", 3)).toEqual(["2026-11-23", "2026-11-22", "2026-11-21"]);
+    expect(movedUp(["a", "b", "c"], 2)).toEqual(["a", "c", "b"]);
+    expect(movedUp(["a", "b"], 0)).toEqual(["a", "b"]);
+  });
+});
+
+describe("shared routine (R5, R6)", () => {
+  const today = todayIn("Europe/Istanbul");
+  const shared: Routine = {
+    ...routine,
+    start_date: addDays(today, -2),
+    daily_target: 1,
+    completion_mode: "individual",
+  };
+  const members = (canManage: boolean): ItemMembers => ({
+    members: [
+      { user_id: "u1", display_name: "Ali", roles: ["owner"] },
+      { user_id: "u2", display_name: "Ayşe", roles: ["assignee"] },
+    ],
+    pending: [],
+    can_manage: canManage,
+  });
+  const schedule: RoutineRotationSchedule = {
+    rotation: "every_occurrence",
+    members: ["u1", "u2"],
+    assignments: [
+      { date: addDays(today, 1), user_id: "u1" },
+      { date: addDays(today, 2), user_id: "u2" },
+    ],
+  };
+
+  function sharedServer(over: Partial<Routine> = {}, canManage = true, swapStatus = 200) {
+    return fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /routines/r1": () => json(200, { ...shared, ...over }),
+      "GET /routines/r1/completions": () => json(200, []),
+      "GET /routines/r1/streak": () => json(200, { current: 0, today_pending: false }),
+      "GET /items/r1/members": () => json(200, members(canManage)),
+      "GET /routines/r1/completions/people": () =>
+        json(200, {
+          responsible: ["u1", "u2"],
+          days: [{ date: today, user_id: "u2", done: 1 }],
+        }),
+      "GET /routines/r1/rotation": () => json(200, schedule),
+      "PATCH /routines/r1": (call) => json(200, { ...shared, ...(call.body as Partial<Routine>) }),
+      "POST /routines/r1/rotation/swaps": () =>
+        swapStatus === 200
+          ? json(200, schedule)
+          : json(swapStatus, { error: { code: "forbidden", message: "no" } }),
+    });
+  }
+
+  const writes = (server: ReturnType<typeof fakeServer>) =>
+    server.calls.filter((call) => call.method !== "GET");
+
+  it("shows who did it on each day against each person's target (R5)", async () => {
+    await open(sharedServer(), "/routines/r1");
+    expect(await screen.findByText("Kim, ne zaman yaptı")).toBeTruthy();
+    expect(await screen.findByLabelText("Ayşe, 1 kez")).toBeTruthy();
+    expect(screen.getAllByText("Sen: 0/1").length).toBeGreaterThan(0);
+    // Only the days since the routine started: today and the two before it.
+    expect(screen.getAllByText("Ayşe: 0/1").length).toBe(2);
+  });
+
+  it("is hidden for a routine nobody else is on", async () => {
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /routines/r1": () => json(200, routine),
+      "GET /routines/r1/completions": () => json(200, []),
+      "GET /routines/r1/streak": () => json(200, { current: 0, today_pending: false }),
+      "GET /items/r1/members": () =>
+        json(200, { ...members(true), members: members(true).members.slice(0, 1) }),
+    });
+    await open(server, "/routines/r1");
+    await screen.findByText("Günde 8 kez");
+    await waitFor(() => {
+      expect(server.calls.some((call) => call.path === "/items/r1/members")).toBe(true);
+    });
+    expect(screen.queryByText("Ortak rutin")).toBeNull();
+    expect(server.calls.some((call) => call.path.includes("/completions/people"))).toBe(false);
+  });
+
+  it("lets a manager change the rotation and the turn order (R6)", async () => {
+    const server = sharedServer({ completion_mode: "pool", rotation: "every_occurrence" });
+    await open(server, "/routines/r1");
+    await fireEvent.press(await screen.findByRole("button", { name: "Her hafta döner" }));
+    await fireEvent.press(await screen.findByRole("button", { name: "Ayşe sırada bir öne" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Herkes ayrı" }));
+    await waitFor(() => {
+      expect(writes(server).map((call) => call.body)).toEqual([
+        { rotation: "weekly" },
+        { rotation_order: ["u2", "u1"] },
+        { completion_mode: "individual", rotation: null },
+      ]);
+    });
+  });
+
+  it("offers turns only with a shared pool (R5, R6)", async () => {
+    const server = sharedServer();
+    await open(server, "/routines/r1");
+    expect(await screen.findByText("Nöbet yalnız ortak havuzda kullanılabilir.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Her hafta döner" })).toBeNull();
+    await fireEvent.press(screen.getByRole("button", { name: "Ortak havuz" }));
+    await waitFor(() => {
+      expect(writes(server)[0]?.body).toEqual({ completion_mode: "pool" });
+    });
+  });
+
+  it("hides the settings from someone who cannot manage", async () => {
+    await open(
+      sharedServer({ completion_mode: "pool", rotation: "weekly" }, false),
+      "/routines/r1",
+    );
+    expect(await screen.findByText("Sıradaki nöbetler")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Ortak havuz" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ayşe sırada bir öne" })).toBeNull();
+  });
+
+  it("swaps two picked turns and explains a refused swap (R6)", async () => {
+    const server = sharedServer(
+      { completion_mode: "pool", rotation: "every_occurrence" },
+      false,
+      403,
+    );
+    await open(server, "/routines/r1");
+    const first = await screen.findByRole("button", { name: /· Sen$/ });
+    expect(screen.queryByRole("button", { name: "Seçilenleri takas et" })).toBeNull();
+    await fireEvent.press(first);
+    await fireEvent.press(screen.getByRole("button", { name: /· Ayşe$/ }));
+    await fireEvent.press(screen.getByRole("button", { name: "Seçilenleri takas et" }));
+    await waitFor(() => {
+      expect(writes(server)[0]?.body).toEqual({
+        first: addDays(today, 1),
+        second: addDays(today, 2),
+      });
+    });
+    expect(await screen.findByText("Yalnız kendi nöbetini takas edebilirsin.")).toBeTruthy();
   });
 });
