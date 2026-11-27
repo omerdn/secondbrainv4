@@ -458,6 +458,7 @@ export const tr = {
     invitation: '{{from}} seni bir {{kind}} için davet etti: "{{title}}"',
     routineReminder: 'Hatırlatma: "{{title}}" ({{time}})',
     nudge: "{{from}} seni dürttü 👋",
+    reaction: '{{from}}, "{{title}}" tamamlamana {{emoji}} bıraktı',
     accept: "Kabul et",
     decline: "Reddet",
     answerFailed: "Yanıtlanamadı. Davet artık geçerli olmayabilir.",

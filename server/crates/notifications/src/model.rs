@@ -119,6 +119,16 @@ pub enum NotificationPayload {
     },
     /// A friend nudged the user (AK3).
     Nudge { from_user: Uuid, from_name: String },
+    /// A friend reacted to something the user completed (AK4).
+    Reaction {
+        activity_id: Uuid,
+        item_id: Uuid,
+        item_kind: String,
+        item_title: String,
+        from_user: Uuid,
+        from_name: String,
+        emoji: String,
+    },
 }
 
 impl NotificationPayload {
@@ -128,6 +138,7 @@ impl NotificationPayload {
             Self::Invitation { .. } => NotificationKind::Invitation,
             Self::RoutineReminder { .. } => NotificationKind::RoutineReminder,
             Self::Nudge { .. } => NotificationKind::Nudge,
+            Self::Reaction { .. } => NotificationKind::Reaction,
         }
     }
 }

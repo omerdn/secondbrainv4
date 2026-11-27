@@ -10,6 +10,7 @@ mod links;
 mod members;
 mod model;
 pub mod purge;
+mod reactions;
 mod search;
 mod service;
 mod tags;
@@ -32,6 +33,7 @@ pub use model::{
     CreateItemRequest, DESCRIPTION_MAX_CHARS, Item, ItemChanges, ListQuery, ListState, NewItem,
     Owner, TITLE_MAX_CHARS, UpdateItemRequest, valid_kind,
 };
+pub use reactions::{REACTIONS, ReactRequest, ReactionAdded, ReactionCount, tally};
 pub use service::{ItemsService, LIST_LIMIT, TRASH_RETENTION};
 pub use tags::{
     CreateTagRequest, NewTag, TAG_LIST_LIMIT, TAG_NAME_MAX_CHARS, Tag, TagChanges, UpdateTagRequest,
