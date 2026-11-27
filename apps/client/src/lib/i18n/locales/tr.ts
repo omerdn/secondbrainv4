@@ -333,6 +333,7 @@ export const tr = {
   },
   editor: {
     toolbar: "Biçim araçları",
+    presence: { label: "Burada:", youElsewhere: "Sen (başka pencere)" },
     status: {
       connecting: "Bağlanıyor…",
       connected: "Kaydedildi · canlı",
