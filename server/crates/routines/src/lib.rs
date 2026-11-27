@@ -8,6 +8,7 @@ mod completions;
 pub mod http;
 mod model;
 mod progress;
+pub mod reminders;
 pub mod repo;
 mod service;
 mod streak;

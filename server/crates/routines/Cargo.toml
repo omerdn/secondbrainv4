@@ -15,8 +15,10 @@ access = { path = "../access" }
 axum.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true
+db = { path = "../db" }
 identity = { path = "../identity" }
 items = { path = "../items" }
+jobs = { path = "../jobs" }
 kernel = { path = "../kernel" }
 recurrence = { path = "../recurrence" }
 rust_decimal.workspace = true

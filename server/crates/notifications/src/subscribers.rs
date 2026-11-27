@@ -5,6 +5,7 @@
 use db::outbox::{Dispatcher, HandlerError};
 use identity::IdentityService;
 use items::{InvitationCreated, ItemsService};
+use routines::reminders::RoutineReminderDue;
 
 use crate::model::NotificationPayload;
 use crate::service::Notifications;
@@ -17,6 +18,7 @@ pub fn register(
     items: ItemsService,
     identity: IdentityService,
 ) {
+    let reminders = notifications.clone();
     dispatcher.subscribe(
         "notifications.invitation",
         move |event: InvitationCreated, stored| {
@@ -56,4 +58,25 @@ pub fn register(
             }
         },
     );
+    {
+        dispatcher.subscribe(
+            "notifications.routine-reminder",
+            move |event: RoutineReminderDue, stored| {
+                let notifications = reminders.clone();
+                async move {
+                    let payload = NotificationPayload::RoutineReminder {
+                        routine_id: event.routine_id,
+                        title: event.title,
+                        local_date: event.local_date,
+                        time: event.time,
+                    };
+                    notifications
+                        .deliver(event.user_id, &payload, stored.id)
+                        .await
+                        .map_err(|err| Box::new(err) as HandlerError)?;
+                    Ok(())
+                }
+            },
+        );
+    }
 }
