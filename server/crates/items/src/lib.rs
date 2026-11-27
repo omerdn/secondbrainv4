@@ -7,6 +7,7 @@ mod filters;
 pub mod http;
 mod invitations;
 mod links;
+mod members;
 mod model;
 pub mod purge;
 mod search;
@@ -24,6 +25,7 @@ pub use invitations::{
     InvitationRole, InvitationStatus, NoSharing, SharingFuture, SharingPolicy, role_allowed,
 };
 pub use links::{ItemLink, LinkDirection, link_allowed, register_link_cleanup};
+pub use members::{ItemMember, ItemMembers, MemberRole, PendingMember};
 pub use model::{
     CreateItemRequest, DESCRIPTION_MAX_CHARS, Item, ItemChanges, ListQuery, ListState, NewItem,
     Owner, TITLE_MAX_CHARS, UpdateItemRequest, valid_kind,

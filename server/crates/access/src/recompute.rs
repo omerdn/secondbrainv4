@@ -229,6 +229,32 @@ impl<C: AccessContext> AccessEngine<C> {
         Ok(true)
     }
 
+    /// The people related to `item` directly (owner, assignees, watchers, notebook members),
+    /// in relation order. For member lists; access itself is read with `PermissionService`.
+    ///
+    /// # Errors
+    /// Database errors.
+    pub async fn item_members(
+        &self,
+        conn: impl sqlx::PgExecutor<'_>,
+        item: Uuid,
+    ) -> sqlx::Result<Vec<RelationTuple>> {
+        Ok(repo::relations_of_object(conn, ObjectType::Item, item)
+            .await?
+            .into_iter()
+            .filter(|tuple| {
+                matches!(
+                    tuple.relation(),
+                    Relation::Owner
+                        | Relation::Assignee
+                        | Relation::Watcher
+                        | Relation::Editor
+                        | Relation::Viewer
+                )
+            })
+            .collect())
+    }
+
     /// Removes every relation of a permanently deleted item, as object or subject, and
     /// recomputes what depended on it (pages linked to it, pages in it). Its former viewers are
     /// announced with `access.revoked`. Call it inside the transaction that deletes the item.

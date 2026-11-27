@@ -23,6 +23,8 @@
 //! | PUT    | `/items/{id}/links/{target_id}` | 200 [`ItemLink`]; LINK + target VIEW (V4) |
 //! | DELETE | `/items/{id}/links/{target_id}` | 204; LINK + target VIEW |
 //! | POST   | `/items/{id}/invitations` | 201 [`Invitation`]; SHARE + V1 |
+//! | GET    | `/items/{id}/members` | 200 [`ItemMembers`]; VIEW; pending invitations for SHARE (N2) |
+//! | DELETE | `/items/{id}/members/{user_id}` | 204; SHARE, or oneself (V5) |
 //! | GET    | `/invitations` | 200 `Invitation[]`: the caller's pending invitations |
 //! | POST   | `/invitations/{id}/accept`, `/invitations/{id}/decline` | 200 [`Invitation`] |
 //! | GET    | `/items/{id}/activity?limit=&cursor=` | 200 `Page<Activity>`; VIEW (A2) |
@@ -97,6 +99,11 @@ pub fn router(state: ItemsHttpState) -> Router {
             put(link_item).delete(unlink_item),
         )
         .route("/items/{id}/invitations", post(invite))
+        .route("/items/{id}/members", get(members))
+        .route(
+            "/items/{id}/members/{user_id}",
+            axum::routing::delete(remove_member),
+        )
         .route("/invitations", get(pending_invitations))
         .route("/invitations/{id}/accept", post(accept_invitation))
         .route("/invitations/{id}/decline", post(decline_invitation))
@@ -231,6 +238,33 @@ async fn invite(
         .invite(auth.user_id.as_uuid(), id, request)
         .await?;
     Ok((StatusCode::CREATED, Json(invitation)))
+}
+
+async fn members(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+) -> Result<Json<crate::members::ItemMembers>, AppError> {
+    let identity = state.identity.clone();
+    state
+        .items
+        .members(auth.user_id.as_uuid(), id, |ids| async move {
+            identity.display_names(&ids).await
+        })
+        .await
+        .map(Json)
+}
+
+async fn remove_member(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path((id, user_id)): Path<(Uuid, Uuid)>,
+) -> Result<StatusCode, AppError> {
+    state
+        .items
+        .remove_member(auth.user_id.as_uuid(), id, user_id)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn pending_invitations(
