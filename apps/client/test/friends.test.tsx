@@ -1,4 +1,6 @@
 import type {
+  Activity,
+  ActivityReaction,
   BlockedUser,
   Friend,
   IncomingFriendRequest,
@@ -7,10 +9,12 @@ import type {
 import { act, fireEvent, screen, waitFor, within } from "expo-router/testing-library";
 import { useWindowDimensions } from "react-native";
 
+import { friendCompletions, reactionAction, reactionCount } from "@/features/friends/social";
 import { i18n } from "@/lib/i18n";
 
 import {
   apiError,
+  type Call,
   fakeServer,
   json,
   memoryTokenStore,
@@ -27,7 +31,7 @@ jest.mock("react-native/Libraries/Utilities/useWindowDimensions", () => ({
 const at = "2026-11-27T09:00:00Z";
 
 /** A fake social backend that follows what the screen does. */
-const social = () => {
+const social = (extra: Record<string, (call: Call) => Response> = {}) => {
   let friends: Friend[] = [{ user_id: "u3", display_name: "Cem", since: at }];
   let incoming: IncomingFriendRequest[] = [
     { id: "r1", from_user: "u2", from_name: "Ayşe", created_at: at },
@@ -77,6 +81,7 @@ const social = () => {
       blocked = [];
       return json(204);
     },
+    ...extra,
   });
   return server;
 };
@@ -164,6 +169,88 @@ describe("friends screen (AK1)", () => {
     await fireEvent.press(screen.getByRole("button", { name: "Cem engelini kaldır" }));
     await waitFor(() => {
       expect(screen.queryByText("Engellenenler")).toBeNull();
+    });
+  });
+});
+
+const completion = (over: Partial<Activity> = {}): Activity => ({
+  id: "a1",
+  actor_id: "u3",
+  item_id: "t1",
+  item_kind: "task",
+  item_title: "Rapor",
+  kind: "completed",
+  related_item_id: null,
+  member_user_id: null,
+  member_role: null,
+  created_at: at,
+  reactions: [],
+  ...over,
+});
+
+describe("social model (AK4)", () => {
+  it("keeps friends' completions only and toggles one's own reaction", () => {
+    const feed = [
+      completion(),
+      completion({ id: "a2", actor_id: "u1" }),
+      completion({ id: "a3", actor_id: "stranger" }),
+      completion({ id: "a4", kind: "created" }),
+    ];
+    expect(friendCompletions(feed, new Set(["u3"]), "u1").map((e) => e.id)).toEqual(["a1"]);
+    const mine = [{ emoji: "🎉", count: 2, mine: true }];
+    expect(reactionAction(mine, "🎉")).toBe("unreact");
+    expect(reactionAction(mine, "🔥")).toBe("react");
+    expect(reactionCount(mine, "🎉")).toBe(2);
+    expect(reactionCount(mine, "👏")).toBe(0);
+  });
+});
+
+describe("nudges and reactions (AK3, AK4)", () => {
+  const withSocial = (nudgeStatus = 204) => {
+    let reactions: ActivityReaction[] = [];
+    return social({
+      "GET /activity": () => json(200, { items: [completion({ reactions })], next_cursor: null }),
+      "PUT /activity/a1/reaction": (call) => {
+        const { emoji } = call.body as { emoji: string };
+        reactions = [{ emoji, count: 1, mine: true }];
+        return json(200, reactions);
+      },
+      "DELETE /activity/a1/reaction": () => {
+        reactions = [];
+        return json(200, reactions);
+      },
+      "POST /friends/u3/nudges": () =>
+        nudgeStatus === 204 ? json(204) : apiError(nudgeStatus, "rate_limited"),
+    });
+  };
+
+  it("nudges a friend from the profile card and explains a second nudge", async () => {
+    const server = withSocial(429);
+    await open(server);
+    await fireEvent.press(await screen.findByRole("button", { name: "Cem profilini aç" }));
+    await fireEvent.press(await screen.findByRole("button", { name: "Cem kişisini dürt" }));
+    expect(
+      await screen.findByText("Bugün zaten dürttün; yarın tekrar deneyebilirsin."),
+    ).toBeTruthy();
+    expect(server.calls.some((c) => c.method === "POST" && c.path === "/friends/u3/nudges")).toBe(
+      true,
+    );
+  });
+
+  it("reacts to a friend's completion and takes it back", async () => {
+    const server = withSocial();
+    await open(server);
+    expect(await screen.findByText('Cem, "Rapor" tamamladı')).toBeTruthy();
+    await fireEvent.press(screen.getByRole("button", { name: '"Rapor" için 🎉 tepkisi' }));
+    await waitFor(() => {
+      expect(server.calls.find((c) => c.method === "PUT")?.body).toEqual({ emoji: "🎉" });
+    });
+    expect(await screen.findByText("🎉 1")).toBeTruthy();
+    await fireEvent.press(screen.getByRole("button", { name: '"Rapor" için 🎉 tepkisi' }));
+    await waitFor(() => {
+      expect(
+        server.calls.some((c) => c.method === "DELETE" && c.path === "/activity/a1/reaction"),
+      ).toBe(true);
     });
   });
 });

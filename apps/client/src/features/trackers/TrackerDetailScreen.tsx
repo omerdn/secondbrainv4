@@ -13,6 +13,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { View } from "react-native";
 
+import { useSession } from "@/features/auth";
 import { Screen } from "@/features/shell";
 
 import { HistoryChart } from "./HistoryChart";
@@ -23,11 +24,59 @@ import {
   HISTORY_DAYS,
   normalizeDecimal,
   progressShare,
+  sideBySide,
 } from "./model";
 
 /** Most pages read for the chart: 1,000 entries over two weeks. */
 const HISTORY_PAGES = 5;
 const RECENT_ENTRIES = 10;
+
+/**
+ * Everyone's value in the period, side by side, for a tracker shared with friends (AK5). Hidden
+ * while only one person has an entry.
+ */
+function PeopleProgress({ tracker, summary }: { tracker: Tracker; summary: TrackerSummary }) {
+  const { t, i18n } = useTranslation();
+  const api = useApi();
+  const { state } = useSession();
+  const me = state.status === "signedIn" ? state.user.id : null;
+  const members = useQuery({
+    queryKey: ["item", tracker.item.id, "members"],
+    queryFn: () => api.items.members(tracker.item.id),
+    enabled: summary.people.length > 1,
+  });
+  if (summary.people.length < 2) return null;
+  const names = new Map((members.data?.members ?? []).map((m) => [m.user_id, m.display_name]));
+  const largest = Math.max(...summary.people.map((p) => Number(p.value)), 0);
+  return (
+    <View className="gap-2 border-t border-border pt-2">
+      <Text variant="caption" tone="muted">
+        {t("trackers.sideBySide")}
+      </Text>
+      {sideBySide(summary.people, me).map((person) => {
+        const name =
+          person.user_id === me
+            ? t("trackers.you")
+            : (names.get(person.user_id) ?? t("trackers.formerMember"));
+        const value = `${formatAmount(person.value, i18n.language)} ${tracker.unit}`;
+        return (
+          <View key={person.user_id} className="gap-1">
+            <View className="flex-row justify-between gap-2">
+              <Text>{name}</Text>
+              <Text accessibilityLabel={t("trackers.personValue", { name, value })}>{value}</Text>
+            </View>
+            <View className="h-1.5 overflow-hidden rounded-full bg-border">
+              <View
+                className="h-full bg-primary"
+                style={{ width: `${largest > 0 ? (Number(person.value) / largest) * 100 : 0}%` }}
+              />
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
 
 function SummaryCard({ tracker, summary }: { tracker: Tracker; summary: TrackerSummary }) {
   const { t, i18n } = useTranslation();
@@ -64,6 +113,7 @@ function SummaryCard({ tracker, summary }: { tracker: Tracker; summary: TrackerS
       ) : (
         <Text tone="muted">{t("trackers.remaining", { value: amount(summary.remaining) })}</Text>
       )}
+      <PeopleProgress tracker={tracker} summary={summary} />
     </Card>
   );
 }

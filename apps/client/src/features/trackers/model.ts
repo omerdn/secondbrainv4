@@ -163,3 +163,16 @@ export function formatAmount(value: string | number, language: string): string {
   const text = String(value);
   return language.startsWith("tr") ? text.replace(".", ",") : text;
 }
+
+/** People of a shared tracker in the side-by-side view (AK5): the reader first, then by value. */
+export function sideBySide<T extends { user_id: string; value: string }>(
+  people: readonly T[],
+  me: string | null,
+): T[] {
+  return [...people].sort(
+    (a, b) =>
+      Number(b.user_id === me) - Number(a.user_id === me) ||
+      Number(b.value) - Number(a.value) ||
+      a.user_id.localeCompare(b.user_id),
+  );
+}

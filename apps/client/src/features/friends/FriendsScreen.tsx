@@ -9,6 +9,7 @@ import { Pressable, View } from "react-native";
 
 import { Screen } from "@/features/shell";
 
+import { FriendsActivity } from "./FriendsActivity";
 import { FRIENDS_KEY } from "./useIncomingCount";
 
 function Section({
@@ -110,6 +111,7 @@ export function FriendsScreen() {
     <Screen title={t("nav.friends")}>
       <AddFriend onSent={refresh} />
       {failed ? <Text tone="danger">{t("friends.failed")}</Text> : null}
+      <FriendsActivity friends={friends.data ?? []} />
 
       <Section title={t("friends.incoming")}>
         {(incoming.data ?? []).map((request) => (
@@ -232,6 +234,7 @@ export function FriendsScreen() {
             <Text variant="caption" tone="muted">
               {t("friends.profileHint")}
             </Text>
+            <NudgeButton friend={profile} />
             <View className="flex-row flex-wrap gap-2">
               <Button
                 title={t("friends.unfriend")}
@@ -254,6 +257,42 @@ export function FriendsScreen() {
         )}
       </Sheet>
     </Screen>
+  );
+}
+
+/** Nudges a friend, at most once a day (PRD AK3). */
+function NudgeButton({ friend }: { friend: Friend }) {
+  const { t } = useTranslation();
+  const api = useApi();
+  const nudge = useIdempotentMutation<unknown, string>((userId, idempotencyKey) =>
+    api.friends.nudge(userId, { idempotencyKey }),
+  );
+  const message = nudge.isSuccess
+    ? t("social.nudged", { name: friend.display_name })
+    : nudge.error === null
+      ? null
+      : nudge.error instanceof ApiError && nudge.error.status === 429
+        ? t("social.nudgedToday")
+        : t("friends.failed");
+  return (
+    <View className="gap-1">
+      <View className="self-start">
+        <Button
+          title={t("social.nudge")}
+          accessibilityLabel={t("social.nudgeOf", { name: friend.display_name })}
+          loading={nudge.isPending}
+          disabled={nudge.isSuccess}
+          onPress={() => {
+            nudge.mutate(friend.user_id);
+          }}
+        />
+      </View>
+      {message !== null ? (
+        <Text tone={nudge.isSuccess ? "muted" : "danger"} accessibilityRole="alert">
+          {message}
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
