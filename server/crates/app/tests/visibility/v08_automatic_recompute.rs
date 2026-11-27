@@ -61,11 +61,28 @@ async fn removing_a_member_drops_access() {
     ));
 }
 
-/// Removing Ayşe from Ali's notebook removes her access to its pages.
+/// Removing Ayşe from Ali's notebook removes her access to its pages (V8).
 #[tokio::test]
-#[ignore = "T3.4.1: notebook membership API"]
 async fn notebook_membership_change_recomputes() {
-    pending()
+    let world = World::new().await;
+    let (ali, _) = world.person("Ali").await;
+    let (ayse, ayse_email) = world.person("Ayşe").await;
+    world.befriend(ali, ayse, &ayse_email).await;
+    let (notebook, page) = world
+        .shared_notebook(ali, ayse, items::InvitationRole::Editor)
+        .await;
+    let items = world.items();
+    assert_eq!(items.get(ayse, page).await.unwrap().id, page);
+
+    items.remove_member(ali, notebook, ayse).await.unwrap();
+
+    for item in [notebook, page] {
+        assert!(matches!(
+            items.get(ayse, item).await,
+            Err(AppError::NotFound)
+        ));
+    }
+    assert_eq!(items.get(ali, page).await.unwrap().id, page);
 }
 
 /// Demoting Mehmet from manager to member in team X removes his access to assignee-only team items.

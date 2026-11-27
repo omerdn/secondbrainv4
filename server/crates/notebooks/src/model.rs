@@ -30,6 +30,8 @@ pub struct NotebookSummary {
     pub item: Item,
     /// The notebook every user gets once, automatically.
     pub is_default: bool,
+    /// Someone besides the owner is a member: the UI shows an "ortak" badge (Y2).
+    pub shared: bool,
 }
 
 /// A page as the API returns it. Its owner is the notebook's owner (Y5).

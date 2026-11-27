@@ -31,8 +31,8 @@ const pageOf = (id: string, title: string, notebook = "n1"): NotebookPage => ({
   process_of_item_id: null,
 });
 const summaries = (...extra: Item[]): NotebookSummary[] => [
-  { item: mine, is_default: true },
-  ...extra.map((notebook) => ({ item: notebook, is_default: false })),
+  { item: mine, is_default: true, shared: false },
+  ...extra.map((notebook) => ({ item: notebook, is_default: false, shared: false })),
 ];
 const notebook = (of: Item, pages: NotebookPage[] = []): Notebook => ({
   item: of,
