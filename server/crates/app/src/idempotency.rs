@@ -404,6 +404,26 @@ impl jobs::Job for CleanupIdempotencyKeys {
 /// Cron expression for [`CleanupIdempotencyKeys`] (every day 03:30 UTC).
 pub const CLEANUP_CRON: &str = "0 30 3 * * *";
 
+/// Account deletion (HS2, T4.3.1): the stored responses of a deleted user's requests go too.
+pub struct ForgetUserKeys(pub PgPool);
+
+impl identity::deletion::AccountDeletionHook for ForgetUserKeys {
+    fn name(&self) -> &'static str {
+        "idempotency"
+    }
+
+    fn before_delete(&self, user: uuid::Uuid) -> identity::deletion::HookFuture<'_> {
+        Box::pin(async move {
+            sqlx::query("DELETE FROM idempotency_keys WHERE user_id = $1")
+                .bind(user)
+                .execute(&self.0)
+                .await
+                .map(|_| ())
+                .map_err(kernel::AppError::internal)
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

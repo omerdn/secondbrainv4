@@ -201,6 +201,24 @@ where
         email_sender.clone(),
         config.public_web_url.clone(),
     );
+    // HS2 (T4.3.1): accounts whose 30 days are over go; each module hands over or removes
+    // what it keeps about them first.
+    identity::deletion::register(
+        identity.clone(),
+        vec![
+            std::sync::Arc::new(items.clone()),
+            std::sync::Arc::new(tasks::TasksService::new(
+                pool.clone(),
+                clock.clone(),
+                access_engine.permissions(),
+                items.clone(),
+            )),
+            std::sync::Arc::new(idempotency::ForgetUserKeys(pool.clone())),
+        ],
+        &mut worker,
+        &mut scheduler,
+    )
+    .map_err(RunError::Schedule)?;
     identity::cleanup::register(identity.clone(), &mut worker, &mut scheduler)
         .map_err(RunError::Schedule)?;
     access_engine.register(&mut worker, pool.clone());

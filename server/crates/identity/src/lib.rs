@@ -14,6 +14,7 @@
 //! - [`http`]: `/auth/*` and `/me` endpoints
 
 pub mod cleanup;
+pub mod deletion;
 pub mod email_flow;
 pub mod events;
 pub mod http;

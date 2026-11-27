@@ -479,3 +479,29 @@ async fn load_subtask(
         .map_err(internal)?
         .ok_or(AppError::NotFound)
 }
+
+/// Account deletion (HS2, T4.3.1): the person's own board (columns and where they placed tasks)
+/// and their sub-task assignments go; tasks themselves are handed over by `items`.
+impl identity::deletion::AccountDeletionHook for TasksService {
+    fn name(&self) -> &'static str {
+        "tasks"
+    }
+
+    fn before_delete(&self, user: Uuid) -> identity::deletion::HookFuture<'_> {
+        Box::pin(async move {
+            let mut tx = self.pool.begin().await.map_err(AppError::internal)?;
+            for sql in [
+                "DELETE FROM user_task_placements WHERE user_id = $1",
+                "DELETE FROM user_board_columns WHERE user_id = $1",
+                "DELETE FROM subtask_assignees WHERE user_id = $1",
+            ] {
+                sqlx::query(sql)
+                    .bind(user)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(AppError::internal)?;
+            }
+            tx.commit().await.map_err(AppError::internal)
+        })
+    }
+}

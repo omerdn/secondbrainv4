@@ -3,6 +3,7 @@
 
 mod activity;
 mod context;
+pub mod deletion;
 mod filters;
 pub mod http;
 mod invitations;
@@ -20,6 +21,7 @@ mod views;
 
 pub use activity::{Activity, ActivityKind};
 pub use context::ItemsAccessContext;
+pub use deletion::{OwnedSharedItem, TransferOwnershipRequest};
 pub use filters::{
     DateField, DateFilter, FILTER_MAX_LAST_DAYS, FILTER_MAX_PEOPLE, FILTER_MAX_VALUES, ItemFilter,
 };

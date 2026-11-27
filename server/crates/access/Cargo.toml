@@ -17,6 +17,7 @@ identity = { path = "../identity" }
 jobs = { path = "../jobs" }
 kernel = { path = "../kernel" }
 serde.workspace = true
+chrono.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
 tracing.workspace = true
@@ -24,7 +25,6 @@ ts-rs.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-chrono.workspace = true
 http-body-util.workspace = true
 tower.workspace = true
 db = { path = "../db", features = ["testing"] }

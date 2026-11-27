@@ -3,6 +3,7 @@ import { Button, Card, Text } from "@secondbrain/ui";
 import { useTranslation } from "react-i18next";
 import { View } from "react-native";
 
+import { AccountDeletionCard } from "@/features/account";
 import { useSession } from "@/features/auth";
 import { Screen } from "@/features/shell";
 import { LANGUAGES, type Language, resolveLanguage } from "@/lib/i18n";
@@ -54,6 +55,7 @@ export default function Settings() {
         </View>
         {setLocale.isError ? <Text tone="danger">{t("settings.languageFailed")}</Text> : null}
       </Card>
+      {state.status === "signedIn" ? <AccountDeletionCard /> : null}
     </Screen>
   );
 }
