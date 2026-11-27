@@ -6,7 +6,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Duration, Utc};
 use db::PgPool;
 use kernel::{AppError, SharedClock};
-use sqlx::FromRow;
+use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;
 
 use access::{AccessEngine, Perms, Relation, RelationTuple};
@@ -489,5 +489,26 @@ impl ItemsService {
             )),
             None => Err(AppError::NotFound),
         }
+    }
+
+    /// Sets an item's kind-specific status, which the filter engine matches (F1, T3.0.3). Only
+    /// the module that owns the kind calls it, inside the transaction of the change, so no other
+    /// module writes the `items` table (ADR-0007). It does not touch the item: the change that
+    /// caused it already does.
+    ///
+    /// # Errors
+    /// Database errors.
+    pub async fn set_status(
+        &self,
+        conn: &mut PgConnection,
+        item: Uuid,
+        status: Option<&str>,
+    ) -> sqlx::Result<()> {
+        sqlx::query("UPDATE items SET status = $2 WHERE id = $1 AND status IS DISTINCT FROM $2")
+            .bind(item)
+            .bind(status)
+            .execute(conn)
+            .await?;
+        Ok(())
     }
 }

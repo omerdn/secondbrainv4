@@ -19,8 +19,8 @@ pub use board::{
 pub use due::{DatedTask, DueTask};
 pub use fractional::{MAX_KEY_LEN, even_keys, key_between};
 pub use model::{
-    CreateSubtaskRequest, CreateTaskRequest, SUBTASK_LIMIT, SubtaskView, TaskView,
-    UpdateSubtaskRequest, UpdateTaskRequest, may_mark, subtask_titles,
+    CreateSubtaskRequest, CreateTaskRequest, STATUS_DONE, STATUS_OPEN, SUBTASK_LIMIT, SubtaskView,
+    TaskView, UpdateSubtaskRequest, UpdateTaskRequest, may_mark, subtask_titles,
 };
 pub use progress::{TaskProgress, completion, task_progress};
 pub use service::TasksService;

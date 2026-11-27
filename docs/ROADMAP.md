@@ -503,6 +503,8 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 ### Faz içi düzenlemeler (sonradan açılan)
 - **T3.0.1** · Takım görünürlük testlerinin F5 çıkış kriterlerine taşınması · docs · S (#289)
 - **T3.0.2** · ROADMAP'in açılmış issue'larla eşitlenmesi ve T1.5.7'nin bölünmesi · docs · S (#349)
+- **T3.0.3** · Görev durumunun öğeye yazılması (açık, tamamlandı) · backend · S (#351)
+  - F1 durum filtresi için; T1.5.7'nin bağımlılığı
 
 ---
 

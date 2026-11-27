@@ -11,6 +11,11 @@ use uuid::Uuid;
 /// Most subtasks one task may have.
 pub const SUBTASK_LIMIT: usize = 200;
 
+/// A task's item status while a subtask is open (F1, T3.0.3).
+pub const STATUS_OPEN: &str = "open";
+/// A task's item status once every subtask is done (G3).
+pub const STATUS_DONE: &str = "done";
+
 /// `POST /tasks` body. Without subtasks, one is created from the title (G2).
 #[derive(Debug, Clone, Deserialize, TS)]
 #[ts(export)]
