@@ -24,6 +24,8 @@
 //! | DELETE | `/items/{id}/links/{target_id}` | 204; LINK + target VIEW |
 //! | POST   | `/items/{id}/invitations` | 201 [`Invitation`]; SHARE + V1 |
 //! | GET    | `/items/{id}/members` | 200 [`ItemMembers`]; VIEW; pending invitations for SHARE (N2) |
+//! | PUT    | `/items/{id}/owner` | 204; body [`TransferOwnershipRequest`]; the owner hands a personal item to a member (HS2.1); 404 if not the owner, 422 for a page or a non-member |
+//! | GET    | `/account/shared-items` | 200 [`OwnedSharedItem`]`[]`: shared items the caller owns and who would inherit each (HS2) |
 //! | DELETE | `/items/{id}/members/{user_id}` | 204; SHARE, or oneself (V5) |
 //! | GET    | `/invitations` | 200 `Invitation[]`: the caller's pending invitations |
 //! | POST   | `/invitations/{id}/accept`, `/invitations/{id}/decline` | 200 [`Invitation`] |
@@ -102,6 +104,8 @@ pub fn router(state: ItemsHttpState) -> Router {
         )
         .route("/items/{id}/invitations", post(invite))
         .route("/items/{id}/members", get(members))
+        .route("/items/{id}/owner", put(transfer_ownership))
+        .route("/account/shared-items", get(owned_shared))
         .route(
             "/items/{id}/members/{user_id}",
             axum::routing::delete(remove_member),
@@ -277,6 +281,33 @@ async fn members(
     state
         .items
         .members(auth.user_id.as_uuid(), id, |ids| async move {
+            identity.display_names(&ids).await
+        })
+        .await
+        .map(Json)
+}
+
+async fn transfer_ownership(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+    Json(request): Json<crate::deletion::TransferOwnershipRequest>,
+) -> Result<StatusCode, AppError> {
+    state
+        .items
+        .transfer_ownership(auth.user_id.as_uuid(), id, request.user_id)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn owned_shared(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+) -> Result<Json<Vec<crate::deletion::OwnedSharedItem>>, AppError> {
+    let identity = state.identity.clone();
+    state
+        .items
+        .owned_shared(auth.user_id.as_uuid(), |ids| async move {
             identity.display_names(&ids).await
         })
         .await

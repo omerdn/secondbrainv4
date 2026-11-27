@@ -503,6 +503,25 @@ export const tr = {
       weekly_summary: "Haftalık özet",
     },
   },
+  account: {
+    deletion: {
+      title: "Hesabı sil",
+      hint: "Hesabını silmek istersen 30 gün içinde vazgeçebilirsin. Bu sürede uygulamayı kullanmaya devam edersin.",
+      pending: "Hesabın {{date}} tarihinde silinecek. O zamana kadar vazgeçebilirsin.",
+      sharedTitle:
+        "Sahibi olduğun ortak nesneler. Şimdi devredebilirsin; devretmezsen silme gününde en eski ortağa geçer.",
+      heir: "Devralacak kişi: {{name}}",
+      transferNow: "Şimdi devret",
+      transferFailed: "Devredilemedi. Tekrar dene.",
+      request: "Hesabımı sil",
+      confirm:
+        "Hesabın 30 gün sonra silinir. Ortak olmadığın her şey kalıcı olarak silinir; bu geri alınamaz.",
+      confirmYes: "Evet, hesabımı sil",
+      confirmNo: "Vazgeç",
+      cancel: "Silmekten vazgeç",
+      failed: "İşlem yapılamadı. Tekrar dene.",
+    },
+  },
   search: {
     open: "Ara",
     shortcut: "⌘K / Ctrl K",

@@ -500,6 +500,25 @@ export const en: Catalog = {
       weekly_summary: "Weekly summary",
     },
   },
+  account: {
+    deletion: {
+      title: "Delete account",
+      hint: "If you delete your account you can change your mind within 30 days, and keep using the app meanwhile.",
+      pending: "Your account will be deleted on {{date}}. You can change your mind until then.",
+      sharedTitle:
+        "Shared items you own. Hand them over now; otherwise each goes to its oldest member on the deletion day.",
+      heir: "Will go to: {{name}}",
+      transferNow: "Hand over now",
+      transferFailed: "Could not hand it over. Try again.",
+      request: "Delete my account",
+      confirm:
+        "Your account is deleted in 30 days. Everything nobody else shares is deleted for good; this cannot be undone.",
+      confirmYes: "Yes, delete my account",
+      confirmNo: "Cancel",
+      cancel: "Keep my account",
+      failed: "That did not work. Try again.",
+    },
+  },
   search: {
     open: "Search",
     shortcut: "⌘K / Ctrl K",

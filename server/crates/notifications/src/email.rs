@@ -117,7 +117,9 @@ pub fn register_email(
             // Someone who deleted their account gets nothing; nothing to retry.
             let user = match identity.current_user(UserId::from_uuid(job.user_id)).await {
                 Ok(user) => user,
-                Err(kernel::AppError::NotFound) => return Ok(()),
+                Err(kernel::AppError::NotFound | kernel::AppError::Unauthenticated) => {
+                    return Ok(());
+                }
                 Err(err) => return Err(boxed(Box::new(err))),
             };
             let (kind, subject, text) = render(&job.template, &user.display_name, &web_url);

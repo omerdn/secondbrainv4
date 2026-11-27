@@ -5,6 +5,9 @@
  */
 
 import type {
+  AccountDeletion,
+  OwnedSharedItem,
+  TransferOwnershipRequest,
   AccessExplanation,
   AccessPreview,
   AccessPreviewRequest,
@@ -133,8 +136,23 @@ export function endpoints(api: ApiClient) {
       update: (body: UpdateProfileRequest, options?: MutationOptions) =>
         api.patch<CurrentUser>("/me", body, options),
     },
+    account: {
+      /** The pending account deletion, if any (PRD HS2, T4.3.1). */
+      deletion: () => api.get<AccountDeletion>("/account/deletion"),
+      /** Asks for the account to be deleted after 30 days. */
+      requestDeletion: (options?: MutationOptions) =>
+        api.post<AccountDeletion>("/account/deletion", undefined, options),
+      /** Cancels a pending deletion. */
+      cancelDeletion: (options?: MutationOptions) =>
+        api.delete<AccountDeletion>("/account/deletion", options),
+      /** Shared items the caller owns and who would inherit each (HS2.1). */
+      sharedItems: () => api.get<OwnedSharedItem[]>("/account/shared-items"),
+    },
     items: {
       get: (id: string) => api.get<Item>(`/items/${encodeURIComponent(id)}`),
+      /** The owner hands a personal item to one of its members (HS2.1). */
+      transferOwnership: (id: string, body: TransferOwnershipRequest, options?: MutationOptions) =>
+        api.put<void>(`/items/${encodeURIComponent(id)}/owner`, body, options),
       /** Members and their roles; pending invitations for the owner (PRD N2, V5). */
       members: (id: string) => api.get<ItemMembers>(`/items/${encodeURIComponent(id)}/members`),
       /** Invites a friend; preview it first (PRD G5, V1, V7). */

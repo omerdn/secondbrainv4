@@ -26,6 +26,9 @@
 //! |--------|-------|------|--------|
 //! | GET    | `/me` | yes  | 200 [`CurrentUser`] |
 //! | PATCH  | `/me` | yes  | 200 [`CurrentUser`]; body [`UpdateProfileRequest`], 422 on invalid fields |
+//! | GET    | `/account/deletion` | yes | 200 [`AccountDeletion`] (HS2, T4.3.1) |
+//! | POST   | `/account/deletion` | yes | 200 [`AccountDeletion`]: deleted 30 days later |
+//! | DELETE | `/account/deletion` | yes | 200 [`AccountDeletion`]: the request is cancelled |
 //!
 //! Google / Apple endpoints answer 404 when that provider is not configured.
 //!
@@ -56,6 +59,7 @@ use axum::{Json, Router};
 use kernel::AppError;
 use uuid::Uuid;
 
+use crate::deletion::AccountDeletion;
 use crate::model::{
     AppleNativeRequest, AuthResponse, ClientKind, CurrentUser, ForgotPasswordRequest,
     GoogleNativeRequest, LoginRequest, RegisterRequest, ResetPasswordRequest, SessionId,
@@ -122,7 +126,34 @@ fn routes(service: IdentityService, limits: Option<RateLimits>) -> Router {
 pub fn profile_router(service: IdentityService) -> Router {
     Router::new()
         .route("/me", get(get_profile).patch(update_profile))
+        .route(
+            "/account/deletion",
+            get(get_deletion)
+                .post(request_deletion)
+                .delete(cancel_deletion),
+        )
         .with_state(service)
+}
+
+async fn get_deletion(
+    State(service): State<IdentityService>,
+    Authenticated(auth): Authenticated,
+) -> Result<Json<AccountDeletion>, AppError> {
+    service.account_deletion(auth.user_id).await.map(Json)
+}
+
+async fn request_deletion(
+    State(service): State<IdentityService>,
+    Authenticated(auth): Authenticated,
+) -> Result<Json<AccountDeletion>, AppError> {
+    service.request_deletion(auth.user_id).await.map(Json)
+}
+
+async fn cancel_deletion(
+    State(service): State<IdentityService>,
+    Authenticated(auth): Authenticated,
+) -> Result<Json<AccountDeletion>, AppError> {
+    service.cancel_deletion(auth.user_id).await.map(Json)
 }
 
 async fn get_profile(

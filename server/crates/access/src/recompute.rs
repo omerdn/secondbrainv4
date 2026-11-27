@@ -255,6 +255,66 @@ impl<C: AccessContext> AccessEngine<C> {
             .collect())
     }
 
+    /// The people related to `item` directly, each relation with when it was made, oldest
+    /// first: who has been a member longest (HS2).
+    ///
+    /// # Errors
+    /// Database errors.
+    pub async fn item_members_since(
+        &self,
+        conn: impl sqlx::PgExecutor<'_>,
+        item: Uuid,
+    ) -> sqlx::Result<Vec<(RelationTuple, chrono::DateTime<chrono::Utc>)>> {
+        Ok(repo::user_relations_since(conn, item)
+            .await?
+            .into_iter()
+            .filter(|(tuple, _)| {
+                matches!(
+                    tuple.relation(),
+                    Relation::Owner
+                        | Relation::Assignee
+                        | Relation::Watcher
+                        | Relation::Editor
+                        | Relation::Viewer
+                )
+            })
+            .collect())
+    }
+
+    /// Every relation whose subject is the person `user` (items and teams): what they are
+    /// related to, e.g. to end it all when the account is deleted (HS2).
+    ///
+    /// # Errors
+    /// Database errors.
+    pub async fn relations_of_user(
+        &self,
+        conn: impl sqlx::PgExecutor<'_>,
+        user: Uuid,
+    ) -> sqlx::Result<Vec<RelationTuple>> {
+        repo::relations_of_subject(conn, SubjectType::User, user, None).await
+    }
+
+    /// The pages of a notebook (`in_notebook` relations to it).
+    ///
+    /// # Errors
+    /// Database errors.
+    pub async fn pages_of(
+        &self,
+        conn: impl sqlx::PgExecutor<'_>,
+        notebook: Uuid,
+    ) -> sqlx::Result<Vec<Uuid>> {
+        Ok(repo::relations_of_subject(
+            conn,
+            SubjectType::Item,
+            notebook,
+            Some(Relation::InNotebook),
+        )
+        .await?
+        .into_iter()
+        .map(|tuple| tuple.object_id())
+        .collect())
+    }
+
     /// Removes every relation of a permanently deleted item, as object or subject, and
     /// recomputes what depended on it (pages linked to it, pages in it). Its former viewers are
     /// announced with `access.revoked`. Call it inside the transaction that deletes the item.

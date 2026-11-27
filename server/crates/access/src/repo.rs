@@ -98,6 +98,24 @@ pub(crate) async fn relations_of_object(
         .collect()
 }
 
+/// Person relations of an item with when each was made (oldest member first, HS2).
+pub(crate) async fn user_relations_since(
+    conn: impl PgExecutor<'_>,
+    item: Uuid,
+) -> sqlx::Result<Vec<(RelationTuple, chrono::DateTime<chrono::Utc>)>> {
+    let rows = sqlx::query_as::<_, (Uuid, String, Uuid, chrono::DateTime<chrono::Utc>)>(
+        "SELECT object_id, relation, subject_id, created_at FROM access_relations
+         WHERE object_type = 'item' AND object_id = $1 AND subject_type = 'user'
+         ORDER BY created_at, subject_id, relation",
+    )
+    .bind(item)
+    .fetch_all(conn)
+    .await?;
+    rows.iter()
+        .map(|(o, r, s, at)| tuple_from_row(*o, r, *s).map(|t| (t, *at)))
+        .collect()
+}
+
 /// All tuples whose subject is `subject_type:subject_id`, optionally limited to one relation
 /// (reverse lookups, e.g. pages linked to an item).
 pub(crate) async fn relations_of_subject(
