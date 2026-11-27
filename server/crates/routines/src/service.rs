@@ -37,6 +37,8 @@ fn view(
             .iter()
             .map(|time| time.format("%H:%M").to_string())
             .collect(),
+        completion_mode: crate::counts::CompletionMode::parse(&row.completion_mode)
+            .unwrap_or_default(),
         versions,
     }
 }
@@ -116,6 +118,11 @@ impl RoutinesService {
             start_date,
             end_date: request.end_date,
             reminder_times,
+            completion_mode: request
+                .completion_mode
+                .unwrap_or_default()
+                .as_str()
+                .to_owned(),
         };
         repo::insert_routine(&mut tx, &row, now)
             .await
@@ -135,6 +142,31 @@ impl RoutinesService {
             .map_err(internal)?;
         tx.commit().await.map_err(internal)?;
         self.routine(actor, item.id).await
+    }
+
+    /// The people a day is counted for (R5): the routine's assignees, or its owner when nobody
+    /// is assigned (N3).
+    pub(crate) async fn people(&self, id: Uuid) -> Result<Vec<Uuid>, AppError> {
+        let (owner, assignees) = self.items.owner_and_assignees(id).await?;
+        Ok(if assignees.is_empty() {
+            owner.into_iter().collect()
+        } else {
+            assignees
+        })
+    }
+
+    /// What everyone did on the days of `entries`, read under the routine's mode.
+    pub(crate) async fn counts(
+        &self,
+        row: &RoutineRow,
+        entries: &[tracking::TrackerEntry],
+    ) -> Result<crate::counts::DayCounts, AppError> {
+        let mode = crate::counts::CompletionMode::parse(&row.completion_mode).unwrap_or_default();
+        let people = match mode {
+            crate::counts::CompletionMode::Pool => Vec::new(),
+            crate::counts::CompletionMode::Individual => self.people(row.item_id).await?,
+        };
+        Ok(crate::counts::DayCounts::new(mode, people, entries))
     }
 
     /// A routine with its plan history (VIEW).
@@ -173,6 +205,7 @@ impl RoutinesService {
         if request.timezone.is_none()
             && request.end_date.is_none()
             && request.reminder_times.is_none()
+            && request.completion_mode.is_none()
         {
             return Err(invalid("timezone", "nothing to change"));
         }
@@ -197,6 +230,9 @@ impl RoutinesService {
         }
         if let Some(reminders) = reminders {
             row.reminder_times = reminders;
+        }
+        if let Some(mode) = request.completion_mode {
+            mode.as_str().clone_into(&mut row.completion_mode);
         }
         if let Some(end) = request.end_date {
             let today = local_date(now, parse_timezone(&row.timezone)?);

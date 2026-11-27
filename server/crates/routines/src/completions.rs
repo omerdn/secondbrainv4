@@ -2,8 +2,6 @@
 //! of the routine's own tracker, matched to an occurrence by its local day. The rules are pure
 //! functions; the clock comes in from outside.
 
-use std::collections::HashMap;
-
 use access::Perms;
 use chrono::{DateTime, Days, Duration, NaiveDate, Utc};
 use chrono_tz::Tz;
@@ -11,10 +9,9 @@ use items::TouchAction;
 use kernel::{AppError, FieldError, FieldErrorCode, ValidationErrors};
 use recurrence::{PlanVersion, Schedule, local_date};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use sqlx::PgConnection;
-use tracking::{Aggregation, Direction, NewEntry, NewTracker, OwnerKind, Period, TrackerEntry};
+use tracking::{Aggregation, Direction, NewEntry, NewTracker, OwnerKind, Period};
 use ts_rs::TS;
 use uuid::Uuid;
 
@@ -92,19 +89,6 @@ pub fn routine_day(date: NaiveDate, scheduled: bool, target: i32, done: i32) -> 
         done,
         complete: scheduled && done >= target,
     }
-}
-
-fn whole(value: Decimal) -> i32 {
-    value.trunc().to_i32().unwrap_or(i32::MAX)
-}
-
-pub(crate) fn done_by_day(entries: &[TrackerEntry]) -> HashMap<NaiveDate, i32> {
-    let mut days: HashMap<NaiveDate, i32> = HashMap::new();
-    for entry in entries {
-        let total = days.entry(entry.local_date).or_default();
-        *total = total.saturating_add(whole(entry.value));
-    }
-    days
 }
 
 pub(crate) fn internal(err: impl std::error::Error + Send + Sync + 'static) -> AppError {
@@ -218,14 +202,11 @@ impl RoutinesService {
         ensure_tracker(&mut tx, id, target, now)
             .await
             .map_err(internal)?;
-        let before = done_by_day(
-            &tracking::repo::list_entries(&mut *tx, id, Some(date), Some(date))
-                .await
-                .map_err(internal)?,
-        )
-        .get(&date)
-        .copied()
-        .unwrap_or(0);
+        let mut entries = tracking::repo::list_entries(&mut *tx, id, Some(date), Some(date))
+            .await
+            .map_err(internal)?;
+        // R5: the day is read under the routine's mode, before and after this entry.
+        let (before, day_target) = self.counts(&row, &entries).await?.day(date, target);
         let entry = NewEntry {
             tracker_item_id: id,
             user_id: actor,
@@ -235,12 +216,13 @@ impl RoutinesService {
             note_block_id: None,
             note: None,
         };
-        tracking::repo::insert_entry(&mut *tx, &entry, now)
+        let added = tracking::repo::insert_entry(&mut *tx, &entry, now)
             .await
             .map_err(internal)?;
-        let done = before.saturating_add(count);
+        entries.push(added);
+        let (done, _) = self.counts(&row, &entries).await?.day(date, target);
         // A1: the day is recorded as completed once, when it reaches its target.
-        if before < target && done >= target {
+        if before < day_target && done >= day_target {
             self.items
                 .record_completed(&mut tx, actor, id)
                 .await
@@ -252,7 +234,7 @@ impl RoutinesService {
                 .map_err(internal)?;
         }
         tx.commit().await.map_err(internal)?;
-        Ok(routine_day(date, true, target, done))
+        Ok(routine_day(date, true, day_target, done))
     }
 
     /// Takes back the actor's latest entry on a day (EDIT), within the same 3 days (R7). With
@@ -296,8 +278,8 @@ impl RoutinesService {
                 .map_err(internal)?;
         }
         tx.commit().await.map_err(internal)?;
-        let done = done_by_day(&entries).get(&date).copied().unwrap_or(0);
-        Ok(routine_day(date, scheduled, target, done))
+        let (done, day_target) = self.counts(&row, &entries).await?.day(date, target);
+        Ok(routine_day(date, scheduled, day_target, done))
     }
 
     /// The routine's days in a range, oldest first (VIEW). Without a range: the last 30 days.
@@ -338,17 +320,13 @@ impl RoutinesService {
         let entries = tracking::repo::list_entries(&self.pool, id, Some(from), Some(to))
             .await
             .map_err(internal)?;
-        let done = done_by_day(&entries);
+        let counts = self.counts(&row, &entries).await?;
         Ok(from
             .iter_days()
             .take_while(|date| *date <= to)
             .map(|date| {
-                routine_day(
-                    date,
-                    schedule.occurs_on(date),
-                    target_on(&versions, date),
-                    done.get(&date).copied().unwrap_or(0),
-                )
+                let (done, target) = counts.day(date, target_on(&versions, date));
+                routine_day(date, schedule.occurs_on(date), target, done)
             })
             .collect())
     }

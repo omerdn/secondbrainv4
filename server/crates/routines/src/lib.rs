@@ -5,6 +5,7 @@
 //! `recurrence` and never stored (ADR-0008).
 
 mod completions;
+pub mod counts;
 pub mod http;
 mod model;
 mod progress;

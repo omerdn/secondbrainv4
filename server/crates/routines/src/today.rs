@@ -10,7 +10,7 @@ use serde::Serialize;
 use ts_rs::TS;
 use uuid::Uuid;
 
-use crate::completions::{RoutineDay, done_by_day, routine_day, schedule_of};
+use crate::completions::{RoutineDay, routine_day, schedule_of};
 use crate::model::{parse_timezone, target_on};
 use crate::repo;
 use crate::service::RoutinesService;
@@ -83,9 +83,12 @@ impl RoutinesService {
             let entries = tracking::repo::list_entries(&self.pool, item.id, Some(date), Some(date))
                 .await
                 .map_err(internal)?;
-            let done = done_by_day(&entries).get(&date).copied().unwrap_or(0);
+            let (done, target) = self
+                .counts(row, &entries)
+                .await?
+                .day(date, target_on(&versions, date));
             today.push(RoutineToday {
-                day: routine_day(date, true, target_on(&versions, date), done),
+                day: routine_day(date, true, target, done),
                 timezone: row.timezone.clone(),
                 item,
             });

@@ -71,6 +71,34 @@ pub struct ItemMembers {
 }
 
 impl ItemsService {
+    /// The item's owner (a person) and assignees, with no caller: for background reads that act
+    /// for the item's members (a shared routine's day). Never answer a request with this.
+    ///
+    /// # Errors
+    /// [`AppError::Internal`] on database errors.
+    pub async fn owner_and_assignees(
+        &self,
+        item: Uuid,
+    ) -> Result<(Option<Uuid>, Vec<Uuid>), AppError> {
+        let tuples = self
+            .access
+            .item_members(&self.pool, item)
+            .await
+            .map_err(internal)?;
+        let owner = tuples
+            .iter()
+            .find(|t| t.relation() == Relation::Owner)
+            .map(RelationTuple::subject_id);
+        let mut assignees: Vec<Uuid> = tuples
+            .iter()
+            .filter(|t| t.relation() == Relation::Assignee)
+            .map(RelationTuple::subject_id)
+            .collect();
+        assignees.sort_unstable();
+        assignees.dedup();
+        Ok((owner, assignees))
+    }
+
     /// The item's members, and for its owner the pending invitations. Names come from
     /// `names`, which is given every id at once.
     ///

@@ -17,7 +17,7 @@ use recurrence::local_date;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::completions::{done_by_day, schedule_of};
+use crate::completions::schedule_of;
 use crate::model::{parse_timezone, target_on};
 use crate::repo;
 use crate::service::RoutinesService;
@@ -117,8 +117,11 @@ impl RoutinesService {
                     tracking::repo::list_entries(&self.pool, row.item_id, Some(day), Some(day))
                         .await
                         .map_err(internal)?;
-                let done = done_by_day(&entries).get(&day).copied().unwrap_or(0);
-                if done >= target_on(&versions, day) {
+                let (done, target) = self
+                    .counts(&row, &entries)
+                    .await?
+                    .day(day, target_on(&versions, day));
+                if done >= target {
                     continue;
                 }
                 let mut tx = self.pool.begin().await.map_err(internal)?;
