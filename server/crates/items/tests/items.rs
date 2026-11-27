@@ -276,6 +276,7 @@ async fn f1_filter_by_date_is_half_open() {
             field: items::DateField::Created,
             from,
             to,
+            last_days: None,
         }),
         ..items::ItemFilter::default()
     };
@@ -299,6 +300,7 @@ async fn f1_filter_by_date_is_half_open() {
             field: items::DateField::LastTouched,
             from: None,
             to: Some(start() + Duration::days(2)),
+            last_days: None,
         }),
         ..items::ItemFilter::default()
     };
@@ -306,6 +308,51 @@ async fn f1_filter_by_date_is_half_open() {
         filtered(&w, ali, touched_filter).await,
         HashSet::from([second.id])
     );
+}
+
+#[tokio::test]
+async fn t1_5_7_a_relative_date_range_follows_the_clock() {
+    let w = World::new().await;
+    let ali = Uuid::now_v7();
+    let old = w.items.create(ali, World::task("Old")).await.unwrap();
+    w.clock.set(start() + Duration::days(10));
+    let recent = w.items.create(ali, World::task("Recent")).await.unwrap();
+    let last_week = items::ItemFilter {
+        date: Some(items::DateFilter {
+            field: items::DateField::Created,
+            from: None,
+            to: None,
+            last_days: Some(7),
+        }),
+        ..items::ItemFilter::default()
+    };
+    assert_eq!(
+        filtered(&w, ali, last_week.clone()).await,
+        HashSet::from([recent.id])
+    );
+    // A saved view keeps the relative range: a week later, nothing is that recent.
+    let view = w
+        .items
+        .create_view(
+            ali,
+            items::CreateSavedViewRequest {
+                name: "This week".into(),
+                filter: last_week,
+                pinned: None,
+                position: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(view.filter.date.and_then(|d| d.last_days), Some(7));
+    w.clock.set(start() + Duration::days(18));
+    let page = kernel::PageRequest::from_params(kernel::PageParams {
+        limit: Some(50),
+        cursor: None,
+    })
+    .unwrap();
+    let ran = w.items.view_items(ali, view.id, &page).await.unwrap();
+    assert!(ran.items.is_empty(), "{:?}", [old.id, recent.id]);
 }
 
 #[tokio::test]

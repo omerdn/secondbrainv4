@@ -190,6 +190,18 @@ describe("task list (G7, F1)", () => {
       tag_ids: ["a", "b"],
       state: "trash",
     });
+    expect(
+      taskFilter({
+        statuses: ["done"],
+        people: ["b", "a"],
+        date: { field: "updated", last_days: 7 },
+      }),
+    ).toEqual({
+      kinds: ["task"],
+      statuses: ["done"],
+      people: ["a", "b"],
+      date: { field: "updated", last_days: 7 },
+    });
     expect(isDefaultTaskFilter({ state: "active", tag_ids: [] })).toBe(true);
     expect(isDefaultTaskFilter({ state: "archived" })).toBe(false);
   });

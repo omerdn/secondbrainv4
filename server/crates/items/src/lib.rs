@@ -19,7 +19,9 @@ mod views;
 
 pub use activity::{Activity, ActivityKind};
 pub use context::ItemsAccessContext;
-pub use filters::{DateField, DateFilter, FILTER_MAX_PEOPLE, FILTER_MAX_VALUES, ItemFilter};
+pub use filters::{
+    DateField, DateFilter, FILTER_MAX_LAST_DAYS, FILTER_MAX_PEOPLE, FILTER_MAX_VALUES, ItemFilter,
+};
 pub use invitations::{
     CreateInvitationRequest, INVITE_LIMIT, INVITE_WINDOW, Invitation, InvitationCreated,
     InvitationRole, InvitationStatus, NoSharing, SharingFuture, SharingPolicy, role_allowed,
