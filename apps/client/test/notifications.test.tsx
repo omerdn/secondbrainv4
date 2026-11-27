@@ -142,6 +142,28 @@ describe("notification center (BL1)", () => {
     expect(screen).toHavePathname("/notifications");
   });
 
+  it("reminds of forgotten items and opens Today (H4)", async () => {
+    const forgotten: Notification = {
+      id: "f1",
+      payload: {
+        type: "forgotten_reminder",
+        local_date: "2026-11-27",
+        count: 4,
+        titles: ["Eski rapor", "Fatura", "Kitap"],
+      },
+      read_at: null,
+      created_at: "2026-11-27T07:00:00Z",
+    };
+    const { server } = center([forgotten]);
+    await renderApp(server.api, "/notifications", { tokenStore: memoryTokenStore("t") });
+    await fireEvent.press(
+      await screen.findByText("Bir süredir dokunmadığın 4 şey var: Eski rapor, Fatura, Kitap"),
+    );
+    await waitFor(() => {
+      expect(screen).toHavePathname("/");
+    });
+  });
+
   it("shows the weekly summary with its parts (OZ1)", async () => {
     const summary: Notification = {
       id: "w1",

@@ -30,7 +30,7 @@ pub const SEND_HOUR: u32 = 9;
 /// Forgotten items listed at most.
 pub const FORGOTTEN_MAX: usize = 5;
 /// Users read per page by the tick.
-const PAGE: i64 = 500;
+pub(crate) const PAGE: i64 = 500;
 
 /// The time zone of a user, UTC when unknown.
 #[must_use]
