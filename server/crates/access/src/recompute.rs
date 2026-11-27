@@ -315,6 +315,38 @@ impl<C: AccessContext> AccessEngine<C> {
         .collect())
     }
 
+    /// A team's item-level role policy: the stored one, else the defaults (TK3).
+    ///
+    /// # Errors
+    /// Database errors.
+    pub async fn team_policy(
+        &self,
+        conn: &mut PgConnection,
+        team: Uuid,
+    ) -> sqlx::Result<RolePolicy> {
+        Ok(repo::team_policies(&mut *conn, &[team])
+            .await?
+            .into_iter()
+            .next()
+            .map_or_else(RolePolicy::default, |(_, policy)| policy))
+    }
+
+    /// Stores a team's item-level role policy and recomputes its items: access that the new
+    /// matrix takes away drops at once (TK3, V8). Call it inside the transaction of the change.
+    ///
+    /// # Errors
+    /// Database errors.
+    pub async fn set_team_policy(
+        &self,
+        conn: &mut PgConnection,
+        team: Uuid,
+        policy: RolePolicy,
+    ) -> sqlx::Result<()> {
+        repo::set_team_policy(&mut *conn, team, &policy).await?;
+        self.run(conn, Change::Team(team), Direction::Mixed).await?;
+        Ok(())
+    }
+
     /// Removes every relation of a permanently deleted item, as object or subject, and
     /// recomputes what depended on it (pages linked to it, pages in it). Its former viewers are
     /// announced with `access.revoked`. Call it inside the transaction that deletes the item.
@@ -571,6 +603,10 @@ impl Loader {
             self.graph.set_item(item, attrs);
         }
         for (team, policy) in ctx.team_policies(conn, &teams).await? {
+            self.graph.set_team_policy(team, policy);
+        }
+        // Matrices the team's admin edited (T5.1.2) win over the context's.
+        for (team, policy) in repo::team_policies(&mut *conn, &teams).await? {
             self.graph.set_team_policy(team, policy);
         }
         Ok(())

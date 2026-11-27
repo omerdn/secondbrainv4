@@ -56,6 +56,60 @@ impl World {
         self.items().create(owner, new).await.unwrap()
     }
 
+    /// A team created by `admin`, with `members` joined in their roles (T5.1.1).
+    pub(crate) async fn team(&self, admin: Uuid, members: &[(Uuid, teams::TeamRole)]) -> Uuid {
+        let teams = self.teams();
+        let team = teams
+            .create(
+                admin,
+                teams::CreateTeamRequest {
+                    name: "X".into(),
+                    color: "#4f46e5".into(),
+                    logo_url: None,
+                },
+            )
+            .await
+            .unwrap()
+            .id;
+        for (member, role) in members {
+            teams
+                .invite(
+                    admin,
+                    team,
+                    teams::InviteToTeamRequest {
+                        user_id: *member,
+                        role: *role,
+                    },
+                )
+                .await
+                .unwrap();
+            teams.accept(*member, team).await.unwrap();
+        }
+        team
+    }
+
+    /// A task owned by `team` and created by `creator`, visible to `mode` (`all` or
+    /// `assignees`, V12). Until team items have their API (T5.1.3) the row is written here and
+    /// ownership goes through the access engine.
+    pub(crate) async fn team_task(&self, team: Uuid, creator: Uuid, mode: &str) -> Uuid {
+        let id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO items (id, kind, owner_team_id, title, team_visibility, created_by,
+                                created_at, updated_at, last_touched_at)
+             VALUES ($1, 'task', $2, 'Takım işi', $3, $4, now(), now(), now())",
+        )
+        .bind(id)
+        .bind(team)
+        .bind(mode)
+        .bind(creator)
+        .execute(self.pool())
+        .await
+        .unwrap();
+        self.grant(&[RelationTuple::new(id, access::Relation::OwnedBy, team)])
+            .await;
+        id
+    }
+
     pub(crate) fn permissions(&self) -> PermissionService<ItemsAccessContext> {
         self.engine.permissions()
     }

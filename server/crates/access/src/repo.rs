@@ -302,3 +302,59 @@ pub(crate) async fn accessible_item_ids(
 
 #[cfg(test)]
 mod tests;
+
+/// Stored role policies of `teams` (T5.1.2); teams without a row are absent.
+pub(crate) async fn team_policies(
+    conn: impl PgExecutor<'_>,
+    teams: &[Uuid],
+) -> sqlx::Result<Vec<(Uuid, crate::compute::RolePolicy)>> {
+    let rows: Vec<(Uuid, i16, i16, i16, i16)> = sqlx::query_as(
+        "SELECT team_id, admin, manager, member, guest FROM team_role_policies
+         WHERE team_id = ANY($1)",
+    )
+    .bind(teams)
+    .fetch_all(conn)
+    .await?;
+    let perms = |bits: i16| {
+        u8::try_from(bits)
+            .ok()
+            .and_then(crate::model::Perms::from_bits)
+            .unwrap_or(crate::model::Perms::NONE)
+    };
+    Ok(rows
+        .into_iter()
+        .map(|(team, admin, manager, member, guest)| {
+            (
+                team,
+                crate::compute::RolePolicy {
+                    admin: perms(admin),
+                    manager: perms(manager),
+                    member: perms(member),
+                    guest: perms(guest),
+                },
+            )
+        })
+        .collect())
+}
+
+pub(crate) async fn set_team_policy(
+    conn: impl PgExecutor<'_>,
+    team: Uuid,
+    policy: &crate::compute::RolePolicy,
+) -> sqlx::Result<()> {
+    let bits = |p: crate::model::Perms| i16::from(p.bits());
+    sqlx::query(
+        "INSERT INTO team_role_policies (team_id, admin, manager, member, guest, updated_at)
+         VALUES ($1, $2, $3, $4, $5, now())
+         ON CONFLICT (team_id) DO UPDATE
+         SET admin = $2, manager = $3, member = $4, guest = $5, updated_at = now()",
+    )
+    .bind(team)
+    .bind(bits(policy.admin))
+    .bind(bits(policy.manager))
+    .bind(bits(policy.member))
+    .bind(bits(policy.guest))
+    .execute(conn)
+    .await?;
+    Ok(())
+}

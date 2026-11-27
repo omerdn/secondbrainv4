@@ -217,3 +217,99 @@ async fn only_admins_and_managers_invite_and_only_admins_invite_admins() {
         Err(AppError::Validation(_))
     ));
 }
+
+// --- T5.1.2: roles and the permission matrix --------------------------------------------------
+
+#[tokio::test]
+async fn tk3_the_matrix_decides_who_invites_and_only_admins_edit_it() {
+    use teams::{TeamPermission, TeamRole};
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    let bob = w.user("bob@example.com", "Bob").await;
+    let can = w.user("can@example.com", "Can").await;
+    let eve = w.user("eve@example.com", "Eve").await;
+    let team = w.team(ada).await;
+    w.invite(ada, team, bob, TeamRole::Member).await.unwrap();
+    w.teams.accept(bob, team).await.unwrap();
+    w.invite(ada, team, can, TeamRole::Manager).await.unwrap();
+    w.teams.accept(can, team).await.unwrap();
+
+    // The defaults: every member sees the matrix; admins have everything.
+    let mut matrix = w.teams.matrix(bob, team).await.unwrap();
+    assert_eq!(matrix.roles[0].role, TeamRole::Admin);
+    assert_eq!(matrix.roles[0].team.len(), TeamPermission::ALL.len());
+    assert!(
+        !w.teams
+            .may(bob, team, TeamPermission::InviteMembers)
+            .await
+            .unwrap()
+    );
+    assert!(matches!(
+        w.teams.set_matrix(can, team, matrix.clone()).await,
+        Err(AppError::Forbidden)
+    ));
+    assert!(matches!(
+        w.teams.matrix(eve, team).await,
+        Err(AppError::NotFound)
+    ));
+
+    // Members may invite; managers may not.
+    for row in &mut matrix.roles {
+        match row.role {
+            TeamRole::Member => row.team.push(TeamPermission::InviteMembers),
+            TeamRole::Manager => row.team.retain(|p| *p != TeamPermission::InviteMembers),
+            // Ignored: admins keep everything.
+            TeamRole::Admin => row.team.clear(),
+            TeamRole::Guest => {}
+        }
+    }
+    let saved = w.teams.set_matrix(ada, team, matrix).await.unwrap();
+    assert_eq!(saved.roles[0].team.len(), TeamPermission::ALL.len());
+    assert!(matches!(
+        w.invite(can, team, eve, TeamRole::Member).await,
+        Err(AppError::Forbidden)
+    ));
+    w.invite(bob, team, eve, TeamRole::Member).await.unwrap();
+    assert!(
+        w.teams
+            .may(ada, team, TeamPermission::InviteMembers)
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn tk3_v8_admins_change_roles_but_a_team_keeps_an_admin() {
+    use teams::TeamRole;
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    let bob = w.user("bob@example.com", "Bob").await;
+    let team = w.team(ada).await;
+    w.invite(ada, team, bob, TeamRole::Member).await.unwrap();
+    w.teams.accept(bob, team).await.unwrap();
+    assert!(matches!(
+        w.teams.set_role(bob, team, ada, TeamRole::Guest).await,
+        Err(AppError::Forbidden)
+    ));
+    assert!(matches!(
+        w.teams.set_role(ada, team, ada, TeamRole::Member).await,
+        Err(AppError::Validation(_))
+    ));
+    w.teams
+        .set_role(ada, team, bob, TeamRole::Admin)
+        .await
+        .unwrap();
+    assert_eq!(w.relation(team, bob).await.as_deref(), Some("admin"));
+    // Now Ada may step down.
+    w.teams
+        .set_role(ada, team, ada, TeamRole::Member)
+        .await
+        .unwrap();
+    assert_eq!(w.relation(team, ada).await.as_deref(), Some("member"));
+    assert!(matches!(
+        w.teams
+            .set_role(bob, team, Uuid::now_v7(), TeamRole::Member)
+            .await,
+        Err(AppError::NotFound)
+    ));
+}

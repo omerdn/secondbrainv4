@@ -5,6 +5,8 @@
  */
 
 import type {
+  SetRoleRequest,
+  TeamMatrix,
   CreateTeamRequest,
   InviteToTeamRequest,
   Team,
@@ -157,6 +159,16 @@ export function endpoints(api: ApiClient) {
         api.post<Team>(`/teams/${encodeURIComponent(id)}/join`, undefined, options),
       decline: (id: string, options?: MutationOptions) =>
         api.post<void>(`/teams/${encodeURIComponent(id)}/decline`, undefined, options),
+      /** The role × permission matrix (TK3, T5.1.2). */
+      matrix: (id: string) => api.get<TeamMatrix>(`/teams/${encodeURIComponent(id)}/matrix`),
+      setMatrix: (id: string, body: TeamMatrix, options?: MutationOptions) =>
+        api.put<TeamMatrix>(`/teams/${encodeURIComponent(id)}/matrix`, body, options),
+      setRole: (id: string, userId: string, body: SetRoleRequest, options?: MutationOptions) =>
+        api.put<void>(
+          `/teams/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}/role`,
+          body,
+          options,
+        ),
     },
     legal: {
       /** The legal texts in force (HS5, T4.3.3). */

@@ -3,7 +3,7 @@
 use items::{CreateInvitationRequest, InvitationRole};
 use kernel::AppError;
 
-use crate::support::{World, pending};
+use crate::support::World;
 
 /// Ayşe is an assignee of Ali's task. Her attempt to invite Can is forbidden.
 #[tokio::test]
@@ -63,11 +63,64 @@ async fn only_the_owner_adds_members() {
 }
 
 /// Team X's admin grants member management to managers. A manager can add an assignee to a team
-/// task; a plain member cannot.
+/// task; a plain member cannot. When the admin takes it back, the manager cannot either (V8).
 #[tokio::test]
-#[ignore = "T5.1.2: team roles and permission matrix"]
 async fn team_role_matrix_controls_member_management() {
-    pending()
+    let world = World::new().await;
+    let (admin, _) = world.person("Admin").await;
+    let (mehmet, _) = world.person("Mehmet").await;
+    let (zeynep, _) = world.person("Zeynep").await;
+    let (deniz, _) = world.person("Deniz").await;
+    let team = world
+        .team(
+            admin,
+            &[
+                (mehmet, teams::TeamRole::Manager),
+                (zeynep, teams::TeamRole::Member),
+                (deniz, teams::TeamRole::Member),
+            ],
+        )
+        .await;
+    let task = world.team_task(team, admin, "all").await;
+    let teams = world.teams();
+    let mut matrix = teams.matrix(admin, team).await.unwrap();
+    for row in &mut matrix.roles {
+        match row.role {
+            teams::TeamRole::Manager => {
+                row.item = vec![
+                    teams::ItemPermission::View,
+                    teams::ItemPermission::Edit,
+                    teams::ItemPermission::Share,
+                ];
+            }
+            teams::TeamRole::Member => {
+                row.item = vec![teams::ItemPermission::View, teams::ItemPermission::Edit];
+            }
+            _ => {}
+        }
+    }
+    teams.set_matrix(admin, team, matrix.clone()).await.unwrap();
+    let items = world.sharing_items();
+    let assignee = |to_user| CreateInvitationRequest {
+        to_user,
+        role: InvitationRole::Assignee,
+    };
+    assert!(matches!(
+        items.invite(zeynep, task, assignee(deniz)).await,
+        Err(AppError::Forbidden)
+    ));
+    items.invite(mehmet, task, assignee(deniz)).await.unwrap();
+
+    for row in &mut matrix.roles {
+        if row.role == teams::TeamRole::Manager {
+            row.item = vec![teams::ItemPermission::View, teams::ItemPermission::Edit];
+        }
+    }
+    teams.set_matrix(admin, team, matrix).await.unwrap();
+    assert!(matches!(
+        items.invite(mehmet, task, assignee(zeynep)).await,
+        Err(AppError::Forbidden)
+    ));
 }
 
 /// Ali sees his task's members with their roles and the invitation Can has not answered; when Can

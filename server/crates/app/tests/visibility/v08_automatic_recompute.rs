@@ -87,9 +87,26 @@ async fn notebook_membership_change_recomputes() {
 
 /// Demoting Mehmet from manager to member in team X removes his access to assignee-only team items.
 #[tokio::test]
-#[ignore = "T5.1.2: team roles and permission matrix"]
 async fn team_role_change_recomputes() {
-    pending()
+    let world = World::new().await;
+    let (admin, _) = world.person("Admin").await;
+    let (mehmet, _) = world.person("Mehmet").await;
+    let team = world
+        .team(admin, &[(mehmet, teams::TeamRole::Manager)])
+        .await;
+    let item = world.team_task(team, admin, "assignees").await;
+    let items = world.items();
+    assert_eq!(items.get(mehmet, item).await.unwrap().id, item);
+
+    world
+        .teams()
+        .set_role(admin, team, mehmet, teams::TeamRole::Member)
+        .await
+        .unwrap();
+    assert!(matches!(
+        items.get(mehmet, item).await,
+        Err(AppError::NotFound)
+    ));
 }
 
 /// Switching a team task from "all team" to "assignees only" removes access for other members.
