@@ -300,3 +300,72 @@ async fn requests_are_checked() {
         Err(AppError::Validation(_))
     ));
 }
+
+impl World {
+    async fn in_zone(&self, user: Uuid, timezone: &str) {
+        let changes = identity::profile::UpdateProfileRequest {
+            timezone: Some(timezone.into()),
+            ..identity::profile::UpdateProfileRequest::default()
+        }
+        .validate()
+        .unwrap();
+        self.identity
+            .update_profile(identity::UserId::from_uuid(user), changes)
+            .await
+            .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn ak3_a_friend_is_nudged_at_most_once_a_day() {
+    let w = World::new().await;
+    let ali = w.user("ali@example.com", "Ali").await;
+    let ayse = w.user("ayse@example.com", "Ayşe").await;
+    let can = w.user("can@example.com", "Can").await;
+    w.befriend(ali, ayse, "ayse@example.com").await;
+    w.befriend(ali, can, "can@example.com").await;
+    w.in_zone(ali, "Europe/Istanbul").await;
+
+    w.social.nudge(ali, ayse).await.unwrap();
+    assert!(matches!(
+        w.social.nudge(ali, ayse).await,
+        Err(AppError::RateLimited { .. })
+    ));
+    // Another friend, and the other way round, are separate.
+    w.social.nudge(ali, can).await.unwrap();
+    w.social.nudge(ayse, ali).await.unwrap();
+    // 23:59 in Istanbul is still the same day; 00:00 is the next one.
+    w.clock
+        .set(Utc.with_ymd_and_hms(2026, 11, 27, 20, 59, 0).unwrap());
+    assert!(w.social.nudge(ali, ayse).await.is_err());
+    w.clock
+        .set(Utc.with_ymd_and_hms(2026, 11, 27, 21, 0, 0).unwrap());
+    w.social.nudge(ali, ayse).await.unwrap();
+}
+
+#[tokio::test]
+async fn ak2_only_friends_who_did_not_block_can_be_nudged() {
+    let w = World::new().await;
+    let ali = w.user("ali@example.com", "Ali").await;
+    let ayse = w.user("ayse@example.com", "Ayşe").await;
+    let stranger = w.user("x@example.com", "X").await;
+    assert!(matches!(
+        w.social.nudge(ali, stranger).await,
+        Err(AppError::Forbidden)
+    ));
+    assert!(matches!(
+        w.social.nudge(ali, ali).await,
+        Err(AppError::Validation(_))
+    ));
+    w.befriend(ali, ayse, "ayse@example.com").await;
+    w.social.block(ayse, ali).await.unwrap();
+    // Blocked either way: the same answer as for a stranger, so the block does not show.
+    assert!(matches!(
+        w.social.nudge(ali, ayse).await,
+        Err(AppError::Forbidden)
+    ));
+    assert!(matches!(
+        w.social.nudge(ayse, ali).await,
+        Err(AppError::Forbidden)
+    ));
+}

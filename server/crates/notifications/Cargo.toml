@@ -21,6 +21,7 @@ realtime = { path = "../realtime" }
 routines = { path = "../routines" }
 serde.workspace = true
 serde_json.workspace = true
+social = { path = "../social" }
 sqlx.workspace = true
 ts-rs.workspace = true
 uuid.workspace = true

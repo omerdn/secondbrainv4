@@ -6,6 +6,7 @@ use db::outbox::{Dispatcher, HandlerError};
 use identity::IdentityService;
 use items::{InvitationCreated, ItemsService};
 use routines::reminders::RoutineReminderDue;
+use social::Nudged;
 
 use crate::model::NotificationPayload;
 use crate::service::Notifications;
@@ -19,6 +20,7 @@ pub fn register(
     identity: IdentityService,
 ) {
     let reminders = notifications.clone();
+    let (nudges, nudge_names) = (notifications.clone(), identity.clone());
     dispatcher.subscribe(
         "notifications.invitation",
         move |event: InvitationCreated, stored| {
@@ -79,4 +81,25 @@ pub fn register(
             },
         );
     }
+    dispatcher.subscribe("notifications.nudge", move |event: Nudged, stored| {
+        let (notifications, identity) = (nudges.clone(), nudge_names.clone());
+        async move {
+            let boxed = |err: kernel::AppError| Box::new(err) as HandlerError;
+            let from_name = identity
+                .display_names(&[event.from_user])
+                .await
+                .map_err(boxed)?
+                .remove(&event.from_user)
+                .unwrap_or_default();
+            let payload = NotificationPayload::Nudge {
+                from_user: event.from_user,
+                from_name,
+            };
+            notifications
+                .deliver(event.to_user, &payload, stored.id)
+                .await
+                .map_err(boxed)?;
+            Ok(())
+        }
+    });
 }

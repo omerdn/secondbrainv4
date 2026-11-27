@@ -13,6 +13,8 @@ workspace = true
 [dependencies]
 axum.workspace = true
 chrono.workspace = true
+chrono-tz.workspace = true
+db = { path = "../db" }
 identity = { path = "../identity" }
 items = { path = "../items" }
 kernel = { path = "../kernel" }

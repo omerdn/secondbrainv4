@@ -457,6 +457,7 @@ export const tr = {
     unreadLabel: "Okunmadı: {{text}}",
     invitation: '{{from}} seni bir {{kind}} için davet etti: "{{title}}"',
     routineReminder: 'Hatırlatma: "{{title}}" ({{time}})',
+    nudge: "{{from}} seni dürttü 👋",
     accept: "Kabul et",
     decline: "Reddet",
     answerFailed: "Yanıtlanamadı. Davet artık geçerli olmayabilir.",

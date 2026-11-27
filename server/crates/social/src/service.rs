@@ -9,8 +9,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::model::{
-    BlockedUser, DECLINE_COOLDOWN, Friend, IncomingRequest, OutgoingRequest, REQUESTS_PER_DAY,
-    normalize_email, pair,
+    BlockedUser, DECLINE_COOLDOWN, Friend, IncomingRequest, Nudged, OutgoingRequest,
+    REQUESTS_PER_DAY, normalize_email, nudge_day, pair,
 };
 use crate::repo;
 
@@ -309,6 +309,50 @@ impl Friendships {
                 since,
             })
             .collect())
+    }
+
+    /// Nudges a friend (AK3): at most once a day per person, the day being the sender's own.
+    /// Someone who is not a friend, or blocked either way, cannot be nudged (AK2); the answer is
+    /// the same in both cases, so a block does not show.
+    ///
+    /// # Errors
+    /// [`AppError::Validation`] for oneself, [`AppError::Forbidden`] for someone who is not a
+    /// friend, [`AppError::RateLimited`] for a second nudge the same day, or
+    /// [`AppError::Internal`].
+    pub async fn nudge(&self, actor: Uuid, other: Uuid) -> Result<(), AppError> {
+        if actor == other {
+            return Err(invalid("user_id", "you cannot nudge yourself"));
+        }
+        if !self.may_share(actor, other).await? {
+            return Err(AppError::Forbidden);
+        }
+        let timezone = self
+            .identity
+            .current_user(identity::UserId::from_uuid(actor))
+            .await?
+            .timezone
+            .parse()
+            .unwrap_or(chrono_tz::UTC);
+        let now = self.clock.now();
+        let mut tx = self.pool.begin().await.map_err(internal)?;
+        if !repo::insert_nudge(&mut *tx, (actor, other), nudge_day(now, timezone), now)
+            .await
+            .map_err(internal)?
+        {
+            return Err(AppError::RateLimited {
+                retry_after_secs: None,
+            });
+        }
+        db::outbox::publish(
+            &mut tx,
+            &Nudged {
+                from_user: actor,
+                to_user: other,
+            },
+        )
+        .await
+        .map_err(internal)?;
+        tx.commit().await.map_err(internal)
     }
 
     /// V1 without teams: friends, and neither blocked the other.

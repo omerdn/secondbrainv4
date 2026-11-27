@@ -11,6 +11,7 @@
 //! | DELETE | `/friend-requests/{id}` | 204: the caller's own request |
 //! | GET    | `/friends` | 200 [`Friend`]`[]` |
 //! | DELETE | `/friends/{user_id}` | 204 |
+//! | POST   | `/friends/{user_id}/nudges` | 204; once a day (AK3), friends only (AK2) |
 //! | GET    | `/blocks` | 200 [`BlockedUser`]`[]` |
 //! | PUT    | `/blocks/{user_id}` | 204 |
 //! | DELETE | `/blocks/{user_id}` | 204 |
@@ -49,9 +50,22 @@ pub fn router(state: SocialHttpState) -> Router {
         .route("/friend-requests/{id}/decline", post(decline))
         .route("/friends", get(friends))
         .route("/friends/{user_id}", delete(unfriend))
+        .route("/friends/{user_id}/nudges", post(nudge))
         .route("/blocks", get(blocks))
         .route("/blocks/{user_id}", put(block).delete(unblock))
         .with_state(state)
+}
+
+async fn nudge(
+    State(state): State<SocialHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(user_id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    state
+        .friendships
+        .nudge(auth.user_id.as_uuid(), user_id)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn send(
