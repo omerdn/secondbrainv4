@@ -18,13 +18,9 @@ Release'ler ön sürüm olarak yayınlanır, çünkü `releases/latest` her zama
 
 ## Kurulum
 
-- **Android:** APK'yı telefona indirip açın ve "bilinmeyen kaynaklardan yükleme" iznini verin.
-  - 22 Kasım 2026'da elle gönderilen ilk APK debug anahtarıyla imzalanmıştı. O sürümü kuranların, kalıcı anahtarla imzalanan ilk sürümden önce eskisini bir kez silmesi gerekir.
-- **iPhone (ücretsiz Apple ID ile):**
-  1. Bilgisayara [Sideloadly](https://sideloadly.io) ya da [AltStore](https://altstore.io) kurun.
-  2. iPhone'u kabloyla bağlayın, `-unsigned.ipa` dosyasını seçin ve kendi Apple ID'nizle imzalayıp kurun.
-  3. iPhone'da Ayarlar → Genel → VPN ve Aygıt Yönetimi bölümünden geliştirici profilinize güvenin.
-  4. Ücretsiz hesapta imza 7 günde bir yenilenmeli (AltStore bunu otomatik yapabilir).
+Beta kullanıcılarına yönelik adım adım kurulum (Android, iPhone, masaüstü, web): [docs/BETA-INSTALL.md](../../docs/BETA-INSTALL.md).
+
+- 22 Kasım 2026'da elle gönderilen ilk APK debug anahtarıyla imzalanmıştı. O sürümü kuranların, kalıcı anahtarla imzalanan ilk sürümden önce eskisini bir kez silmesi gerekir.
 - **iOS simülatörü (Mac + Xcode):** zip'i açın ve şu komutla kurun:
 
   ```bash
