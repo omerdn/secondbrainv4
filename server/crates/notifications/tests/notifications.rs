@@ -1335,3 +1335,127 @@ mod assignments {
         assert!(w.assignments_of(bob).await.is_empty());
     }
 }
+
+// --- T4.3.8: sharing change notifications -----------------------------------------------------
+
+mod sharing_changes {
+    use super::*;
+    use notifications::SharingChangeKind;
+
+    impl World {
+        async fn sharing_changes_of(&self, user: Uuid) -> Vec<NotificationPayload> {
+            self.notifications
+                .list(user, None)
+                .await
+                .unwrap()
+                .notifications
+                .into_iter()
+                .map(|n| n.payload)
+                .filter(|p| matches!(p, NotificationPayload::SharingChange { .. }))
+                .collect()
+        }
+
+        /// Ada's task with a description; Bob accepted to watch it.
+        async fn watched_task(&self, ada: Uuid, bob: Uuid) -> Uuid {
+            let item = self
+                .items
+                .create(
+                    ada,
+                    NewItem {
+                        kind: "task".into(),
+                        title: "Doğum günü".into(),
+                        description: Some("Gizli plan: pasta".into()),
+                    },
+                )
+                .await
+                .unwrap()
+                .id;
+            let invitation = self
+                .items
+                .invite(
+                    ada,
+                    item,
+                    CreateInvitationRequest {
+                        to_user: bob,
+                        role: InvitationRole::Watcher,
+                    },
+                )
+                .await
+                .unwrap()
+                .id;
+            self.items.accept_invitation(bob, invitation).await.unwrap();
+            item
+        }
+    }
+
+    #[tokio::test]
+    async fn v9_someone_removed_learns_only_the_title_once() {
+        let w = World::new().await;
+        let ada = w.user("ada@example.com", "Ada").await;
+        let bob = w.user("bob@example.com", "Bob").await;
+        let item = w.watched_task(ada, bob).await;
+        w.items.remove_member(ada, item, bob).await.unwrap();
+        w.deliver().await;
+        w.redeliver_all().await;
+        let got = w.sharing_changes_of(bob).await;
+        assert_eq!(got.len(), 1, "once, even after a redelivery");
+        assert_eq!(
+            got[0],
+            NotificationPayload::SharingChange {
+                change: SharingChangeKind::Removed,
+                item_id: None,
+                item_title: "Doğum günü".into(),
+                from_user: ada,
+                from_name: "Ada".into(),
+            }
+        );
+        let raw = serde_json::to_string(&got[0]).unwrap();
+        assert!(!raw.contains("pasta") && !raw.contains(&item.to_string()));
+    }
+
+    #[tokio::test]
+    async fn leaving_is_quiet_and_the_channel_choice_is_followed() {
+        let w = World::new().await;
+        let ada = w.user("ada@example.com", "Ada").await;
+        let bob = w.user("bob@example.com", "Bob").await;
+        let can = w.user("can@example.com", "Can").await;
+        let left = w.watched_task(ada, bob).await;
+        w.items.remove_member(bob, left, bob).await.unwrap();
+        let removed = w.watched_task(ada, can).await;
+        w.notifications
+            .set_preference(can, NotificationKind::SharingChange, Vec::new())
+            .await
+            .unwrap();
+        w.items.remove_member(ada, removed, can).await.unwrap();
+        w.deliver().await;
+        assert!(
+            w.sharing_changes_of(bob).await.is_empty(),
+            "Bob left himself"
+        );
+        assert!(
+            w.sharing_changes_of(can).await.is_empty(),
+            "Can turned it off"
+        );
+        assert!(w.sharing_changes_of(ada).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn bl2_a_new_owner_is_told() {
+        let w = World::new().await;
+        let ada = w.user("ada@example.com", "Ada").await;
+        let bob = w.user("bob@example.com", "Bob").await;
+        let item = w.watched_task(ada, bob).await;
+        w.items.transfer_ownership(ada, item, bob).await.unwrap();
+        w.deliver().await;
+        assert_eq!(
+            w.sharing_changes_of(bob).await,
+            [NotificationPayload::SharingChange {
+                change: SharingChangeKind::BecameOwner,
+                item_id: Some(item),
+                item_title: "Doğum günü".into(),
+                from_user: ada,
+                from_name: "Ada".into(),
+            }]
+        );
+    }
+}

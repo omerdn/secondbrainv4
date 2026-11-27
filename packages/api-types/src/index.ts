@@ -146,6 +146,7 @@ export type * from "./generated/SessionSegment";
 export type * from "./generated/SessionStats";
 export type * from "./generated/SessionSummary";
 export type * from "./generated/SessionTimer";
+export type * from "./generated/SharingChangeKind";
 export type * from "./generated/StatusLine";
 export type * from "./generated/Subtask";
 export type * from "./generated/SummaryGoal";

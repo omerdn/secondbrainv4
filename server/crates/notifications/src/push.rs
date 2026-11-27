@@ -465,6 +465,22 @@ pub fn message_of(payload: &NotificationPayload) -> PushMessage {
             url: "/notifications".into(),
             tag: format!("assignment:{item_id}"),
         },
+        NotificationPayload::SharingChange {
+            change,
+            item_title,
+            from_name,
+            ..
+        } => PushMessage {
+            title: match change {
+                crate::model::SharingChangeKind::Removed => {
+                    format!("{from_name} seni bir paylaşımdan çıkardı")
+                }
+                crate::model::SharingChangeKind::BecameOwner => "Artık sahibisin".to_owned(),
+            },
+            body: item_title.clone(),
+            url: "/notifications".into(),
+            tag: format!("sharing:{item_title}"),
+        },
         NotificationPayload::WeeklySummary(summary) => PushMessage {
             title: "Haftalık özetin hazır".into(),
             body: format!(

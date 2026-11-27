@@ -46,6 +46,19 @@ pub fn heir(members: &[(RelationTuple, DateTime<Utc>)], leaving: Uuid) -> Option
         .map(|(tuple, _)| tuple.subject_id())
 }
 
+/// An item got a new owner (BL2, T4.3.8): handed over by its owner, or inherited when the
+/// owner's account was deleted (HS2). Published in the transfer's transaction.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OwnershipTransferred {
+    pub item_id: Uuid,
+    pub from_user: Uuid,
+    pub to_user: Uuid,
+}
+
+impl kernel::DomainEvent for OwnershipTransferred {
+    const EVENT_TYPE: &'static str = "item.ownership_transferred";
+}
+
 /// One shared item the caller owns, and who gets it if they delete their account.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[ts(export)]
@@ -90,6 +103,16 @@ impl ItemsService {
         (from, to): (Uuid, Uuid),
         now: DateTime<Utc>,
     ) -> sqlx::Result<()> {
+        db::outbox::publish(
+            &mut *conn,
+            &OwnershipTransferred {
+                item_id: item,
+                from_user: from,
+                to_user: to,
+            },
+        )
+        .await
+        .map_err(|err| sqlx::Error::Protocol(err.to_string()))?;
         let mut ids = vec![item];
         ids.extend(self.access.pages_of(&mut *conn, item).await?);
         for id in ids {

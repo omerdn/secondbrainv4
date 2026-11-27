@@ -479,6 +479,8 @@ export const tr = {
     routineReminder: 'Hatırlatma: "{{title}}" ({{time}})',
     assignment: '{{from}} seni "{{title}}" için atadı',
     assignmentSubtask: '{{from}} seni "{{title}}" içinde "{{subtask}}" adımına atadı',
+    sharingRemoved: '{{from}} seni "{{title}}" paylaşımından çıkardı',
+    sharingOwner: 'Artık "{{title}}" senin',
     weeklySummary: "Haftalık özetin: {{from}} – {{to}}",
     summary: {
       routines: "Rutinler",
