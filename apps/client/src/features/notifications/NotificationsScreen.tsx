@@ -4,6 +4,7 @@ import { Button, Card, EmptyState, Text } from "@secondbrain/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type Href, useRouter } from "expo-router";
 import type { TFunction } from "i18next";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, View } from "react-native";
 
@@ -146,15 +147,21 @@ function NotificationRow({
                     count: payload.count,
                     titles: payload.titles.join(", "),
                   })
-                : payload.type === "weekly_summary"
-                  ? t("notifications.weeklySummary", {
-                      from: shortDate(payload.week_start, i18n.language),
-                      to: shortDate(payload.week_end, i18n.language),
+                : payload.type === "team_invitation"
+                  ? t("notifications.teamInvitation", {
+                      from: payload.from_name,
+                      team: payload.team_name,
+                      role: t(`notifications.teamRoles.${payload.role}`),
                     })
-                  : t("notifications.routineReminder", {
-                      title: payload.title,
-                      time: payload.time,
-                    });
+                  : payload.type === "weekly_summary"
+                    ? t("notifications.weeklySummary", {
+                        from: shortDate(payload.week_start, i18n.language),
+                        to: shortDate(payload.week_end, i18n.language),
+                      })
+                    : t("notifications.routineReminder", {
+                        title: payload.title,
+                        time: payload.time,
+                      });
   const when = new Date(notification.created_at).toLocaleString(i18n.language, {
     dateStyle: "medium",
     timeStyle: "short",
@@ -194,7 +201,69 @@ function NotificationRow({
         <InvitationActions payload={payload} onRead={onRead} onChanged={onChanged} />
       ) : null}
       {payload.type === "weekly_summary" ? <WeeklySummaryLines summary={payload} /> : null}
+      {payload.type === "team_invitation" ? (
+        <TeamInvitationActions teamId={payload.team_id} onRead={onRead} onChanged={onChanged} />
+      ) : null}
     </Card>
+  );
+}
+
+/** Join or decline a team from its invitation (TK2). */
+function TeamInvitationActions({
+  teamId,
+  onRead,
+  onChanged,
+}: {
+  teamId: string;
+  onRead: () => void;
+  onChanged: () => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const api = useApi();
+  const [answered, setAnswered] = useState<"join" | "decline" | null>(null);
+  const answer = useIdempotentMutation<unknown, "join" | "decline">(
+    (choice, idempotencyKey) =>
+      choice === "join"
+        ? api.teams.join(teamId, { idempotencyKey })
+        : api.teams.decline(teamId, { idempotencyKey }),
+    {
+      onSuccess: async (_, choice) => {
+        setAnswered(choice);
+        onRead();
+        await onChanged();
+      },
+    },
+  );
+  if (answered !== null) {
+    return (
+      <Text tone="muted">
+        {answered === "join" ? t("notifications.teamJoined") : t("notifications.teamDeclined")}
+      </Text>
+    );
+  }
+  return (
+    <>
+      <View className="flex-row gap-2">
+        <Button
+          title={t("notifications.accept")}
+          size="sm"
+          disabled={answer.isPending}
+          onPress={() => {
+            answer.mutate("join");
+          }}
+        />
+        <Button
+          title={t("notifications.decline")}
+          variant="ghost"
+          size="sm"
+          disabled={answer.isPending}
+          onPress={() => {
+            answer.mutate("decline");
+          }}
+        />
+      </View>
+      {answer.isError ? <Text tone="danger">{t("notifications.answerFailed")}</Text> : null}
+    </>
   );
 }
 

@@ -162,6 +162,14 @@ pub enum NotificationPayload {
         /// The first few titles.
         titles: Vec<String>,
     },
+    /// Someone invited the user to a team (TK2, T5.1.1).
+    TeamInvitation {
+        team_id: Uuid,
+        team_name: String,
+        role: teams::TeamRole,
+        from_user: Uuid,
+        from_name: String,
+    },
     /// The weekly summary (OZ1).
     WeeklySummary(WeeklySummary),
 }
@@ -246,6 +254,7 @@ impl NotificationPayload {
             Self::Assignment { .. } => NotificationKind::Assignment,
             Self::SharingChange { .. } => NotificationKind::SharingChange,
             Self::ForgottenReminder { .. } => NotificationKind::ForgottenReminder,
+            Self::TeamInvitation { .. } => NotificationKind::Invitation,
             Self::Invitation { .. } => NotificationKind::Invitation,
             Self::RoutineReminder { .. } => NotificationKind::RoutineReminder,
             Self::Nudge { .. } => NotificationKind::Nudge,

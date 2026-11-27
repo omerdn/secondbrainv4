@@ -3,7 +3,7 @@
 use items::{CreateInvitationRequest, InvitationRole};
 use kernel::AppError;
 
-use crate::support::{World, pending};
+use crate::support::World;
 
 fn watcher(to_user: uuid::Uuid) -> CreateInvitationRequest {
     CreateInvitationRequest {
@@ -92,8 +92,47 @@ async fn ending_a_friendship_or_blocking_stops_new_shares() {
 }
 
 /// Ali and Mehmet are in the same team but not friends. Ali can share a personal task with him.
+/// An invitation to the team alone is not enough: Mehmet must have joined.
 #[tokio::test]
-#[ignore = "T5.1.1: teams and membership"]
 async fn sharing_with_a_teammate_is_allowed() {
-    pending()
+    let world = World::new().await;
+    let (ali, _) = world.person("Ali").await;
+    let (mehmet, _) = world.person("Mehmet").await;
+    let teams = world.teams();
+    let team = teams
+        .create(
+            ali,
+            teams::CreateTeamRequest {
+                name: "Ofis".into(),
+                color: "#4f46e5".into(),
+                logo_url: None,
+            },
+        )
+        .await
+        .unwrap();
+    teams
+        .invite(
+            ali,
+            team.id,
+            teams::InviteToTeamRequest {
+                user_id: mehmet,
+                role: teams::TeamRole::Member,
+            },
+        )
+        .await
+        .unwrap();
+    let items = world.sharing_items();
+    let task = world.item(ali, "task", "T").await;
+    assert!(matches!(
+        items.invite(ali, task.id, watcher(mehmet)).await,
+        Err(AppError::Forbidden | AppError::Validation(_))
+    ));
+
+    teams.accept(mehmet, team.id).await.unwrap();
+    let invitation = items.invite(ali, task.id, watcher(mehmet)).await.unwrap();
+    items
+        .accept_invitation(mehmet, invitation.id)
+        .await
+        .unwrap();
+    assert_eq!(items.get(mehmet, task.id).await.unwrap().id, task.id);
 }

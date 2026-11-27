@@ -491,6 +491,17 @@ pub fn message_of(payload: &NotificationPayload) -> PushMessage {
             url: "/".into(),
             tag: format!("forgotten:{local_date}"),
         },
+        NotificationPayload::TeamInvitation {
+            team_id,
+            team_name,
+            from_name,
+            ..
+        } => PushMessage {
+            title: format!("{from_name} seni bir takıma davet etti"),
+            body: team_name.clone(),
+            url: "/notifications".into(),
+            tag: format!("team-invitation:{team_id}"),
+        },
         NotificationPayload::WeeklySummary(summary) => PushMessage {
             title: "Haftalık özetin hazır".into(),
             body: format!(

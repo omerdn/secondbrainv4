@@ -26,7 +26,7 @@ pub use filters::{
     DateField, DateFilter, FILTER_MAX_LAST_DAYS, FILTER_MAX_PEOPLE, FILTER_MAX_VALUES, ItemFilter,
 };
 pub use invitations::{
-    CreateInvitationRequest, INVITE_LIMIT, INVITE_WINDOW, Invitation, InvitationCreated,
+    AnyOf, CreateInvitationRequest, INVITE_LIMIT, INVITE_WINDOW, Invitation, InvitationCreated,
     InvitationRole, InvitationStatus, NoSharing, SharingFuture, SharingPolicy, role_allowed,
 };
 pub use links::{ItemLink, LinkDirection, link_allowed, register_link_cleanup};

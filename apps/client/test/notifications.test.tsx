@@ -164,6 +164,34 @@ describe("notification center (BL1)", () => {
     });
   });
 
+  it("joins a team from its invitation (TK2)", async () => {
+    const invitation: Notification = {
+      id: "ti1",
+      payload: {
+        type: "team_invitation",
+        team_id: "team-1",
+        team_name: "Ofis",
+        role: "member",
+        from_user: "u2",
+        from_name: "Ada",
+      },
+      read_at: null,
+      created_at: "2026-11-28T09:00:00Z",
+    };
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /notifications": () => json(200, { notifications: [invitation], unread: 1 }),
+      "POST /notifications/ti1/read": () =>
+        json(200, { ...invitation, read_at: "2026-11-28T09:01:00Z" }),
+      "POST /teams/team-1/join": () => json(200, {}),
+    });
+    await renderApp(server.api, "/notifications", { tokenStore: memoryTokenStore("t") });
+    expect(await screen.findByText('Ada seni "Ofis" takımına üye olarak davet etti')).toBeTruthy();
+    await fireEvent.press(screen.getByRole("button", { name: "Kabul et" }));
+    expect(await screen.findByText("Takıma katıldın.")).toBeTruthy();
+    expect(server.calls.some((c) => c.path === "/teams/team-1/join")).toBe(true);
+  });
+
   it("shows the weekly summary with its parts (OZ1)", async () => {
     const summary: Notification = {
       id: "w1",

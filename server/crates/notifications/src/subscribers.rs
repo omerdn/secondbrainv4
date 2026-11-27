@@ -295,3 +295,47 @@ pub fn register(
         }
     });
 }
+
+/// TK2 (T5.1.1): a team invitation becomes the invited person's notification, while it is
+/// still waiting (call from `app::run`).
+pub fn register_teams(
+    dispatcher: &mut Dispatcher,
+    notifications: Notifications,
+    teams: teams::TeamsService,
+    identity: IdentityService,
+) {
+    dispatcher.subscribe(
+        "notifications.team-invitation",
+        move |event: teams::TeamInvitationCreated, stored| {
+            let (notifications, teams, identity) =
+                (notifications.clone(), teams.clone(), identity.clone());
+            async move {
+                let boxed = |err: kernel::AppError| Box::new(err) as HandlerError;
+                // Answered (declined) before delivery: nothing to tell.
+                let pending = teams.invitations(event.to_user).await.map_err(boxed)?;
+                let Some(invitation) = pending.into_iter().find(|i| i.team_id == event.team_id)
+                else {
+                    return Ok(());
+                };
+                let from_name = identity
+                    .display_names(&[event.from_user])
+                    .await
+                    .map_err(boxed)?
+                    .remove(&event.from_user)
+                    .unwrap_or_default();
+                let payload = NotificationPayload::TeamInvitation {
+                    team_id: invitation.team_id,
+                    team_name: invitation.team_name,
+                    role: invitation.role,
+                    from_user: event.from_user,
+                    from_name,
+                };
+                notifications
+                    .deliver(event.to_user, &payload, stored.id)
+                    .await
+                    .map_err(boxed)?;
+                Ok(())
+            }
+        },
+    );
+}
