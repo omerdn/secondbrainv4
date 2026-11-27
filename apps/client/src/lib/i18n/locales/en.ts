@@ -478,6 +478,15 @@ export const en: Catalog = {
     preferencesHint:
       "Choose where each kind of notification goes. Choosing none turns that kind off.",
     saveFailed: "Could not save. Try again.",
+    webPush: {
+      title: "Push notifications in this browser",
+      on: "On. The types you chose also arrive here as push notifications.",
+      off: "Off. Turning it on asks the browser for permission.",
+      denied: "The browser blocked notifications. Allow them in the site settings to turn them on.",
+      enable: "Turn on",
+      disable: "Turn off",
+      failed: "Could not change it. Try again.",
+    },
     channelOf: "{{kind}}: {{channel}}",
     channels: { in_app: "In the app", push: "Push", email: "E-mail" },
     kinds: {

@@ -10,6 +10,7 @@ use crate::model::{
     Channel, NOTIFICATION_PAGE, Notification, NotificationKind, NotificationList,
     NotificationPayload, NotificationPreference,
 };
+use crate::push::{PushPublicKey, PushSubscriptionRequest, PushTarget, SendPush};
 use crate::repo::{self, NotificationRow};
 
 /// The realtime event that announces a new notification; it carries only its id.
@@ -48,6 +49,8 @@ pub struct Notifications {
     pool: PgPool,
     clock: SharedClock,
     notifier: Notifier,
+    /// The VAPID public key when Web Push is configured (T4.2.4); push is queued only then.
+    push_key: Option<String>,
 }
 
 impl Notifications {
@@ -57,7 +60,86 @@ impl Notifications {
             pool,
             clock,
             notifier,
+            push_key: None,
         }
+    }
+
+    /// Turns Web Push on with the server's VAPID public key (T4.2.4).
+    #[must_use]
+    pub fn with_push_key(mut self, public_key: impl Into<String>) -> Self {
+        self.push_key = Some(public_key.into());
+        self
+    }
+
+    /// The VAPID public key browsers subscribe with; `None` when Web Push is off.
+    #[must_use]
+    pub fn push_public_key(&self) -> PushPublicKey {
+        PushPublicKey {
+            public_key: self.push_key.clone(),
+        }
+    }
+
+    /// Stores the caller's browser subscription (T4.2.4). The same browser signed in as
+    /// someone else before now notifies the caller only.
+    ///
+    /// # Errors
+    /// [`AppError::Validation`] for an endpoint that is not a browser push service or bad keys;
+    /// [`AppError::Internal`] on database errors.
+    pub async fn subscribe_push(
+        &self,
+        actor: Uuid,
+        request: &PushSubscriptionRequest,
+    ) -> Result<(), AppError> {
+        request.validate()?;
+        repo::upsert_push(
+            &self.pool,
+            (Uuid::now_v7(), actor),
+            (
+                &request.endpoint,
+                request.keys.p256dh.trim_end_matches('='),
+                request.keys.auth.trim_end_matches('='),
+            ),
+            self.clock.now(),
+        )
+        .await
+        .map_err(internal)
+    }
+
+    /// Removes the caller's subscription with this endpoint; another user's is untouched and
+    /// reported the same way (no leak of whose browser it is).
+    ///
+    /// # Errors
+    /// [`AppError::Internal`] on database errors.
+    pub async fn unsubscribe_push(&self, actor: Uuid, endpoint: &str) -> Result<(), AppError> {
+        repo::delete_push(&self.pool, actor, endpoint)
+            .await
+            .map_err(internal)?;
+        Ok(())
+    }
+
+    /// A stored subscription, for the push job.
+    ///
+    /// # Errors
+    /// [`AppError::Internal`] on database errors.
+    pub async fn push_target(&self, id: Uuid) -> Result<Option<PushTarget>, AppError> {
+        Ok(repo::push_by_id(&self.pool, id)
+            .await
+            .map_err(internal)?
+            .map(|row| PushTarget {
+                endpoint: row.endpoint,
+                p256dh: row.p256dh,
+                auth: row.auth,
+            }))
+    }
+
+    /// Deletes a subscription the push service reported gone.
+    ///
+    /// # Errors
+    /// [`AppError::Internal`] on database errors.
+    pub async fn forget_push_subscription(&self, id: Uuid) -> Result<(), AppError> {
+        repo::delete_push_by_id(&self.pool, id)
+            .await
+            .map_err(internal)
     }
 
     /// Queues an e-mail to `user` when their channels for `kind` include e-mail (BL3); once per
@@ -97,7 +179,9 @@ impl Notifications {
 
     /// Makes `user`'s notification from the outbox event `source_event`, unless the user turned
     /// the in-app channel off for its type or the event already made one (a redelivery). The
-    /// new notification is announced on the user's channel when the transaction commits.
+    /// new notification is announced on the user's channel when the transaction commits. When
+    /// the type's channels include push, one push job per browser subscription is queued in the
+    /// same transaction, once per event (T4.2.4).
     ///
     /// # Errors
     /// [`AppError::Internal`] on database errors.
@@ -112,7 +196,26 @@ impl Notifications {
         let stored = repo::preference(&mut *tx, user, kind.as_str())
             .await
             .map_err(internal)?;
-        if !channels_of(kind, stored).0.contains(&Channel::InApp) {
+        let channels = channels_of(kind, stored).0;
+        if self.push_key.is_some() && channels.contains(&Channel::Push) {
+            for subscription_id in repo::push_ids(&mut *tx, user).await.map_err(internal)? {
+                jobs::enqueue(
+                    &mut tx,
+                    &SendPush {
+                        subscription_id,
+                        payload: payload.clone(),
+                    },
+                    jobs::EnqueueOptions {
+                        run_at: None,
+                        dedupe_key: Some(format!("push:{source_event}:{subscription_id}")),
+                    },
+                )
+                .await
+                .map_err(internal)?;
+            }
+        }
+        if !channels.contains(&Channel::InApp) {
+            tx.commit().await.map_err(internal)?;
             return Ok(None);
         }
         let json = serde_json::to_value(payload).map_err(internal)?;
@@ -126,6 +229,7 @@ impl Notifications {
         .await
         .map_err(internal)?
         else {
+            tx.commit().await.map_err(internal)?;
             return Ok(None);
         };
         self.notifier

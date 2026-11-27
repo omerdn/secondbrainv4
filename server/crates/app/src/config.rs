@@ -32,6 +32,8 @@ pub struct Config {
     pub email_driver: EmailDriver,
     /// Resend settings (`RESEND_API_KEY`, `EMAIL_FROM`); set exactly when the driver is `resend`.
     pub resend: Option<ResendSettings>,
+    /// Web Push (`VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, T4.2.4); `None` = push is off.
+    pub web_push: Option<WebPushSettings>,
     /// Directory of the mobile OTA updates (`UPDATES_DIR`, T4.2.6); `None` = `/updates` is off.
     pub updates_dir: Option<std::path::PathBuf>,
     /// Minimum supported client versions (`MIN_VERSION_*`, `DOWNLOAD_URL_*`, T4.2.7).
@@ -103,6 +105,34 @@ fn comma_list(value: Option<String>) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Web Push VAPID settings, checked at start-up (T4.2.4).
+#[derive(Clone, PartialEq, Eq)]
+pub struct WebPushSettings {
+    /// base64url raw P-256 private key (secret).
+    pub private_key: String,
+    /// Contact for push services: `VAPID_SUBJECT`, else `PUBLIC_WEB_URL`.
+    pub subject: String,
+}
+
+/// The private key is never printed.
+impl fmt::Debug for WebPushSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WebPushSettings")
+            .field("subject", &self.subject)
+            .finish_non_exhaustive()
+    }
+}
+
+impl WebPushSettings {
+    /// The parsed key pair; never fails for settings that came from [`Config::from_lookup`].
+    ///
+    /// # Errors
+    /// [`notifications::push::VapidKeyError`] for settings built by hand.
+    pub fn key(&self) -> Result<notifications::push::VapidKey, notifications::push::VapidKeyError> {
+        notifications::push::VapidKey::parse(&self.private_key, &self.subject)
+    }
 }
 
 /// Google OAuth clients (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_NATIVE_CLIENT_IDS`).
@@ -284,6 +314,24 @@ impl Config {
             }
         };
 
+        let web_push = match non_empty("VAPID_PRIVATE_KEY") {
+            None => None,
+            Some(private_key) => {
+                let settings = WebPushSettings {
+                    private_key,
+                    subject: non_empty("VAPID_SUBJECT").unwrap_or_else(|| public_web_url.clone()),
+                };
+                settings.key().map_err(|err| ConfigError::Invalid {
+                    key: match err {
+                        notifications::push::VapidKeyError::PrivateKey => "VAPID_PRIVATE_KEY",
+                        notifications::push::VapidKeyError::Subject => "VAPID_SUBJECT",
+                    },
+                    reason: err.to_string(),
+                })?;
+                Some(settings)
+            }
+        };
+
         let google = match (
             non_empty("GOOGLE_CLIENT_ID"),
             non_empty("GOOGLE_CLIENT_SECRET"),
@@ -381,6 +429,7 @@ impl Config {
             google,
             email_driver,
             resend,
+            web_push,
             updates_dir,
             client_policy,
             public_web_url,
@@ -733,6 +782,43 @@ mod tests {
         let resend = config.resend.clone().unwrap();
         assert_eq!(resend.from, "Routune <noreply@routune.dev>");
         assert!(!format!("{config:?}").contains("re_s3cret"));
+    }
+
+    #[test]
+    fn web_push_is_off_without_a_key_and_checked_with_one() {
+        assert!(config(&[]).unwrap().web_push.is_none());
+        let private = notifications::push::VapidKey::generate_private_key();
+        let config_with = config(&[("VAPID_PRIVATE_KEY", &private)]).unwrap();
+        let web_push = config_with.web_push.clone().unwrap();
+        assert_eq!(web_push.subject, "http://localhost:8081");
+        assert!(web_push.key().is_ok());
+        assert!(!format!("{config_with:?}").contains(&private));
+        let subject = config(&[
+            ("VAPID_PRIVATE_KEY", &private),
+            ("VAPID_SUBJECT", "mailto:noreply@routune.dev"),
+        ])
+        .unwrap();
+        assert_eq!(
+            subject.web_push.unwrap().subject,
+            "mailto:noreply@routune.dev"
+        );
+        assert!(matches!(
+            config(&[("VAPID_PRIVATE_KEY", "not-a-key")]),
+            Err(ConfigError::Invalid {
+                key: "VAPID_PRIVATE_KEY",
+                ..
+            })
+        ));
+        assert!(matches!(
+            config(&[
+                ("VAPID_PRIVATE_KEY", &private),
+                ("VAPID_SUBJECT", "ftp://x")
+            ]),
+            Err(ConfigError::Invalid {
+                key: "VAPID_SUBJECT",
+                ..
+            })
+        ));
     }
 
     #[test]

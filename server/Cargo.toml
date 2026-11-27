@@ -39,6 +39,7 @@ futures-util = { version = "0.3.34", default-features = false, features = ["sink
 getrandom = "0.4.3"
 oauth2 = "5.0.0"
 p256 = "0.14.0"
+http = "1.5.0"
 http-body-util = "0.1.5"
 proptest = "1.12.0"
 # Exact decimals for `numeric` columns (money, calories); floats would drift.
@@ -62,3 +63,5 @@ tracing = "0.1.44"
 ts-rs = { version = "12.0.1", features = ["uuid-impl", "chrono-impl", "serde-json-impl", "no-serde-warnings"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 uuid = { version = "1.29.3", features = ["v7", "serde"] }
+# Web Push (RFC 8030/8291/8292) message encryption and VAPID signatures, pure Rust (T4.2.4).
+web-push-native = "0.5.0"

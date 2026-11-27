@@ -65,7 +65,9 @@ impl World {
             access.permissions(),
             items.clone(),
         );
-        let notifications = Notifications::new(pool, clock.clone(), realtime::Notifier::default());
+        // Web Push on (T4.2.4); nothing is pushed until someone subscribes a browser.
+        let notifications = Notifications::new(pool, clock.clone(), realtime::Notifier::default())
+            .with_push_key("test-public-key");
         let mut dispatcher = Dispatcher::new(DispatchConfig::default());
         notifications::register(
             &mut dispatcher,
@@ -963,4 +965,246 @@ async fn bl1_a_friend_request_to_an_account_is_mailed_and_a_silenced_one_is_not(
     assert_eq!(sent[0].kind, kernel::email::EmailKind::FriendRequest);
     assert_eq!(sent[0].subject, "Ada seninle arkadaş olmak istiyor");
     assert!(sent[0].text.contains("http://localhost:8081/friends"));
+}
+
+// --- T4.2.4: Web Push ------------------------------------------------------------------------
+
+mod web_push {
+    use super::*;
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use notifications::push::{
+        PushSubscriptionKeys, PushSubscriptionRequest, RecordingPushSender, VapidKey,
+    };
+    use web_push_native::jwt_simple::algorithms::{ECDSAP256PublicKeyLike, ES256KeyPair};
+
+    const CHROME: &str = "https://fcm.googleapis.com/fcm/send/chrome-1";
+    const FIREFOX: &str = "https://updates.push.services.mozilla.com/wpush/v2/firefox-1";
+
+    /// A browser's subscription with real keys.
+    fn subscription(endpoint: &str) -> PushSubscriptionRequest {
+        let browser = ES256KeyPair::generate();
+        PushSubscriptionRequest {
+            endpoint: endpoint.into(),
+            keys: PushSubscriptionKeys {
+                p256dh: URL_SAFE_NO_PAD
+                    .encode(browser.public_key().public_key().to_bytes_uncompressed()),
+                auth: URL_SAFE_NO_PAD.encode([9u8; 16]),
+            },
+        }
+    }
+
+    impl World {
+        /// Runs the queued push jobs with `sender`.
+        async fn send_pushes(&self, sender: &RecordingPushSender) {
+            let mut worker = jobs::Worker::new(jobs::WorkerConfig::default());
+            notifications::push::register_push(
+                &mut worker,
+                self.notifications.clone(),
+                Arc::new(sender.clone()),
+            );
+            worker.run_batch(self.db.pool()).await.unwrap();
+        }
+
+        async fn subscriptions(&self, user: Uuid) -> i64 {
+            sqlx::query_scalar("SELECT count(*) FROM push_subscriptions WHERE user_id = $1")
+                .bind(user)
+                .fetch_one(self.db.pool())
+                .await
+                .unwrap()
+        }
+    }
+
+    #[tokio::test]
+    async fn bl1_an_invitation_is_pushed_once_to_each_of_the_users_browsers() {
+        let w = World::new().await;
+        let ada = w.user("ada@example.com", "Ada").await;
+        let bob = w.user("bob@example.com", "Bob").await;
+        w.notifications
+            .subscribe_push(bob, &subscription(CHROME))
+            .await
+            .unwrap();
+        w.notifications
+            .subscribe_push(bob, &subscription(FIREFOX))
+            .await
+            .unwrap();
+        // Subscribing again (a page reload) keeps one row per browser.
+        w.notifications
+            .subscribe_push(bob, &subscription(CHROME))
+            .await
+            .unwrap();
+        assert_eq!(w.subscriptions(bob).await, 2);
+        w.invite(ada, bob, "Rapor").await;
+        w.deliver().await;
+        w.redeliver_all().await;
+        let sender = RecordingPushSender::default();
+        w.send_pushes(&sender).await;
+        let mut sent = sender.sent();
+        sent.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(sent.len(), 2, "once per browser, even after a redelivery");
+        assert_eq!(sent[0].0, CHROME);
+        assert_eq!(sent[1].0, FIREFOX);
+        assert_eq!(sent[0].1.title, "Ada seni bir göreve davet etti");
+        assert_eq!(sent[0].1.body, "Rapor");
+        assert_eq!(sent[0].1.url, "/notifications");
+        // Ada subscribed nothing and gets nothing.
+        w.send_pushes(&sender).await;
+        assert_eq!(sender.sent().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn bl3_push_follows_the_channel_preference() {
+        let w = World::new().await;
+        let ada = w.user("ada@example.com", "Ada").await;
+        let bob = w.user("bob@example.com", "Bob").await;
+        let can = w.user("can@example.com", "Can").await;
+        w.notifications
+            .subscribe_push(bob, &subscription(CHROME))
+            .await
+            .unwrap();
+        w.notifications
+            .subscribe_push(can, &subscription(FIREFOX))
+            .await
+            .unwrap();
+        // Bob: in the app only. Can: push only.
+        w.notifications
+            .set_preference(bob, NotificationKind::Invitation, vec![Channel::InApp])
+            .await
+            .unwrap();
+        w.notifications
+            .set_preference(can, NotificationKind::Invitation, vec![Channel::Push])
+            .await
+            .unwrap();
+        w.invite(ada, bob, "Rapor").await;
+        w.invite(ada, can, "Plan").await;
+        w.deliver().await;
+        let sender = RecordingPushSender::default();
+        w.send_pushes(&sender).await;
+        let sent = sender.sent();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].0, FIREFOX);
+        assert_eq!(sent[0].1.body, "Plan");
+        assert_eq!(
+            w.notifications
+                .list(bob, None)
+                .await
+                .unwrap()
+                .notifications
+                .len(),
+            1
+        );
+        assert!(
+            w.notifications
+                .list(can, None)
+                .await
+                .unwrap()
+                .notifications
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_gone_subscription_is_forgotten() {
+        let w = World::new().await;
+        let ada = w.user("ada@example.com", "Ada").await;
+        let bob = w.user("bob@example.com", "Bob").await;
+        w.notifications
+            .subscribe_push(bob, &subscription(CHROME))
+            .await
+            .unwrap();
+        w.invite(ada, bob, "Rapor").await;
+        w.deliver().await;
+        let sender = RecordingPushSender::default();
+        sender.mark_gone(CHROME);
+        w.send_pushes(&sender).await;
+        assert!(sender.sent().is_empty());
+        assert_eq!(w.subscriptions(bob).await, 0);
+        // The next notification queues nothing.
+        w.invite(ada, bob, "Plan").await;
+        w.deliver().await;
+        let jobs: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM jobs WHERE kind = 'notifications.send_push' AND completed_at IS NULL",
+        )
+        .fetch_one(w.db.pool())
+        .await
+        .unwrap();
+        assert_eq!(jobs, 0);
+    }
+
+    #[tokio::test]
+    async fn a_browser_notifies_only_whoever_subscribed_it_last() {
+        let w = World::new().await;
+        let ada = w.user("ada@example.com", "Ada").await;
+        let bob = w.user("bob@example.com", "Bob").await;
+        w.notifications
+            .subscribe_push(ada, &subscription(CHROME))
+            .await
+            .unwrap();
+        // Bob signs in on the same browser.
+        w.notifications
+            .subscribe_push(bob, &subscription(CHROME))
+            .await
+            .unwrap();
+        assert_eq!(w.subscriptions(ada).await, 0);
+        assert_eq!(w.subscriptions(bob).await, 1);
+        // Ada cannot remove Bob's subscription, and learns nothing either way.
+        w.notifications.unsubscribe_push(ada, CHROME).await.unwrap();
+        assert_eq!(w.subscriptions(bob).await, 1);
+        w.notifications.unsubscribe_push(bob, CHROME).await.unwrap();
+        assert_eq!(w.subscriptions(bob).await, 0);
+    }
+
+    #[tokio::test]
+    async fn only_browser_push_services_and_real_keys_are_stored() {
+        let w = World::new().await;
+        let bob = w.user("bob@example.com", "Bob").await;
+        let mut internal = subscription("https://127.0.0.1/steal");
+        assert!(matches!(
+            w.notifications.subscribe_push(bob, &internal).await,
+            Err(AppError::Validation(_))
+        ));
+        internal.endpoint = CHROME.into();
+        internal.keys.auth = "x".into();
+        assert!(matches!(
+            w.notifications.subscribe_push(bob, &internal).await,
+            Err(AppError::Validation(_))
+        ));
+        assert_eq!(w.subscriptions(bob).await, 0);
+    }
+
+    #[tokio::test]
+    async fn without_vapid_no_key_is_offered_and_nothing_is_queued() {
+        let w = World::new().await;
+        assert_eq!(
+            w.notifications.push_public_key().public_key.as_deref(),
+            Some("test-public-key")
+        );
+        let off = Notifications::new(
+            w.db.pool().clone(),
+            w.clock.clone(),
+            realtime::Notifier::default(),
+        );
+        assert_eq!(off.push_public_key().public_key, None);
+        let ada = w.user("ada@example.com", "Ada").await;
+        let bob = w.user("bob@example.com", "Bob").await;
+        off.subscribe_push(bob, &subscription(CHROME))
+            .await
+            .unwrap();
+        off.deliver(
+            bob,
+            &NotificationPayload::Nudge {
+                from_user: ada,
+                from_name: "Ada".into(),
+            },
+            Uuid::now_v7(),
+        )
+        .await
+        .unwrap();
+        let sender = RecordingPushSender::default();
+        w.send_pushes(&sender).await;
+        assert!(sender.sent().is_empty());
+        // A real key yields a 65-byte public key for `applicationServerKey`.
+        let key = VapidKey::parse(&VapidKey::generate_private_key(), "mailto:a@b.c").unwrap();
+        assert_eq!(URL_SAFE_NO_PAD.decode(key.public_key()).unwrap().len(), 65);
+    }
 }

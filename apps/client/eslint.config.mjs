@@ -6,7 +6,11 @@ import globals from "globals";
 
 export default defineConfig(
   // Generated 10tap editor bundle (`pnpm editor:build`).
-  { ignores: ["src/lib/editor/native/editorHtml.js", "editor-web/dist/**"] },
+  // The Web Push service worker (T4.2.4) is a plain script served as-is from the web root,
+  // outside the TypeScript project.
+  {
+    ignores: ["src/lib/editor/native/editorHtml.js", "editor-web/dist/**", "public/sw.js"],
+  },
   baseConfig({ tsconfigRootDir: import.meta.dirname }),
   // features/x may only use features/y's public index; src/lib imports no feature
   // (ARCHITECTURE §4.6). Tests are exempt: they exercise internals on purpose.
