@@ -2,8 +2,9 @@
 //! already access. Values within one dimension are alternatives (OR); dimensions combine (AND).
 //!
 //! Tags match the caller's own tags only (E2). People match only those the caller may share with
-//! (F3): anyone else is ignored, so a filter cannot be used to probe who sees what, and a saved
-//! view keeps working after an unfriending.
+//! (F3): asking for anyone else is refused ([`ItemsService::check_people`], T3.2.4), and when a
+//! saved view runs, a person who is no longer a friend is ignored, so the view keeps working
+//! after an unfriending and still cannot be used to probe who sees what.
 
 use std::collections::HashSet;
 
@@ -251,6 +252,41 @@ impl ItemsService {
         Ok(Page::from_overfetch(items, page.limit, |item: &Item| {
             (item.created_at, item.id)
         }))
+    }
+
+    /// Refuses a filter that names someone `actor` may not share with: only friends (and, with
+    /// F5, teammates) can be chosen, never oneself (F3, T3.2.4).
+    ///
+    /// # Errors
+    /// [`AppError::Validation`] for such a person, or [`AppError::Internal`].
+    pub async fn check_people(&self, actor: Uuid, filter: &ItemFilter) -> Result<(), AppError> {
+        for &person in filter.people.as_deref().unwrap_or_default() {
+            if person == actor || !self.sharing.can_share(actor, person).await? {
+                return Err(ValidationErrors::from(FieldError::new(
+                    "people",
+                    FieldErrorCode::Invalid,
+                    "only friends can be chosen",
+                ))
+                .into());
+            }
+        }
+        Ok(())
+    }
+
+    /// [`Self::filter_items`] for a filter the caller just asked for: people are checked first
+    /// ([`Self::check_people`]).
+    ///
+    /// # Errors
+    /// As [`Self::check_people`] and [`Self::filter_items`].
+    pub async fn filter_checked(
+        &self,
+        actor: Uuid,
+        filter: &ItemFilter,
+        page: &PageRequest,
+    ) -> Result<Page<Item>, AppError> {
+        filter.validate()?;
+        self.check_people(actor, filter).await?;
+        self.filter_items(actor, filter, page).await
     }
 
     /// Items any of `people` can view, counting only those `actor` may share with (F3).

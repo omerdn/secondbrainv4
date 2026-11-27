@@ -177,6 +177,8 @@ impl ItemsService {
         actor: Uuid,
         new: CreateSavedViewRequest,
     ) -> Result<SavedView, AppError> {
+        new.filter.validate()?;
+        self.check_people(actor, &new.filter).await?;
         let count: i64 = sqlx::query_scalar("SELECT count(*) FROM saved_views WHERE user_id = $1")
             .bind(actor)
             .fetch_one(&self.pool)
@@ -232,6 +234,10 @@ impl ItemsService {
         id: Uuid,
         changes: UpdateSavedViewRequest,
     ) -> Result<SavedView, AppError> {
+        if let Some(filter) = &changes.filter {
+            filter.validate()?;
+            self.check_people(actor, filter).await?;
+        }
         let row = sqlx::query_as::<_, ViewRow>(sqlx::AssertSqlSafe(format!(
             "UPDATE saved_views SET name = COALESCE($3, name),
                                     filter = COALESCE($4, filter),

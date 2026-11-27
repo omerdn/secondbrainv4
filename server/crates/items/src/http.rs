@@ -137,7 +137,7 @@ async fn filter_items(
     })?;
     state
         .items
-        .filter_items(auth.user_id.as_uuid(), &filter, &page)
+        .filter_checked(auth.user_id.as_uuid(), &filter, &page)
         .await
         .map(Json)
 }
