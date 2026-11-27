@@ -77,7 +77,9 @@ pub enum InvitationRole {
 }
 
 impl InvitationRole {
-    const fn as_str(self) -> &'static str {
+    /// The role's stable name, as the API writes it.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Assignee => "assignee",
             Self::Watcher => "watcher",

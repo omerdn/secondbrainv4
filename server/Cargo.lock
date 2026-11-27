@@ -2218,6 +2218,7 @@ dependencies = [
  "db",
  "identity",
  "items",
+ "jobs",
  "kernel",
  "realtime",
  "routines",

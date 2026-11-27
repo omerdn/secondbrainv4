@@ -264,7 +264,11 @@ async fn bl3_channels_are_chosen_per_type() {
         .find(|p| p.kind == NotificationKind::Invitation)
         .unwrap();
     assert!(invitation.default);
-    assert_eq!(invitation.channels, [Channel::InApp, Channel::Push]);
+    // T3.7.1: an invitation waits for an answer, so it also goes by e-mail by default (BL1).
+    assert_eq!(
+        invitation.channels,
+        [Channel::InApp, Channel::Push, Channel::Email]
+    );
     let summary = prefs
         .iter()
         .find(|p| p.kind == NotificationKind::WeeklySummary)
@@ -877,4 +881,86 @@ async fn ak4_v9_no_reaction_notification_about_an_item_one_no_longer_sees() {
     w.items.remove_member(ada, task, bob).await.unwrap();
     w.deliver().await;
     assert!(w.reactions_of(bob).await.is_empty());
+}
+
+// --- T3.7.1: invitation e-mails --------------------------------------------------------------
+
+impl World {
+    /// Runs the queued e-mail jobs with a recording sender; what was sent.
+    async fn send_emails(&self) -> Vec<kernel::email::EmailMessage> {
+        let sender = Arc::new(RecordingEmailSender::default());
+        let mut worker = jobs::Worker::new(jobs::WorkerConfig::default());
+        notifications::email::register_email(
+            &mut worker,
+            self.identity.clone(),
+            sender.clone(),
+            "http://localhost:8081".into(),
+        );
+        worker.run_batch(self.db.pool()).await.unwrap();
+        sender.sent()
+    }
+}
+
+#[tokio::test]
+async fn bl1_an_invitation_is_mailed_once_in_turkish() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    let bob = w.user("bob@example.com", "Bob").await;
+    w.invite(ada, bob, "Rapor").await;
+    w.deliver().await;
+    w.redeliver_all().await;
+    let sent = w.send_emails().await;
+    assert_eq!(sent.len(), 1, "once, even after a redelivery");
+    assert_eq!(sent[0].to, "bob@example.com");
+    assert_eq!(sent[0].kind, kernel::email::EmailKind::Invitation);
+    assert_eq!(sent[0].subject, "Ada seni bir göreve davet etti");
+    assert!(sent[0].text.contains("\"Rapor\""));
+    assert!(sent[0].text.contains("http://localhost:8081/notifications"));
+    // Nothing is left to send.
+    assert!(w.send_emails().await.is_empty());
+}
+
+#[tokio::test]
+async fn bl3_no_invitation_mail_without_the_email_channel() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    let bob = w.user("bob@example.com", "Bob").await;
+    w.notifications
+        .set_preference(bob, NotificationKind::Invitation, vec![Channel::InApp])
+        .await
+        .unwrap();
+    w.invite(ada, bob, "Rapor").await;
+    w.deliver().await;
+    assert!(w.send_emails().await.is_empty());
+    // The in-app notification still arrives.
+    assert_eq!(
+        w.notifications
+            .list(bob, None)
+            .await
+            .unwrap()
+            .notifications
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn bl1_a_friend_request_to_an_account_is_mailed_and_a_silenced_one_is_not() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    w.user("bob@example.com", "Bob").await;
+    let can = w.user("can@example.com", "Can").await;
+    let social = social::Friendships::new(w.db.pool().clone(), w.clock.clone(), w.identity.clone());
+    social.send(ada, "bob@example.com").await.unwrap();
+    // An unknown address and a request Can's block silences send nothing (AK2).
+    social.send(ada, "nobody@example.com").await.unwrap();
+    social.block(can, ada).await.unwrap();
+    social.send(ada, "can@example.com").await.unwrap();
+    w.deliver().await;
+    let sent = w.send_emails().await;
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].to, "bob@example.com");
+    assert_eq!(sent[0].kind, kernel::email::EmailKind::FriendRequest);
+    assert_eq!(sent[0].subject, "Ada seninle arkadaş olmak istiyor");
+    assert!(sent[0].text.contains("http://localhost:8081/friends"));
 }

@@ -60,6 +60,41 @@ impl Notifications {
         }
     }
 
+    /// Queues an e-mail to `user` when their channels for `kind` include e-mail (BL3); once per
+    /// source event, so a redelivered event sends nothing more. Whether one was queued.
+    ///
+    /// # Errors
+    /// [`AppError::Internal`] on database errors.
+    pub async fn queue_email(
+        &self,
+        user: Uuid,
+        kind: NotificationKind,
+        template: crate::email::Template,
+        source_event: Uuid,
+    ) -> Result<bool, AppError> {
+        let stored = repo::preference(&self.pool, user, kind.as_str())
+            .await
+            .map_err(internal)?;
+        if !channels_of(kind, stored).0.contains(&Channel::Email) {
+            return Ok(false);
+        }
+        let mut conn = self.pool.acquire().await.map_err(internal)?;
+        let queued = jobs::enqueue(
+            &mut conn,
+            &crate::email::SendEmail {
+                user_id: user,
+                template,
+            },
+            jobs::EnqueueOptions {
+                run_at: None,
+                dedupe_key: Some(format!("email:{source_event}:{user}")),
+            },
+        )
+        .await
+        .map_err(internal)?;
+        Ok(queued.is_some())
+    }
+
     /// Makes `user`'s notification from the outbox event `source_event`, unless the user turned
     /// the in-app channel off for its type or the event already made one (a redelivery). The
     /// new notification is announced on the user's channel when the transaction commits.

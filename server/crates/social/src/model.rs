@@ -19,6 +19,19 @@ pub fn nudge_day(now: DateTime<Utc>, timezone: chrono_tz::Tz) -> chrono::NaiveDa
     now.with_timezone(&timezone).date_naive()
 }
 
+/// A friend request reached someone with an account (AK1): never one to an unknown address
+/// or one the recipient's block silenced (AK2). Published in the request's transaction.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FriendRequestSent {
+    pub request_id: Uuid,
+    pub from_user: Uuid,
+    pub to_user: Uuid,
+}
+
+impl kernel::DomainEvent for FriendRequestSent {
+    const EVENT_TYPE: &'static str = "social.friend_request_sent";
+}
+
 /// Someone nudged a friend (AK3); published in the nudge's transaction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Nudged {
