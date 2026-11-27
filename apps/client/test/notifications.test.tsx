@@ -206,3 +206,26 @@ describe("routine reminders (R13)", () => {
     expect(screen.queryByRole("button", { name: "Kabul et" })).toBeNull();
   });
 });
+
+describe("nudges (AK3)", () => {
+  it("says who nudged and marks it read on press", async () => {
+    const nudge: Notification = {
+      id: "n1",
+      payload: { type: "nudge", from_user: "u2", from_name: "Ayşe" },
+      read_at: null,
+      created_at: "2026-11-27T09:00:00Z",
+    };
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /notifications": () => json(200, { notifications: [nudge], unread: 1 }),
+      "POST /notifications/n1/read": () => json(200, { ...nudge, read_at: "2026-11-27T09:01:00Z" }),
+    });
+    await renderApp(server.api, "/notifications", { tokenStore: memoryTokenStore("t") });
+    await fireEvent.press(
+      await screen.findByRole("button", { name: "Okunmadı: Ayşe seni dürttü 👋" }),
+    );
+    await waitFor(() => {
+      expect(server.calls.some((c) => c.path === "/notifications/n1/read")).toBe(true);
+    });
+  });
+});

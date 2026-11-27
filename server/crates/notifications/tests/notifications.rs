@@ -730,3 +730,35 @@ async fn t3_3_4_reminders_already_sent_before_the_change_are_not_repeated() {
     w.at(5, 1);
     assert_eq!(w.routines.send_due_reminders().await.unwrap(), 0);
 }
+
+#[tokio::test]
+async fn ak3_a_nudge_becomes_the_friends_notification() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    let bob = w.user("bob@example.com", "Bob").await;
+    let social = social::Friendships::new(w.db.pool().clone(), w.clock.clone(), w.identity.clone());
+    social.send(ada, "bob@example.com").await.unwrap();
+    let request = social.incoming(bob).await.unwrap()[0].id;
+    social.accept(bob, request).await.unwrap();
+
+    social.nudge(ada, bob).await.unwrap();
+    w.deliver().await;
+    w.redeliver_all().await;
+    let list = w.notifications.list(bob, None).await.unwrap();
+    assert_eq!(list.notifications.len(), 1, "once, even after a redelivery");
+    assert_eq!(
+        list.notifications[0].payload,
+        NotificationPayload::Nudge {
+            from_user: ada,
+            from_name: "Ada".into(),
+        }
+    );
+    assert!(
+        w.notifications
+            .list(ada, None)
+            .await
+            .unwrap()
+            .notifications
+            .is_empty()
+    );
+}

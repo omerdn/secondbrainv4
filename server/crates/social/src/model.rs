@@ -12,6 +12,24 @@ pub const REQUESTS_PER_DAY: i64 = 20;
 pub const DECLINE_COOLDOWN: Duration = Duration::days(30);
 const EMAIL_MAX_CHARS: usize = 254;
 
+/// The day a nudge counts for (AK3): the sender's own calendar day, so "once a day" follows the
+/// sender's midnight wherever the recipient lives.
+#[must_use]
+pub fn nudge_day(now: DateTime<Utc>, timezone: chrono_tz::Tz) -> chrono::NaiveDate {
+    now.with_timezone(&timezone).date_naive()
+}
+
+/// Someone nudged a friend (AK3); published in the nudge's transaction.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Nudged {
+    pub from_user: Uuid,
+    pub to_user: Uuid,
+}
+
+impl kernel::DomainEvent for Nudged {
+    const EVENT_TYPE: &'static str = "social.nudged";
+}
+
 /// The address as stored and compared: trimmed and lower-cased.
 ///
 /// # Errors
@@ -121,5 +139,27 @@ mod tests {
             prop_assert!(x <= y);
             prop_assert_eq!(pair(b, a), (x, y));
         }
+    }
+}
+
+#[cfg(test)]
+mod nudge_tests {
+    use chrono::TimeZone;
+
+    use super::*;
+
+    #[test]
+    fn ak3_a_nudge_day_is_the_senders_own_day() {
+        let istanbul: chrono_tz::Tz = "Europe/Istanbul".parse().unwrap_or(chrono_tz::UTC);
+        // 21:30 UTC on the 26th is already the 27th in Istanbul (UTC+3).
+        let late = Utc.with_ymd_and_hms(2026, 11, 26, 21, 30, 0).unwrap();
+        assert_eq!(
+            nudge_day(late, istanbul),
+            chrono::NaiveDate::from_ymd_opt(2026, 11, 27).unwrap()
+        );
+        assert_eq!(
+            nudge_day(late, chrono_tz::UTC),
+            chrono::NaiveDate::from_ymd_opt(2026, 11, 26).unwrap()
+        );
     }
 }

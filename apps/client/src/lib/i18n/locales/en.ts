@@ -455,6 +455,7 @@ export const en: Catalog = {
     unreadLabel: "Unread: {{text}}",
     invitation: '{{from}} invited you to the {{kind}} "{{title}}".',
     routineReminder: 'Reminder: "{{title}}" ({{time}})',
+    nudge: "{{from}} nudged you 👋",
     accept: "Accept",
     decline: "Decline",
     answerFailed: "Could not answer. The invitation may no longer be valid.",

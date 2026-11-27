@@ -117,6 +117,8 @@ pub enum NotificationPayload {
         /// `HH:MM` in the routine's time zone.
         time: String,
     },
+    /// A friend nudged the user (AK3).
+    Nudge { from_user: Uuid, from_name: String },
 }
 
 impl NotificationPayload {
@@ -125,6 +127,7 @@ impl NotificationPayload {
         match self {
             Self::Invitation { .. } => NotificationKind::Invitation,
             Self::RoutineReminder { .. } => NotificationKind::RoutineReminder,
+            Self::Nudge { .. } => NotificationKind::Nudge,
         }
     }
 }

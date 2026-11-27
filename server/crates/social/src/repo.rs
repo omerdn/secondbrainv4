@@ -215,6 +215,27 @@ pub(crate) async fn friends(
     .await
 }
 
+/// Records a nudge for the sender's `day`; `false` when they already nudged that person that day
+/// (AK3).
+pub(crate) async fn insert_nudge(
+    conn: impl PgExecutor<'_>,
+    (from, to): (Uuid, Uuid),
+    day: chrono::NaiveDate,
+    now: DateTime<Utc>,
+) -> sqlx::Result<bool> {
+    let result = sqlx::query(
+        "INSERT INTO nudges (from_user, to_user, local_date, created_at)
+         VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+    )
+    .bind(from)
+    .bind(to)
+    .bind(day)
+    .bind(now)
+    .execute(conn)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
 /// Whether `blocker` blocked `blocked`.
 pub(crate) async fn has_blocked(
     conn: impl PgExecutor<'_>,

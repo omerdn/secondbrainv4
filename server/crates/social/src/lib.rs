@@ -1,5 +1,7 @@
-//! `social`: friendships and blocks (PRD AK1, AK2, V1, T3.1.1); nudges and emoji reactions come
-//! with E3.5.
+//! `social`: friendships, blocks (PRD AK1, AK2, V1, T3.1.1) and nudges (AK3, T3.5.1).
+//!
+//! - Nudges: a friend may be nudged once a day, the sender's day ([`nudge_day`]); each publishes
+//!   [`Nudged`], which the notification center turns into a notification.
 //!
 //! - [`Friendships`]: requests by e-mail, accept, decline, cancel, unfriend, block and unblock.
 //!   A request to an unknown address or to someone who blocked the sender looks exactly like a
@@ -14,7 +16,7 @@ mod repo;
 mod service;
 
 pub use model::{
-    BlockedUser, DECLINE_COOLDOWN, Friend, IncomingRequest, OutgoingRequest, REQUESTS_PER_DAY,
-    SendFriendRequest, normalize_email,
+    BlockedUser, DECLINE_COOLDOWN, Friend, IncomingRequest, Nudged, OutgoingRequest,
+    REQUESTS_PER_DAY, SendFriendRequest, normalize_email, nudge_day,
 };
 pub use service::Friendships;

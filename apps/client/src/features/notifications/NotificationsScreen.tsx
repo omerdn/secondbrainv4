@@ -109,7 +109,9 @@ function NotificationRow({
           title: payload.item_title,
           kind: t(`items.kinds.${kindLabel(payload.item_kind)}`).toLocaleLowerCase(i18n.language),
         })
-      : t("notifications.routineReminder", { title: payload.title, time: payload.time });
+      : payload.type === "nudge"
+        ? t("notifications.nudge", { from: payload.from_name })
+        : t("notifications.routineReminder", { title: payload.title, time: payload.time });
   const when = new Date(notification.created_at).toLocaleString(i18n.language, {
     dateStyle: "medium",
     timeStyle: "short",
