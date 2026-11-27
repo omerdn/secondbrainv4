@@ -315,11 +315,13 @@ impl TasksService {
         Ok(view)
     }
 
-    /// Assigns `user` to a subtask (EDIT). In this phase a person can only assign themselves;
-    /// assigning others opens with T3.2.3. Repeating it changes nothing.
+    /// Assigns `user` to a subtask (G4, T3.2.3). Anyone with EDIT assigns themselves; someone who
+    /// manages the task assigns its members who work on it. Several people may be assigned, and
+    /// one of them marking it completes it. Repeating it changes nothing.
     ///
     /// # Errors
-    /// As [`Self::update`]; [`AppError::Forbidden`] for another person.
+    /// As [`Self::update`]; [`AppError::Forbidden`] for another person without MANAGE;
+    /// [`AppError::Validation`] for someone who is not such a member.
     pub async fn assign(
         &self,
         actor: Uuid,
@@ -329,7 +331,24 @@ impl TasksService {
     ) -> Result<SubtaskView, AppError> {
         self.require_live(actor, id).await?;
         if user != actor {
-            return Err(AppError::Forbidden);
+            // Others are assigned by whoever manages the task, and only people who do its work
+            // (EDIT: the owner and the task's assignees). Watchers only look on (N2).
+            self.permissions
+                .require(&self.pool, actor, id, Perms::MANAGE)
+                .await?;
+            let member = self
+                .permissions
+                .check(&self.pool, user, id, Perms::EDIT)
+                .await
+                .map_err(internal)?;
+            if !member {
+                return Err(ValidationErrors::from(FieldError::new(
+                    "user_id",
+                    FieldErrorCode::Invalid,
+                    "only the task's members who work on it can be assigned",
+                ))
+                .into());
+            }
         }
         let mut tx = self.begin_locked(id).await?;
         load_subtask(&mut tx, id, subtask).await?;
@@ -347,8 +366,8 @@ impl TasksService {
         Ok(view)
     }
 
-    /// Removes `user` from a subtask (EDIT; own assignment only in this phase). Repeating it
-    /// changes nothing.
+    /// Removes `user` from a subtask (EDIT): one's own assignment, or anyone's for someone who
+    /// manages the task. Repeating it changes nothing.
     ///
     /// # Errors
     /// As [`Self::assign`].
@@ -361,7 +380,9 @@ impl TasksService {
     ) -> Result<SubtaskView, AppError> {
         self.require_live(actor, id).await?;
         if user != actor {
-            return Err(AppError::Forbidden);
+            self.permissions
+                .require(&self.pool, actor, id, Perms::MANAGE)
+                .await?;
         }
         let mut tx = self.begin_locked(id).await?;
         load_subtask(&mut tx, id, subtask).await?;
