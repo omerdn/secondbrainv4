@@ -6,7 +6,15 @@ import type { SessionTimer } from "./SessionTimer";
 /**
  * A work session with its timer and the caller's segments, oldest first.
  */
-export type WorkSession = { id: string, open: boolean, timer: SessionTimer, pomodoro: PomodoroConfig, segments: Array<SessionSegment>, created_at: string, closed_at: string | null, 
+export type WorkSession = { id: string, open: boolean, 
+/**
+ * Shared with friends (W6): one timer, everyone's own item and log.
+ */
+shared: boolean, created_by: string, 
+/**
+ * Who is in it now, in the order they joined.
+ */
+participants: Array<string>, timer: SessionTimer, pomodoro: PomodoroConfig, segments: Array<SessionSegment>, created_at: string, closed_at: string | null, 
 /**
  * The server's clock when this was read, for the client's offset.
  */

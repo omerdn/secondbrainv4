@@ -54,6 +54,9 @@ const item = (id: string, kind: string, title: string): Item => ({
 const session = (timer: SessionTimer, extra: Partial<WorkSession> = {}): WorkSession => ({
   id: "s1",
   open: true,
+  shared: false,
+  created_by: "u1",
+  participants: ["u1"],
   timer,
   pomodoro,
   segments: [],

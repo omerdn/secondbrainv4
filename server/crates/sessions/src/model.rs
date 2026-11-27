@@ -102,6 +102,11 @@ pub struct Segment {
 pub struct WorkSession {
     pub id: Uuid,
     pub open: bool,
+    /// Shared with friends (W6): one timer, everyone's own item and log.
+    pub shared: bool,
+    pub created_by: Uuid,
+    /// Who is in it now, in the order they joined.
+    pub participants: Vec<Uuid>,
     pub timer: TimerView,
     pub pomodoro: PomodoroConfig,
     pub segments: Vec<Segment>,
@@ -112,6 +117,34 @@ pub struct WorkSession {
     /// The server's clock when this was read, for the client's offset.
     #[ts(type = "string")]
     pub server_time: DateTime<Utc>,
+}
+
+/// `POST /sessions/{id}/invitations` body (W6).
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export, rename = "InviteToSessionRequest")]
+pub struct InviteRequest {
+    pub user_id: Uuid,
+}
+
+/// `POST /sessions/{id}/join` body: what the joiner's time goes to (W3, W6).
+#[derive(Debug, Clone, Default, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export, rename = "JoinSessionRequest")]
+pub struct JoinRequest {
+    #[serde(default)]
+    #[ts(optional)]
+    pub item_id: Option<Uuid>,
+}
+
+/// An invitation to a friend's open shared session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
+pub struct SessionInvitation {
+    pub session_id: Uuid,
+    pub invited_by: Uuid,
+    #[ts(type = "string")]
+    pub created_at: DateTime<Utc>,
 }
 
 /// A session in the history (W5): its totals as of its last pause or stop.
