@@ -364,6 +364,20 @@ impl TasksService {
                 .record_assigned(&mut tx, actor, id)
                 .await
                 .map_err(internal)?;
+            if user != actor {
+                db::outbox::publish(
+                    &mut tx,
+                    &crate::model::SubtaskAssigned {
+                        task_id: id,
+                        subtask_id: subtask,
+                        subtask_title: view.title.clone(),
+                        assigned_by: actor,
+                        user_id: user,
+                    },
+                )
+                .await
+                .map_err(internal)?;
+            }
         }
         tx.commit().await.map_err(internal)?;
         Ok(view)

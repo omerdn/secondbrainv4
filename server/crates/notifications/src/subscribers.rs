@@ -7,6 +7,7 @@ use identity::IdentityService;
 use items::{InvitationCreated, ItemsService, ReactionAdded};
 use routines::reminders::RoutineReminderDue;
 use social::{FriendRequestSent, Nudged};
+use tasks::SubtaskAssigned;
 
 use crate::model::NotificationPayload;
 use crate::service::Notifications;
@@ -22,6 +23,8 @@ pub fn register(
     let reminders = notifications.clone();
     let (nudges, nudge_names) = (notifications.clone(), identity.clone());
     let (requests, request_names) = (notifications.clone(), identity.clone());
+    let (assignments, assignment_items, assignment_names) =
+        (notifications.clone(), items.clone(), identity.clone());
     let (reactions, reaction_items, reaction_names) =
         (notifications.clone(), items.clone(), identity.clone());
     dispatcher.subscribe(
@@ -159,6 +162,45 @@ pub fn register(
                         crate::email::Template::FriendRequest { from_name },
                         stored.id,
                     )
+                    .await
+                    .map_err(boxed)?;
+                Ok(())
+            }
+        },
+    );
+    // BL2 (T4.3.7): someone assigned the user to a subtask. Only while they still see the task
+    // (V9): the title comes from the item as they see it now.
+    dispatcher.subscribe(
+        "notifications.assignment",
+        move |event: SubtaskAssigned, stored| {
+            let (notifications, items, identity) = (
+                assignments.clone(),
+                assignment_items.clone(),
+                assignment_names.clone(),
+            );
+            async move {
+                let boxed = |err: kernel::AppError| Box::new(err) as HandlerError;
+                let item = match items.get(event.user_id, event.task_id).await {
+                    Ok(item) => item,
+                    Err(kernel::AppError::NotFound) => return Ok(()),
+                    Err(err) => return Err(boxed(err)),
+                };
+                let from_name = identity
+                    .display_names(&[event.assigned_by])
+                    .await
+                    .map_err(boxed)?
+                    .remove(&event.assigned_by)
+                    .unwrap_or_default();
+                let payload = NotificationPayload::Assignment {
+                    item_id: item.id,
+                    item_kind: item.kind,
+                    item_title: item.title,
+                    subtask_title: Some(event.subtask_title),
+                    from_user: event.assigned_by,
+                    from_name,
+                };
+                notifications
+                    .deliver(event.user_id, &payload, stored.id)
                     .await
                     .map_err(boxed)?;
                 Ok(())

@@ -208,3 +208,18 @@ mod tests {
         assert_eq!(set.due_date, Some(Some(day(2))));
     }
 }
+
+/// Someone assigned another person to a subtask (BL2, T4.3.7); published in the assignment's
+/// transaction. Self-assignment publishes nothing.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SubtaskAssigned {
+    pub task_id: Uuid,
+    pub subtask_id: Uuid,
+    pub subtask_title: String,
+    pub assigned_by: Uuid,
+    pub user_id: Uuid,
+}
+
+impl kernel::DomainEvent for SubtaskAssigned {
+    const EVENT_TYPE: &'static str = "task.subtask_assigned";
+}

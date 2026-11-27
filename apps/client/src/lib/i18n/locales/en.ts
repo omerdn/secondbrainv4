@@ -471,6 +471,8 @@ export const en: Catalog = {
     unreadLabel: "Unread: {{text}}",
     invitation: '{{from}} invited you to the {{kind}} "{{title}}".',
     routineReminder: 'Reminder: "{{title}}" ({{time}})',
+    assignment: '{{from}} assigned you to "{{title}}"',
+    assignmentSubtask: '{{from}} assigned you to "{{subtask}}" in "{{title}}"',
     weeklySummary: "Your weekly summary: {{from}} – {{to}}",
     summary: {
       routines: "Routines",

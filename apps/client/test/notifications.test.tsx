@@ -98,6 +98,30 @@ describe("notification center (BL1)", () => {
     expect(within(screen.getByTestId("nav-badge-notifications")).getByText("1")).toBeTruthy();
   });
 
+  it("shows an assignment and opens its task (BL2)", async () => {
+    const assignment: Notification = {
+      id: "a1",
+      payload: {
+        type: "assignment",
+        item_id: "task-1",
+        item_kind: "task",
+        item_title: "Taşınma",
+        subtask_title: "Kutuları al",
+        from_user: "u2",
+        from_name: "Ada",
+      },
+      read_at: null,
+      created_at: "2026-11-27T09:00:00Z",
+    };
+    const { server } = center([assignment]);
+    await renderApp(server.api, "/notifications", { tokenStore: memoryTokenStore("t") });
+    const row = await screen.findByText('Ada seni "Taşınma" içinde "Kutuları al" adımına atadı');
+    await fireEvent.press(row);
+    await waitFor(() => {
+      expect(screen).toHavePathname("/tasks/task-1");
+    });
+  });
+
   it("shows the weekly summary with its parts (OZ1)", async () => {
     const summary: Notification = {
       id: "w1",

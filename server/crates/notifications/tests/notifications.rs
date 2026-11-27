@@ -1209,3 +1209,129 @@ mod web_push {
         assert_eq!(URL_SAFE_NO_PAD.decode(key.public_key()).unwrap().len(), 65);
     }
 }
+
+// --- T4.3.7: assignment notifications ---------------------------------------------------------
+
+mod assignments {
+    use super::*;
+
+    impl World {
+        fn tasks(&self) -> tasks::TasksService {
+            let access = AccessEngine::new(ItemsAccessContext, AccessConfig::default());
+            tasks::TasksService::new(
+                self.db.pool().clone(),
+                self.clock.clone(),
+                access.permissions(),
+                self.items.clone(),
+            )
+        }
+
+        /// Ada's task with one subtask; Bob accepted to work on it. (task, subtask)
+        async fn shared_task(&self, ada: Uuid, bob: Uuid) -> (Uuid, Uuid) {
+            let view = self
+                .tasks()
+                .create(
+                    ada,
+                    tasks::CreateTaskRequest {
+                        title: "Taşınma".into(),
+                        description: None,
+                        start_date: None,
+                        due_date: None,
+                        subtasks: Some(vec![tasks::CreateSubtaskRequest {
+                            title: "Kutuları al".into(),
+                        }]),
+                    },
+                )
+                .await
+                .unwrap();
+            let task = view.item.id;
+            let invitation = self
+                .items
+                .invite(
+                    ada,
+                    task,
+                    CreateInvitationRequest {
+                        to_user: bob,
+                        role: InvitationRole::Assignee,
+                    },
+                )
+                .await
+                .unwrap()
+                .id;
+            self.items.accept_invitation(bob, invitation).await.unwrap();
+            (task, view.subtasks[0].id)
+        }
+
+        async fn assignments_of(&self, user: Uuid) -> Vec<NotificationPayload> {
+            self.notifications
+                .list(user, None)
+                .await
+                .unwrap()
+                .notifications
+                .into_iter()
+                .map(|n| n.payload)
+                .filter(|p| matches!(p, NotificationPayload::Assignment { .. }))
+                .collect()
+        }
+    }
+
+    #[tokio::test]
+    async fn bl2_the_assigned_person_is_told_once_and_self_assignment_is_quiet() {
+        let w = World::new().await;
+        let ada = w.user("ada@example.com", "Ada").await;
+        let bob = w.user("bob@example.com", "Bob").await;
+        let (task, subtask) = w.shared_task(ada, bob).await;
+        w.tasks().assign(ada, task, subtask, bob).await.unwrap();
+        w.tasks().assign(ada, task, subtask, ada).await.unwrap();
+        w.deliver().await;
+        w.redeliver_all().await;
+        let got = w.assignments_of(bob).await;
+        assert_eq!(got.len(), 1, "once, even after a redelivery");
+        let NotificationPayload::Assignment {
+            item_id,
+            item_title,
+            subtask_title,
+            from_name,
+            ..
+        } = &got[0]
+        else {
+            unreachable!()
+        };
+        assert_eq!(*item_id, task);
+        assert_eq!(item_title, "Taşınma");
+        assert_eq!(subtask_title.as_deref(), Some("Kutuları al"));
+        assert_eq!(from_name, "Ada");
+        assert!(
+            w.assignments_of(ada).await.is_empty(),
+            "no notice of one's own act"
+        );
+    }
+
+    #[tokio::test]
+    async fn v9_no_assignment_notice_about_a_task_one_no_longer_sees() {
+        let w = World::new().await;
+        let ada = w.user("ada@example.com", "Ada").await;
+        let bob = w.user("bob@example.com", "Bob").await;
+        let (task, subtask) = w.shared_task(ada, bob).await;
+        w.tasks().assign(ada, task, subtask, bob).await.unwrap();
+        // Bob is removed before the notification is made.
+        w.items.remove_member(ada, task, bob).await.unwrap();
+        w.deliver().await;
+        assert!(w.assignments_of(bob).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn bl3_assignment_notices_follow_the_channel_choice() {
+        let w = World::new().await;
+        let ada = w.user("ada@example.com", "Ada").await;
+        let bob = w.user("bob@example.com", "Bob").await;
+        let (task, subtask) = w.shared_task(ada, bob).await;
+        w.notifications
+            .set_preference(bob, NotificationKind::Assignment, Vec::new())
+            .await
+            .unwrap();
+        w.tasks().assign(ada, task, subtask, bob).await.unwrap();
+        w.deliver().await;
+        assert!(w.assignments_of(bob).await.is_empty());
+    }
+}
