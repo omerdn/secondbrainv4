@@ -1,6 +1,7 @@
 //! Visibility rules V1–V12 (PRD §7, ARCHITECTURE §16) as server integration tests against a real
 //! Postgres 17. One module per rule; scenarios whose behaviour does not exist yet are `#[ignore]`d
-//! with the roadmap task that enables them (T1.1.7). T3.2.6 turns the last of them on.
+//! with the roadmap task that enables them (T1.1.7). Since T3.2.6 only team scenarios (`T5.1.x`)
+//! wait, until E5.1 turns them on.
 //!
 //! Run the pending ones locally with `cargo test -p app --test visibility -- --ignored`.
 //! Requires Docker (or `TEST_DATABASE_URL`).
@@ -73,6 +74,11 @@ fn every_ignored_scenario_names_its_roadmap_task() {
             assert!(
                 task.starts_with('T') && ROADMAP.contains(&format!("**{task}**")),
                 "{rule}: `{task}` is not a task in docs/ROADMAP.md"
+            );
+            // T3.2.6: everything outside teams is on; only team scenarios may still wait.
+            assert!(
+                task.starts_with("T5.1."),
+                "{rule}: `{task}` must be implemented, only team scenarios (T5.1.x) may wait"
             );
         }
     }

@@ -43,3 +43,36 @@ async fn explanation_lists_every_access_path() {
         .unwrap();
     assert_eq!(ali_view.reasons[0], Reason::Owner);
 }
+
+/// Deniz cannot see page P: asking why gives no explanation at all, so the question cannot be used
+/// to learn that P exists or who can see it (V9).
+#[tokio::test]
+async fn no_explanation_for_what_one_cannot_see() {
+    let world = World::new().await;
+    let (ali, ayse, deniz, page, task) = (id(), id(), id(), id(), id());
+    world
+        .grant(&[
+            t(page, R::Owner, ali),
+            t(task, R::Owner, ali),
+            t(task, R::Assignee, ayse),
+            t(page, R::LinkedTo, task),
+        ])
+        .await;
+    let permissions = world.permissions();
+    assert!(
+        permissions
+            .explain(world.pool(), deniz, page)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        permissions
+            .explain(world.pool(), ayse, page)
+            .await
+            .unwrap()
+            .unwrap()
+            .reasons,
+        [Reason::Linked { item_id: task }]
+    );
+}
