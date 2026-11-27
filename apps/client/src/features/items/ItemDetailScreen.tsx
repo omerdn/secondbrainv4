@@ -5,11 +5,14 @@ import { type UseQueryResult, useQuery } from "@tanstack/react-query";
 import { type Href, useRouter } from "expo-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { View } from "react-native";
 
 import { useSession } from "@/features/auth";
 import { Screen } from "@/features/shell";
 import { TagPicker } from "@/features/tags";
 import { ItemDetail, type Loadable, roleLabels } from "@/lib/items";
+
+import { MembersSection } from "./MembersSection";
 
 function loadable<T, V>(query: UseQueryResult<T>, select: (data: T) => V): Loadable<V> {
   if (query.isSuccess) {
@@ -104,6 +107,9 @@ export function ItemDetailScreen({ id }: { id: string }) {
             : undefined
         }
       />
+      <View className="pt-6">
+        <MembersSection item={item.data} me={state.status === "signedIn" ? state.user.id : null} />
+      </View>
       <TagPicker
         itemId={id}
         visible={picking}
