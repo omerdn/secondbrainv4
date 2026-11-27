@@ -70,6 +70,60 @@ impl World {
     }
 }
 
+impl World {
+    fn identity(&self) -> identity::IdentityService {
+        identity::IdentityService::new(
+            self.pool().clone(),
+            Arc::new(kernel::SystemClock),
+            identity::EmailSettings {
+                sender: Arc::new(kernel::email::RecordingEmailSender::default()),
+                web_url: "http://localhost:8081".into(),
+            },
+        )
+    }
+
+    /// A registered person (friendships need real users); their id and e-mail address.
+    pub(crate) async fn person(&self, name: &str) -> (Uuid, String) {
+        let email = format!(
+            "{}-{}@example.com",
+            name.to_lowercase(),
+            Uuid::now_v7().simple()
+        );
+        let request = identity::model::RegisterRequest {
+            email: email.clone(),
+            password: "correct horse".into(),
+            display_name: name.into(),
+            client: identity::model::ClientKind::Native,
+            device: None,
+        }
+        .validate()
+        .unwrap();
+        let (user, _) = self.identity().register(request).await.unwrap();
+        (user.id.as_uuid(), email)
+    }
+
+    pub(crate) fn friendships(&self) -> social::Friendships {
+        social::Friendships::new(
+            self.pool().clone(),
+            Arc::new(kernel::SystemClock),
+            self.identity(),
+        )
+    }
+
+    /// The items service with the real V1 check: friends who did not block each other share.
+    pub(crate) fn sharing_items(&self) -> ItemsService {
+        self.items().with_sharing(Arc::new(self.friendships()))
+    }
+
+    /// `a` asks `b` (by `b_email`) and `b` accepts.
+    pub(crate) async fn befriend(&self, a: Uuid, b: Uuid, b_email: &str) {
+        let social = self.friendships();
+        social.send(a, b_email).await.unwrap();
+        let request = social.incoming(b).await.unwrap()[0].id;
+        social.accept(b, request).await.unwrap();
+    }
+}
+
 pub(crate) fn id() -> Uuid {
     Uuid::now_v7()
 }

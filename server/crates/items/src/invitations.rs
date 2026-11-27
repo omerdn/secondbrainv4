@@ -86,7 +86,7 @@ impl InvitationRole {
         }
     }
 
-    fn parse(value: &str) -> Option<Self> {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "assignee" => Some(Self::Assignee),
             "watcher" => Some(Self::Watcher),

@@ -30,9 +30,35 @@ async fn unlinking_drops_inherited_access() {
 
 /// Removing Ayşe from task T removes her access to T and to the pages linked to it.
 #[tokio::test]
-#[ignore = "T3.2.1: item member invitations"]
 async fn removing_a_member_drops_access() {
-    pending()
+    let world = World::new().await;
+    let (ali, ayse) = (id(), id());
+    let items = world.items();
+    let page = world.item(ali, "page", "P").await;
+    let task = world.item(ali, "task", "T").await;
+    world.grant(&[t(task.id, R::Watcher, ayse)]).await;
+    items.link(ali, page.id, task.id).await.unwrap();
+    assert_eq!(items.get(ayse, page.id).await.unwrap().id, page.id);
+
+    items.remove_member(ali, task.id, ayse).await.unwrap();
+
+    assert!(matches!(
+        items.get(ayse, task.id).await,
+        Err(AppError::NotFound)
+    ));
+    assert!(matches!(
+        items.get(ayse, page.id).await,
+        Err(AppError::NotFound)
+    ));
+    // The owner stays; removing someone who is not a member finds nothing.
+    assert!(matches!(
+        items.remove_member(ali, task.id, ali).await,
+        Err(AppError::Validation(_))
+    ));
+    assert!(matches!(
+        items.remove_member(ali, task.id, ayse).await,
+        Err(AppError::NotFound)
+    ));
 }
 
 /// Removing Ayşe from Ali's notebook removes her access to its pages.
