@@ -98,6 +98,32 @@ describe("notification center (BL1)", () => {
     expect(within(screen.getByTestId("nav-badge-notifications")).getByText("1")).toBeTruthy();
   });
 
+  it("shows the weekly summary with its parts (OZ1)", async () => {
+    const summary: Notification = {
+      id: "w1",
+      payload: {
+        type: "weekly_summary",
+        week_start: "2026-11-16",
+        week_end: "2026-11-22",
+        routines: [
+          { routine_id: "r1", title: "Su iç", done_days: 5, scheduled_days: 7, streak: 3 },
+        ],
+        goals: [{ goal_id: "g1", title: "Kitap", actual_percent: 40, expected_percent: 50 }],
+        sessions: [{ item_id: null, title: "Genel", minutes: 95 }],
+        work_minutes: 95,
+        forgotten: [],
+      },
+      read_at: null,
+      created_at: "2026-11-23T06:10:00Z",
+    };
+    const { server } = center([summary]);
+    await renderApp(server.api, "/notifications", { tokenStore: memoryTokenStore("t") });
+    expect(await screen.findByText("Su iç: 5/7 gün · seri 3")).toBeTruthy();
+    expect(screen.getByText("Kitap: %40 (beklenen %50)")).toBeTruthy();
+    expect(screen.getByText("Çalışma oturumları · toplam 1 sa 35 dk")).toBeTruthy();
+    expect(screen.queryByText("Bir süredir dokunulmayanlar")).toBeNull();
+  });
+
   it("marks a notification read on press and all of them at once", async () => {
     const { server } = center([notification("n1", "Bir"), notification("n2", "İki")]);
     await renderApp(server.api, "/notifications", { tokenStore: memoryTokenStore("t") });

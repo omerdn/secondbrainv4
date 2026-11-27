@@ -131,12 +131,76 @@ pub enum NotificationPayload {
         from_name: String,
         emoji: String,
     },
+    /// The weekly summary (OZ1).
+    WeeklySummary(WeeklySummary),
+}
+
+/// A routine's week in the summary (OZ1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SummaryRoutine {
+    pub routine_id: Uuid,
+    pub title: String,
+    /// Days of the week the routine was due and complete.
+    pub done_days: u32,
+    /// Days of the week the routine was due.
+    pub scheduled_days: u32,
+    /// The streak as the week ended (R9).
+    pub streak: u32,
+}
+
+/// A goal's progress in the summary (OZ1), in whole percent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SummaryGoal {
+    pub goal_id: Uuid,
+    pub title: String,
+    pub actual_percent: u32,
+    pub expected_percent: u32,
+}
+
+/// Work session time on one item during the week (OZ1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SummarySession {
+    /// `None`: time not tied to an item.
+    pub item_id: Option<Uuid>,
+    pub title: String,
+    pub minutes: u32,
+}
+
+/// The weekly summary (OZ1): last Monday to Sunday in the user's time zone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct WeeklySummary {
+    #[ts(type = "string")]
+    pub week_start: chrono::NaiveDate,
+    #[ts(type = "string")]
+    pub week_end: chrono::NaiveDate,
+    pub routines: Vec<SummaryRoutine>,
+    pub goals: Vec<SummaryGoal>,
+    pub sessions: Vec<SummarySession>,
+    pub work_minutes: u32,
+    /// Titles of items untouched for a while (H4), at most a few.
+    pub forgotten: Vec<String>,
+}
+
+impl WeeklySummary {
+    /// Whether there is anything to tell.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.routines.is_empty()
+            && self.goals.is_empty()
+            && self.sessions.is_empty()
+            && self.forgotten.is_empty()
+    }
 }
 
 impl NotificationPayload {
     #[must_use]
     pub const fn kind(&self) -> NotificationKind {
         match self {
+            Self::WeeklySummary(_) => NotificationKind::WeeklySummary,
             Self::Invitation { .. } => NotificationKind::Invitation,
             Self::RoutineReminder { .. } => NotificationKind::RoutineReminder,
             Self::Nudge { .. } => NotificationKind::Nudge,

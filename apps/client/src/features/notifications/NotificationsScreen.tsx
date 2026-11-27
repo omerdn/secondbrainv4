@@ -1,8 +1,9 @@
 import { useApi, useIdempotentMutation } from "@secondbrain/api-client/react";
-import type { Notification } from "@secondbrain/api-types";
+import type { WeeklySummary, Notification } from "@secondbrain/api-types";
 import { Button, Card, EmptyState, Text } from "@secondbrain/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type Href, useRouter } from "expo-router";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { Pressable, View } from "react-native";
 
@@ -117,7 +118,12 @@ function NotificationRow({
               emoji: payload.emoji,
               title: payload.item_title,
             })
-          : t("notifications.routineReminder", { title: payload.title, time: payload.time });
+          : payload.type === "weekly_summary"
+            ? t("notifications.weeklySummary", {
+                from: shortDate(payload.week_start, i18n.language),
+                to: shortDate(payload.week_end, i18n.language),
+              })
+            : t("notifications.routineReminder", { title: payload.title, time: payload.time });
   const when = new Date(notification.created_at).toLocaleString(i18n.language, {
     dateStyle: "medium",
     timeStyle: "short",
@@ -151,7 +157,88 @@ function NotificationRow({
       {payload.type === "invitation" ? (
         <InvitationActions payload={payload} onRead={onRead} onChanged={onChanged} />
       ) : null}
+      {payload.type === "weekly_summary" ? <WeeklySummaryLines summary={payload} /> : null}
     </Card>
+  );
+}
+
+/** A local `YYYY-MM-DD` date as "16 Kas". */
+export function shortDate(date: string, locale: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1).toLocaleDateString(locale, {
+    day: "numeric",
+    month: "short",
+  });
+}
+
+/** Minutes as "1 sa 35 dk" / "1 h 35 min". */
+export function durationText(minutes: number, t: TFunction): string {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return t("notifications.summary.minutes", { count: rest });
+  if (rest === 0) return t("notifications.summary.hours", { count: hours });
+  return `${t("notifications.summary.hours", { count: hours })} ${t("notifications.summary.minutes", { count: rest })}`;
+}
+
+/** The weekly summary's parts (OZ1); empty parts are left out. */
+function WeeklySummaryLines({ summary }: { summary: WeeklySummary }) {
+  const { t } = useTranslation();
+  return (
+    <View className="gap-2">
+      {summary.routines.length > 0 ? (
+        <View className="gap-0.5">
+          <Text variant="label">{t("notifications.summary.routines")}</Text>
+          {summary.routines.map((r) => (
+            <Text key={r.routine_id} tone="muted">
+              {t("notifications.summary.routine", {
+                title: r.title,
+                done: r.done_days,
+                due: r.scheduled_days,
+              })}
+              {r.streak > 0 ? ` · ${t("notifications.summary.streak", { count: r.streak })}` : ""}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      {summary.goals.length > 0 ? (
+        <View className="gap-0.5">
+          <Text variant="label">{t("notifications.summary.goals")}</Text>
+          {summary.goals.map((g) => (
+            <Text key={g.goal_id} tone="muted">
+              {t("notifications.summary.goal", {
+                title: g.title,
+                actual: g.actual_percent,
+                expected: g.expected_percent,
+              })}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      {summary.sessions.length > 0 ? (
+        <View className="gap-0.5">
+          <Text variant="label">
+            {t("notifications.summary.sessions", {
+              total: durationText(summary.work_minutes, t),
+            })}
+          </Text>
+          {summary.sessions.map((s) => (
+            <Text key={s.item_id ?? s.title} tone="muted">
+              {`${s.title}: ${durationText(s.minutes, t)}`}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      {summary.forgotten.length > 0 ? (
+        <View className="gap-0.5">
+          <Text variant="label">{t("notifications.summary.forgotten")}</Text>
+          {summary.forgotten.map((title) => (
+            <Text key={title} tone="muted">
+              {title}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+    </View>
   );
 }
 

@@ -16,6 +16,7 @@ pub mod http;
 pub mod idempotency;
 pub mod server;
 pub mod telemetry;
+pub mod weekly;
 
 pub use config::{Config, ConfigError};
 
@@ -276,6 +277,33 @@ where
         realtime::Notifier::default(),
     )
     .with_sharing(std::sync::Arc::new(friendships.clone()));
+    // The Today screen reads through the modules' services (T2.7.1, ADR-0007).
+    let today_service = today::TodayService::new(
+        pool.clone(),
+        clock.clone(),
+        items.clone(),
+        tasks_service.clone(),
+        routines_service.clone(),
+        goals_service.clone(),
+        process_pages.clone(),
+        sessions_service.clone(),
+    );
+    // OZ1 (T4.3.5): the weekly summary on each user's Monday morning.
+    weekly::register(
+        weekly::WeeklySummaries {
+            pool: pool.clone(),
+            clock: clock.clone(),
+            identity: identity.clone(),
+            items: items.clone(),
+            routines: routines_service.clone(),
+            sessions: sessions_service.clone(),
+            today: today_service.clone(),
+            notifications: notifications_service.clone(),
+        },
+        &mut worker,
+        &mut scheduler,
+    )
+    .map_err(RunError::Schedule)?;
     // HS3 (T4.3.2): data exports, read through the modules' services as the user.
     let exports_service = exports::DataExports::new(
         pool.clone(),
@@ -343,17 +371,6 @@ where
             std::sync::Arc::new(items.clone()),
             std::sync::Arc::new(notebooks_service.clone()),
         ],
-    );
-    // The Today screen reads through the modules' services (T2.7.1, ADR-0007).
-    let today_service = today::TodayService::new(
-        pool.clone(),
-        clock.clone(),
-        items.clone(),
-        tasks_service.clone(),
-        routines_service.clone(),
-        goals_service.clone(),
-        process_pages.clone(),
-        sessions_service.clone(),
     );
     let mut modules = identity::http::rate_limited_router(identity.clone(), limits)
         .merge(idempotency::protect(

@@ -450,6 +450,16 @@ pub fn message_of(payload: &NotificationPayload) -> PushMessage {
             url: "/".into(),
             tag: format!("nudge:{from_user}"),
         },
+        NotificationPayload::WeeklySummary(summary) => PushMessage {
+            title: "Haftalık özetin hazır".into(),
+            body: format!(
+                "{} – {}",
+                summary.week_start.format("%d.%m"),
+                summary.week_end.format("%d.%m")
+            ),
+            url: "/notifications".into(),
+            tag: format!("weekly:{}", summary.week_start),
+        },
         NotificationPayload::Reaction {
             activity_id,
             item_title,
