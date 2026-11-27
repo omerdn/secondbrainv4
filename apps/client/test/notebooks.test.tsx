@@ -81,6 +81,64 @@ describe("notebooks screen (Y1)", () => {
     expect(screen.getByText(i18n.t("notebooks.editorSoon"))).toBeTruthy();
   });
 
+  it("marks shared notebooks and shares one after the access preview (Y2, V7)", async () => {
+    const pages = [pageOf("p1", "Okuma notları", "n2")];
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /notebooks": () =>
+        json(200, [
+          { item: mine, is_default: true, shared: false },
+          { item: work, is_default: false, shared: true },
+        ]),
+      "GET /items/n2": () => json(200, work),
+      "GET /access/items/n2/explanation": () =>
+        json(200, { permissions: ["view"], reasons: [{ kind: "owner" }] }),
+      "GET /items/n2/tags": () => json(200, []),
+      "GET /items/n2/links": () => json(200, []),
+      "GET /notebooks/n2": () => json(200, notebook(work, pages)),
+      "GET /items/n2/members": () =>
+        json(200, {
+          members: [{ user_id: "u1", display_name: "Ali", roles: ["owner"] }],
+          pending: [],
+          can_manage: true,
+        }),
+      "GET /friends": () => json(200, [{ user_id: "u2", display_name: "Ayşe", since: at }]),
+      "POST /access/preview": () =>
+        json(200, {
+          items: [
+            { item_id: "n2", new_viewers: ["u2"] },
+            { item_id: "p1", new_viewers: ["u2"] },
+          ],
+          people: [{ id: "u2", display_name: "Ayşe" }],
+        }),
+      "POST /items/n2/invitations": () => json(201, {}),
+    });
+    await open(server, "/notebooks");
+    expect(await screen.findByText("İş")).toBeTruthy();
+    // Only the notebook someone else is in carries the badge.
+    expect(screen.getAllByText("Ortak")).toHaveLength(1);
+    await fireEvent.press(screen.getByRole("button", { name: "İş defterini paylaş" }));
+    await fireEvent.press(await screen.findByRole("button", { name: "Üye ekle" }));
+    await fireEvent.press(await screen.findByRole("radio", { name: "Düzenleyici" }));
+    await fireEvent.press(await screen.findByRole("button", { name: "Ayşe kişisini davet et" }));
+    // V7: who will see what is shown first; nothing is sent before confirming.
+    expect(await screen.findByText(/2 nesneyi görebilecek/)).toBeTruthy();
+    expect(server.calls.some((c) => c.path === "/items/n2/invitations")).toBe(false);
+    expect(server.calls.find((c) => c.path === "/access/preview")?.body).toEqual({
+      action: "add_member",
+      item_id: "n2",
+      user_id: "u2",
+      role: "editor",
+    });
+    await fireEvent.press(screen.getByRole("button", { name: "Davet et" }));
+    await waitFor(() => {
+      expect(server.calls.find((c) => c.path === "/items/n2/invitations")?.body).toEqual({
+        to_user: "u2",
+        role: "editor",
+      });
+    });
+  });
+
   it("creates a notebook after checking the name, then a page in it", async () => {
     let created = false;
     const server = fakeServer({

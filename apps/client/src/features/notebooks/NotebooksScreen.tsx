@@ -131,6 +131,11 @@ export function NotebooksScreen() {
               }}
               onDeleted={() => refresh()}
               onOpenPage={openPage}
+              onShare={() => {
+                // The item details hold members, roles and the V7 preview (T3.2.5).
+                const href = `/items/${encodeURIComponent(notebook.item.id)}` as Href;
+                router.push(href);
+              }}
             />
           ))}
         </View>
@@ -166,6 +171,7 @@ function NotebookNode({
   onRename,
   onDeleted,
   onOpenPage,
+  onShare,
 }: {
   notebook: NotebookSummary;
   expanded: boolean;
@@ -174,6 +180,8 @@ function NotebookNode({
   onRename: () => void;
   onDeleted: () => Promise<void>;
   onOpenPage: (id: string) => void;
+  /** Members and invitations, with the access preview (V7). */
+  onShare: () => void;
 }) {
   const { t } = useTranslation();
   const api = useApi();
@@ -202,6 +210,11 @@ function NotebookNode({
       >
         <Text>{expanded ? "▾" : "▸"}</Text>
         <Text className="flex-1 font-semibold">{item.title}</Text>
+        {notebook.shared ? (
+          <View className="rounded-full bg-primary/15 px-2 py-0.5">
+            <Text className="text-xs font-semibold text-primary">{t("notebooks.shared")}</Text>
+          </View>
+        ) : null}
         {notebook.is_default ? (
           <Text tone="muted" className="text-sm">
             {t("notebooks.default")}
@@ -247,6 +260,13 @@ function NotebookNode({
           variant="ghost"
           accessibilityLabel={t("notebooks.renameOf", { title: item.title })}
           onPress={onRename}
+        />
+        <Button
+          title={t("notebooks.share")}
+          size="sm"
+          variant="ghost"
+          accessibilityLabel={t("notebooks.shareOf", { title: item.title })}
+          onPress={onShare}
         />
         {notebook.is_default ? null : confirming ? (
           <>
