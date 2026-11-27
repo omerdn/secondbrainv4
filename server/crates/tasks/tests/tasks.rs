@@ -602,3 +602,91 @@ async fn the_provider_does_not_know_other_items() {
         Err(AppError::NotFound)
     ));
 }
+
+impl World {
+    /// The ids of the owner's items whose status is `status` (F1).
+    async fn with_status(&self, status: &str) -> Vec<Uuid> {
+        let filter = items::ItemFilter {
+            statuses: Some(vec![status.into()]),
+            ..items::ItemFilter::default()
+        };
+        let page = PageRequest::from_params(PageParams {
+            limit: Some(100),
+            cursor: None,
+        })
+        .unwrap();
+        self.items
+            .filter_items(self.owner, &filter, &page)
+            .await
+            .unwrap()
+            .items
+            .iter()
+            .map(|item| item.id)
+            .collect()
+    }
+}
+
+#[tokio::test]
+async fn f1_a_tasks_status_follows_its_subtasks() {
+    let w = World::new().await;
+    let task = w.task(&["One", "Two"]).await;
+    let id = task.item.id;
+    let (one, two) = (task.subtasks[0].id, task.subtasks[1].id);
+    assert_eq!(w.with_status("open").await, vec![id]);
+    assert!(w.with_status("done").await.is_empty());
+
+    w.tasks.complete_subtask(w.owner, id, one).await.unwrap();
+    assert_eq!(w.with_status("open").await, vec![id], "one subtask is left");
+    w.tasks.complete_subtask(w.owner, id, two).await.unwrap();
+    assert_eq!(
+        w.with_status("done").await,
+        vec![id],
+        "G3: every subtask is done"
+    );
+    assert!(w.with_status("open").await.is_empty());
+
+    w.tasks.reopen_subtask(w.owner, id, two).await.unwrap();
+    assert_eq!(w.with_status("open").await, vec![id]);
+    w.tasks.complete_subtask(w.owner, id, two).await.unwrap();
+
+    let three = w
+        .tasks
+        .add_subtask(w.owner, id, subtask("Three"))
+        .await
+        .unwrap();
+    assert_eq!(
+        w.with_status("open").await,
+        vec![id],
+        "a new subtask is open"
+    );
+    w.tasks.delete_subtask(w.owner, id, three.id).await.unwrap();
+    assert_eq!(
+        w.with_status("done").await,
+        vec![id],
+        "the open one is gone"
+    );
+}
+
+#[tokio::test]
+async fn t3_0_3_the_migration_fills_existing_tasks() {
+    let w = World::new().await;
+    let open = w.task(&["One", "Two"]).await;
+    let done = w.task(&["Only"]).await;
+    w.tasks
+        .complete_subtask(w.owner, done.item.id, done.subtasks[0].id)
+        .await
+        .unwrap();
+    // As before T3.0.3: no task had a status.
+    sqlx::query("UPDATE items SET status = NULL")
+        .execute(w.db.pool())
+        .await
+        .unwrap();
+    sqlx::raw_sql(include_str!(
+        "../../../migrations/20261127000700_task_item_status.sql"
+    ))
+    .execute(w.db.pool())
+    .await
+    .unwrap();
+    assert_eq!(w.with_status("open").await, vec![open.item.id]);
+    assert_eq!(w.with_status("done").await, vec![done.item.id]);
+}

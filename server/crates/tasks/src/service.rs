@@ -9,8 +9,8 @@ use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::model::{
-    CreateSubtaskRequest, CreateTaskRequest, SUBTASK_LIMIT, SubtaskView, TaskView,
-    UpdateSubtaskRequest, UpdateTaskRequest, check_dates, check_subtask_title, may_mark,
+    CreateSubtaskRequest, CreateTaskRequest, STATUS_DONE, STATUS_OPEN, SUBTASK_LIMIT, SubtaskView,
+    TaskView, UpdateSubtaskRequest, UpdateTaskRequest, check_dates, check_subtask_title, may_mark,
     subtask_titles,
 };
 use crate::repo;
@@ -103,6 +103,7 @@ impl TasksService {
         crate::board::place_new(&mut tx, actor, item.id, now)
             .await
             .map_err(internal)?;
+        self.sync_status(&mut tx, item.id).await?;
         tx.commit().await.map_err(internal)?;
         self.task(actor, item.id).await
     }
@@ -283,6 +284,7 @@ impl TasksService {
                     .await
                     .map_err(internal)?;
             }
+            self.sync_status(&mut tx, id).await?;
         }
         tx.commit().await.map_err(internal)?;
         Ok(view)
@@ -310,6 +312,7 @@ impl TasksService {
                 .touch(&mut tx, id, TouchAction::Edited)
                 .await
                 .map_err(internal)?;
+            self.sync_status(&mut tx, id).await?;
         }
         tx.commit().await.map_err(internal)?;
         Ok(view)
@@ -450,7 +453,19 @@ impl TasksService {
             .touch(&mut tx, id, action)
             .await
             .map_err(internal)?;
+        self.sync_status(&mut tx, id).await?;
         tx.commit().await.map_err(internal)
+    }
+
+    /// Writes the task's status to its item from its subtasks, so filters can match it (F1, G3,
+    /// T3.0.3): [`STATUS_DONE`] when every subtask is done, [`STATUS_OPEN`] otherwise.
+    async fn sync_status(&self, conn: &mut PgConnection, id: Uuid) -> Result<(), AppError> {
+        let done = repo::all_done(&mut *conn, id).await.map_err(internal)?;
+        let status = if done { STATUS_DONE } else { STATUS_OPEN };
+        self.items
+            .set_status(conn, id, Some(status))
+            .await
+            .map_err(internal)
     }
 }
 
