@@ -181,6 +181,7 @@ dependencies = [
  "social",
  "sqlx",
  "tasks",
+ "teams",
  "today",
  "tokio",
  "tower",
@@ -2683,6 +2684,7 @@ dependencies = [
  "social",
  "sqlx",
  "tasks",
+ "teams",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
@@ -4938,6 +4940,20 @@ dependencies = [
 [[package]]
 name = "teams"
 version = "0.0.0"
+dependencies = [
+ "access",
+ "axum",
+ "chrono",
+ "db",
+ "identity",
+ "items",
+ "kernel",
+ "serde",
+ "sqlx",
+ "tokio",
+ "ts-rs",
+ "uuid",
+]
 
 [[package]]
 name = "tempfile"

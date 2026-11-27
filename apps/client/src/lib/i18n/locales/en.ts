@@ -478,6 +478,10 @@ export const en: Catalog = {
     sharingOwner: '"{{title}}" is yours now',
     forgotten_one: "Something has been untouched for a while: {{titles}}",
     forgotten_other: "{{count}} things have been untouched for a while: {{titles}}",
+    teamInvitation: '{{from}} invited you to the team "{{team}}" as {{role}}',
+    teamJoined: "You joined the team.",
+    teamDeclined: "You declined the invitation.",
+    teamRoles: { admin: "an admin", manager: "a manager", member: "a member", guest: "a guest" },
     weeklySummary: "Your weekly summary: {{from}} – {{to}}",
     summary: {
       routines: "Routines",

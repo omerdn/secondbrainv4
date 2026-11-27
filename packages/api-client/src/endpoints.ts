@@ -5,6 +5,11 @@
  */
 
 import type {
+  CreateTeamRequest,
+  InviteToTeamRequest,
+  Team,
+  TeamDetail,
+  TeamInvitation,
   ConsentRequest,
   LegalDocument,
   LegalDocumentKind,
@@ -137,6 +142,21 @@ export function endpoints(api: ApiClient) {
       appleNative: (body: AppleNativeRequest) => api.post<AuthResponse>("/auth/apple/native", body),
       /** Finishes a sign-in held for consent with every current legal text accepted (HS5). */
       consent: (body: ConsentRequest) => api.post<AuthResponse>("/auth/consent", body),
+    },
+    teams: {
+      /** The caller's teams (TK1, T5.1.1). */
+      list: () => api.get<Team[]>("/teams"),
+      get: (id: string) => api.get<TeamDetail>(`/teams/${encodeURIComponent(id)}`),
+      create: (body: CreateTeamRequest, options?: MutationOptions) =>
+        api.post<Team>("/teams", body, options),
+      invite: (id: string, body: InviteToTeamRequest, options?: MutationOptions) =>
+        api.post<void>(`/teams/${encodeURIComponent(id)}/invitations`, body, options),
+      /** Team invitations waiting for the caller (TK2). */
+      invitations: () => api.get<TeamInvitation[]>("/team-invitations"),
+      join: (id: string, options?: MutationOptions) =>
+        api.post<Team>(`/teams/${encodeURIComponent(id)}/join`, undefined, options),
+      decline: (id: string, options?: MutationOptions) =>
+        api.post<void>(`/teams/${encodeURIComponent(id)}/decline`, undefined, options),
     },
     legal: {
       /** The legal texts in force (HS5, T4.3.3). */

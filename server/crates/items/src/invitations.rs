@@ -40,6 +40,22 @@ pub trait SharingPolicy: Send + Sync {
     fn can_share(&self, from: Uuid, to: Uuid) -> SharingFuture<'_>;
 }
 
+/// Allows a share when any of its policies does (V1: friends, or teammates from F5 on).
+pub struct AnyOf(pub Vec<std::sync::Arc<dyn SharingPolicy>>);
+
+impl SharingPolicy for AnyOf {
+    fn can_share(&self, from: Uuid, to: Uuid) -> SharingFuture<'_> {
+        Box::pin(async move {
+            for policy in &self.0 {
+                if policy.can_share(from, to).await? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        })
+    }
+}
+
 /// Refuses everyone. The safe default until friendships (E3.1) and teams (F5) exist.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NoSharing;

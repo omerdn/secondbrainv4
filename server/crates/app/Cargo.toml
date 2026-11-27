@@ -37,6 +37,7 @@ sha2.workspace = true
 social = { path = "../social" }
 sqlx.workspace = true
 tasks = { path = "../tasks" }
+teams = { path = "../teams" }
 today = { path = "../today" }
 tokio.workspace = true
 tower.workspace = true

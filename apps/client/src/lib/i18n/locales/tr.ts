@@ -484,6 +484,10 @@ export const tr = {
     sharingOwner: 'Artık "{{title}}" senin',
     forgotten_one: "Bir süredir dokunmadığın bir şey var: {{titles}}",
     forgotten_other: "Bir süredir dokunmadığın {{count}} şey var: {{titles}}",
+    teamInvitation: '{{from}} seni "{{team}}" takımına {{role}} olarak davet etti',
+    teamJoined: "Takıma katıldın.",
+    teamDeclined: "Daveti reddettin.",
+    teamRoles: { admin: "admin", manager: "yönetici", member: "üye", guest: "misafir" },
     weeklySummary: "Haftalık özetin: {{from}} – {{to}}",
     summary: {
       routines: "Rutinler",

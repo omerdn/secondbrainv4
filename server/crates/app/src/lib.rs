@@ -96,10 +96,19 @@ where
         tracing::info!("sign in with apple enabled");
     }
 
-    // Friendships decide who may share with whom (V1, T3.1.1); invitations ask them.
+    // Friends and teammates may share with each other (V1, T3.1.1, T5.1.1); invitations ask.
     let friendships = social::Friendships::new(pool.clone(), clock.clone(), identity.clone());
+    let teams_service = teams::TeamsService::new(
+        pool.clone(),
+        clock.clone(),
+        access_engine.clone(),
+        identity.clone(),
+    );
     let items = items::ItemsService::new(pool.clone(), clock.clone(), access_engine.clone())
-        .with_sharing(std::sync::Arc::new(friendships.clone()));
+        .with_sharing(std::sync::Arc::new(items::AnyOf(vec![
+            std::sync::Arc::new(friendships.clone()),
+            std::sync::Arc::new(teams_service.clone()),
+        ])));
 
     // Domain modules register their subscribers here as they are implemented.
     let mut dispatcher = db::outbox::Dispatcher::new(db::outbox::DispatchConfig::default());
@@ -171,6 +180,12 @@ where
         &mut dispatcher,
         notifications_service.clone(),
         items.clone(),
+        identity.clone(),
+    );
+    notifications::register_teams(
+        &mut dispatcher,
+        notifications_service.clone(),
+        teams_service.clone(),
         identity.clone(),
     );
     notebooks::process::register(
@@ -427,6 +442,10 @@ where
                         identity: identity.clone(),
                     },
                 ))
+                .merge(teams::http::router(teams::http::TeamsHttpState {
+                    teams: teams_service.clone(),
+                    identity: identity.clone(),
+                }))
                 .merge(social::http::router(social::http::SocialHttpState {
                     friendships,
                     identity: identity.clone(),

@@ -1606,3 +1606,85 @@ mod entry_reactions {
         ));
     }
 }
+
+// --- T5.1.1: team invitations (TK2) -----------------------------------------------------------
+
+mod team_invitations {
+    use super::*;
+    use teams::{CreateTeamRequest, InviteToTeamRequest, TeamRole, TeamsService};
+
+    impl World {
+        fn teams(&self) -> TeamsService {
+            TeamsService::new(
+                self.db.pool().clone(),
+                self.clock.clone(),
+                AccessEngine::new(ItemsAccessContext, AccessConfig::default()),
+                self.identity.clone(),
+            )
+        }
+
+        async fn deliver_teams(&self) {
+            let mut dispatcher = Dispatcher::new(DispatchConfig::default());
+            notifications::register_teams(
+                &mut dispatcher,
+                self.notifications.clone(),
+                self.teams(),
+                self.identity.clone(),
+            );
+            dispatcher.dispatch_batch(self.db.pool()).await.unwrap();
+        }
+
+        async fn team_of(&self, admin: Uuid) -> Uuid {
+            self.teams()
+                .create(
+                    admin,
+                    CreateTeamRequest {
+                        name: "Ofis".into(),
+                        color: "#4f46e5".into(),
+                        logo_url: None,
+                    },
+                )
+                .await
+                .unwrap()
+                .id
+        }
+    }
+
+    #[tokio::test]
+    async fn tk2_the_invited_person_is_told_and_a_declined_one_is_not() {
+        let w = World::new().await;
+        let ada = w.user("ada@example.com", "Ada").await;
+        let bob = w.user("bob@example.com", "Bob").await;
+        let can = w.user("can@example.com", "Can").await;
+        let team = w.team_of(ada).await;
+        for (to, role) in [(bob, TeamRole::Manager), (can, TeamRole::Member)] {
+            w.teams()
+                .invite(ada, team, InviteToTeamRequest { user_id: to, role })
+                .await
+                .unwrap();
+        }
+        // Can declines before the notification is made.
+        w.teams().decline(can, team).await.unwrap();
+        w.deliver_teams().await;
+        let bobs = w.notifications.list(bob, None).await.unwrap().notifications;
+        assert_eq!(bobs.len(), 1);
+        assert_eq!(
+            bobs[0].payload,
+            NotificationPayload::TeamInvitation {
+                team_id: team,
+                team_name: "Ofis".into(),
+                role: TeamRole::Manager,
+                from_user: ada,
+                from_name: "Ada".into(),
+            }
+        );
+        assert!(
+            w.notifications
+                .list(can, None)
+                .await
+                .unwrap()
+                .notifications
+                .is_empty()
+        );
+    }
+}

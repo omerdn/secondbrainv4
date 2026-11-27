@@ -111,9 +111,22 @@ impl World {
         )
     }
 
-    /// The items service with the real V1 check: friends who did not block each other share.
+    pub(crate) fn teams(&self) -> teams::TeamsService {
+        teams::TeamsService::new(
+            self.pool().clone(),
+            Arc::new(kernel::SystemClock),
+            self.engine.clone(),
+            self.identity(),
+        )
+    }
+
+    /// The items service with the real V1 check: friends who did not block each other, or
+    /// teammates, share (T5.1.1).
     pub(crate) fn sharing_items(&self) -> ItemsService {
-        self.items().with_sharing(Arc::new(self.friendships()))
+        self.items().with_sharing(Arc::new(items::AnyOf(vec![
+            Arc::new(self.friendships()),
+            Arc::new(self.teams()),
+        ])))
     }
 
     /// The notebooks service over [`Self::sharing_items`] (T3.4.1).

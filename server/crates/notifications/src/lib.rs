@@ -25,5 +25,5 @@ pub use model::{
     SummaryGoal, SummaryRoutine, SummarySession, UpdatePreferenceRequest, WeeklySummary,
 };
 pub use service::{NEW_EVENT, Notifications};
-pub use subscribers::register;
+pub use subscribers::{register, register_teams};
 pub use summary::summary_text;
