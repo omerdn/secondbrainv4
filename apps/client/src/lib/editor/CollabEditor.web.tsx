@@ -23,6 +23,8 @@ import {
   collabServerUrl,
   cursorColor,
   PAGE_FIELD,
+  type Presence,
+  presentPeople,
   SERVER_LINE_ATTRIBUTES,
 } from "./collab";
 import { isAllowedEmbed, previewNode, safeImage, safeLink } from "./embeds";
@@ -383,6 +385,7 @@ export function CollabEditor({ pageId, user, readOnly = false }: CollabEditorPro
   );
   const [status, setStatus] = useState<CollabStatus>("connecting");
   const [synced, setSynced] = useState(false);
+  const [present, setPresent] = useState<Presence[]>([]);
 
   useEffect(() => {
     const onStatus = ({ status: next }: { status: CollabStatus }) => {
@@ -399,8 +402,13 @@ export function CollabEditor({ pageId, user, readOnly = false }: CollabEditorPro
     const onOnline = () => {
       provider.connect();
     };
+    // Y3: who else has the page open; someone who leaves drops out with their cursor.
+    const onAwareness = () => {
+      setPresent(presentPeople(provider.awareness.getStates(), doc.clientID, user.id));
+    };
     provider.on("status", onStatus);
     provider.on("sync", onSync);
+    provider.awareness.on("change", onAwareness);
     window.addEventListener("offline", onOffline);
     window.addEventListener("online", onOnline);
     return () => {
@@ -408,10 +416,11 @@ export function CollabEditor({ pageId, user, readOnly = false }: CollabEditorPro
       window.removeEventListener("online", onOnline);
       provider.off("status", onStatus);
       provider.off("sync", onSync);
+      provider.awareness.off("change", onAwareness);
       provider.destroy();
       doc.destroy();
     };
-  }, [doc, provider]);
+  }, [doc, provider, user.id]);
 
   const editable = !readOnly && status === "connected" && synced;
   const editor = useEditor({
@@ -428,7 +437,7 @@ export function CollabEditor({ pageId, user, readOnly = false }: CollabEditorPro
       Collaboration.configure({ document: doc, field: PAGE_FIELD }),
       CollaborationCaret.configure({
         provider,
-        user: { name: user.name, color: cursorColor(user.id) },
+        user: { id: user.id, name: user.name, color: cursorColor(user.id) },
       }),
     ],
   });
@@ -457,6 +466,28 @@ export function CollabEditor({ pageId, user, readOnly = false }: CollabEditorPro
       >
         {label}
       </span>
+      {present.length > 0 ? (
+        <div
+          data-testid="collab-presence"
+          aria-label={t("editor.presence.label")}
+          style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", fontSize: 12 }}
+        >
+          <span style={{ opacity: 0.7, color: "rgb(var(--color-foreground))" }}>
+            {t("editor.presence.label")}
+          </span>
+          {present.map((person) => (
+            <span key={person.id} style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+              <span
+                aria-hidden
+                style={{ width: 8, height: 8, borderRadius: 4, background: person.color }}
+              />
+              <span style={{ color: "rgb(var(--color-foreground))" }}>
+                {person.self ? t("editor.presence.youElsewhere") : person.name}
+              </span>
+            </span>
+          ))}
+        </div>
+      ) : null}
       {readOnly ? null : <Toolbar editor={editor} editable={editable} />}
       <div
         data-testid="collab-editor"

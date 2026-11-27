@@ -37,3 +37,41 @@ export interface CollabEditorProps {
   /** Shown without editing (no EDIT on the page; the server drops edits anyway). */
   readOnly?: boolean;
 }
+
+/** Someone else with the page open, as their awareness state says (Y3, T3.4.2). */
+export interface Presence {
+  id: string;
+  name: string;
+  color: string;
+  /** The signed-in user in another tab or device. */
+  self: boolean;
+}
+
+/**
+ * The people with the page open besides this connection, from the awareness states, one entry per
+ * person and in a stable order. A connection that left is no longer in the states (the server
+ * drops its awareness when it closes), so it disappears from here too.
+ */
+export function presentPeople(
+  states: ReadonlyMap<number, Record<string, unknown>>,
+  ownClientId: number,
+  me: string,
+): Presence[] {
+  const people = new Map<string, Presence>();
+  for (const [clientId, state] of states) {
+    if (clientId === ownClientId) continue;
+    const user = state.user as { id?: unknown; name?: unknown; color?: unknown } | undefined;
+    if (typeof user?.name !== "string") continue;
+    const id = typeof user.id === "string" ? user.id : `client:${String(clientId)}`;
+    if (people.has(id)) continue;
+    people.set(id, {
+      id,
+      name: user.name,
+      color: typeof user.color === "string" ? user.color : cursorColor(id),
+      self: id === me,
+    });
+  }
+  return [...people.values()].sort(
+    (a, b) => Number(a.self) - Number(b.self) || a.name.localeCompare(b.name),
+  );
+}

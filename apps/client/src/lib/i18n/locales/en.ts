@@ -331,6 +331,7 @@ export const en: Catalog = {
   },
   editor: {
     toolbar: "Formatting",
+    presence: { label: "Here:", youElsewhere: "You (another window)" },
     status: {
       connecting: "Connecting…",
       connected: "Saved · live",
