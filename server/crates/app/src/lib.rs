@@ -279,7 +279,8 @@ where
         clock.clone(),
         access_engine.permissions(),
         realtime::Notifier::default(),
-    );
+    )
+    .with_sharing(std::sync::Arc::new(friendships.clone()));
     // Search asks each module to search its own tables (T2.7.5, ADR-0007).
     let search_service = search::SearchService::new(
         items.clone(),

@@ -9,7 +9,13 @@
 //! | GET  | `/sessions/current` | 200 [`WorkSession`]; 404 when none is open |
 //! | GET  | `/sessions/{id}` | 200 [`WorkSession`]; participants only |
 //! | POST | `/sessions/{id}/timer` | 200 [`WorkSession`]; body [`Command`] (W2, W3) |
-//! | POST | `/sessions/{id}/close` | 200 [`WorkSession`] (W1) |
+//! | POST | `/sessions/{id}/close` | 200 [`WorkSession`] (W1); a shared one ends for everyone |
+//! | POST | `/sessions/shared` | 200 [`WorkSession`]: a new shared session (W6) |
+//! | GET  | `/sessions/shared` | 200 [`WorkSession`]`[]`: the open shared ones the caller is in |
+//! | GET  | `/sessions/invitations` | 200 [`SessionInvitation`]`[]` |
+//! | POST | `/sessions/{id}/invitations` | 204; body [`InviteRequest`]; friends only (V1) |
+//! | POST | `/sessions/{id}/join` | 200 [`WorkSession`]; body [`JoinRequest`]; invited only |
+//! | POST | `/sessions/{id}/leave` | 204; the last one out closes it |
 
 use std::str::FromStr;
 
@@ -21,7 +27,10 @@ use identity::http::Authenticated;
 use kernel::AppError;
 use uuid::Uuid;
 
-use crate::model::{HistoryQuery, OpenRequest, SessionSummary, StatsQuery, WorkSession};
+use crate::model::{
+    HistoryQuery, InviteRequest, JoinRequest, OpenRequest, SessionInvitation, SessionSummary,
+    StatsQuery, WorkSession,
+};
 use crate::service::WorkSessions;
 use crate::stats::SessionStats;
 use crate::timer::Command;
@@ -43,6 +52,11 @@ pub fn router(state: SessionsHttpState) -> Router {
         .route("/sessions", post(open).get(history))
         .route("/sessions/stats", get(stats))
         .route("/sessions/current", get(current))
+        .route("/sessions/shared", post(open_shared).get(shared))
+        .route("/sessions/invitations", get(invitations))
+        .route("/sessions/{id}/invitations", post(invite))
+        .route("/sessions/{id}/join", post(join))
+        .route("/sessions/{id}/leave", post(leave))
         .route("/sessions/{id}", get(read))
         .route("/sessions/{id}/timer", post(command))
         .route("/sessions/{id}/close", post(close))
@@ -71,6 +85,75 @@ async fn open(
         .open(auth.user_id.as_uuid(), request)
         .await
         .map(Json)
+}
+
+async fn open_shared(
+    State(state): State<SessionsHttpState>,
+    Authenticated(auth): Authenticated,
+    Json(request): Json<OpenRequest>,
+) -> Result<Json<WorkSession>, AppError> {
+    state
+        .sessions
+        .open_shared(auth.user_id.as_uuid(), request)
+        .await
+        .map(Json)
+}
+
+async fn shared(
+    State(state): State<SessionsHttpState>,
+    Authenticated(auth): Authenticated,
+) -> Result<Json<Vec<WorkSession>>, AppError> {
+    state
+        .sessions
+        .shared(auth.user_id.as_uuid())
+        .await
+        .map(Json)
+}
+
+async fn invitations(
+    State(state): State<SessionsHttpState>,
+    Authenticated(auth): Authenticated,
+) -> Result<Json<Vec<SessionInvitation>>, AppError> {
+    state
+        .sessions
+        .invitations(auth.user_id.as_uuid())
+        .await
+        .map(Json)
+}
+
+async fn invite(
+    State(state): State<SessionsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+    Json(request): Json<InviteRequest>,
+) -> Result<axum::http::StatusCode, AppError> {
+    state
+        .sessions
+        .invite(auth.user_id.as_uuid(), id, request)
+        .await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+async fn join(
+    State(state): State<SessionsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+    Json(request): Json<JoinRequest>,
+) -> Result<Json<WorkSession>, AppError> {
+    state
+        .sessions
+        .join(auth.user_id.as_uuid(), id, request)
+        .await
+        .map(Json)
+}
+
+async fn leave(
+    State(state): State<SessionsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+) -> Result<axum::http::StatusCode, AppError> {
+    state.sessions.leave(auth.user_id.as_uuid(), id).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
 async fn current(
