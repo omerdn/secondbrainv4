@@ -501,6 +501,17 @@ export const en: Catalog = {
     },
   },
   account: {
+    export: {
+      title: "Download my data",
+      hint: "A JSON and a Markdown copy of everything you can see is prepared. The download link works for 24 hours.",
+      pending: "Preparing…",
+      ready: "Ready. The links work until {{until}}.",
+      json: "Download JSON",
+      markdown: "Download Markdown",
+      failed: "It could not be prepared. Try again.",
+      request: "Prepare an export",
+      requestFailed: "It could not start. Try again.",
+    },
     deletion: {
       title: "Delete account",
       hint: "If you delete your account you can change your mind within 30 days, and keep using the app meanwhile.",

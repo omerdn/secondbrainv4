@@ -317,6 +317,19 @@ impl NotebooksService {
         })
     }
 
+    /// A page's current text without formatting, one block per line (VIEW), for the data
+    /// export (HS3, T4.3.2).
+    ///
+    /// # Errors
+    /// [`AppError::NotFound`] or [`AppError::Internal`].
+    pub async fn page_text(&self, actor: Uuid, id: Uuid) -> Result<String, AppError> {
+        self.page(actor, id).await?;
+        let doc = crate::snapshots::load(&self.pool, id)
+            .await
+            .map_err(internal)?;
+        Ok(crate::snapshots::plain_text(&doc))
+    }
+
     /// A page's version history, newest first, older than `before` if given (VIEW, Y3).
     ///
     /// # Errors

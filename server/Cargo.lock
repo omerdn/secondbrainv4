@@ -155,9 +155,11 @@ version = "0.0.0"
 dependencies = [
  "access",
  "axum",
+ "base64 0.23.1",
  "chrono",
  "db",
  "dotenvy",
+ "getrandom 0.4.3",
  "goals",
  "http-body-util",
  "identity",
