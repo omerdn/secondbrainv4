@@ -30,6 +30,7 @@ export const destinations: readonly Destination[] = [
   { key: "notebooks", href: "/notebooks", icon: "book-outline", tab: true },
   { key: "session", href: "/session", icon: "timer-outline", tab: false },
   { key: "notifications", href: "/notifications", icon: "notifications-outline", tab: false },
+  { key: "friends", href: "/friends", icon: "people-outline", tab: false },
   { key: "calendar", href: "/calendar", icon: "calendar-outline", tab: false },
   { key: "tags", href: "/tags", icon: "pricetags-outline", tab: false },
   { key: "views", href: "/views", icon: "funnel-outline", tab: false },

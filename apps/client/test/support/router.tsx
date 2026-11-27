@@ -6,6 +6,7 @@ import type { TokenStore, Transport } from "@/features/auth/session";
 import AppLayout from "../../app/(app)/_layout";
 import Archive from "../../app/(app)/archive";
 import Calendar from "../../app/(app)/calendar";
+import Friends from "../../app/(app)/friends";
 import Goals from "../../app/(app)/goals";
 import Today from "../../app/(app)/index";
 import ItemDetail from "../../app/(app)/items/[id]";
@@ -60,6 +61,7 @@ export function renderApp(
       "(app)/tasks": Tasks,
       "(app)/tasks/[id]": TaskDetail,
       "(app)/routines": Routines,
+      "(app)/friends": Friends,
       "(app)/goals": Goals,
       "(app)/goals/[id]": GoalDetail,
       "(app)/routines/[id]": RoutineDetail,

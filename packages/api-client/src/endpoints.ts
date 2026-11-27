@@ -57,6 +57,10 @@ import type {
   Today,
   Calendar,
   SearchHit,
+  BlockedUser,
+  Friend,
+  IncomingFriendRequest,
+  OutgoingFriendRequest,
   Invitation,
   NotificationKind,
   NotificationList,
@@ -238,6 +242,28 @@ export function endpoints(api: ApiClient) {
       /** Latest process page lines of the visible items among `ids`, at most 100 (PRD S3). */
       processLines: (ids: readonly string[]) =>
         api.get<ItemStatusLine[]>("/process-lines", { query: { ids: ids.join(",") } }),
+    },
+    friends: {
+      /** The caller's friends, newest first (PRD AK1). */
+      list: () => api.get<Friend[]>("/friends"),
+      incoming: () => api.get<IncomingFriendRequest[]>("/friend-requests/incoming"),
+      outgoing: () => api.get<OutgoingFriendRequest[]>("/friend-requests/outgoing"),
+      /** The same answer whether or not the address has an account (PRD AK2). */
+      send: (email: string, options?: MutationOptions) =>
+        api.post<OutgoingFriendRequest>("/friend-requests", { email }, options),
+      accept: (id: string, options?: MutationOptions) =>
+        api.post<Friend>(`/friend-requests/${encodeURIComponent(id)}/accept`, undefined, options),
+      decline: (id: string, options?: MutationOptions) =>
+        api.post(`/friend-requests/${encodeURIComponent(id)}/decline`, undefined, options),
+      cancel: (id: string, options?: MutationOptions) =>
+        api.delete(`/friend-requests/${encodeURIComponent(id)}`, options),
+      unfriend: (userId: string, options?: MutationOptions) =>
+        api.delete(`/friends/${encodeURIComponent(userId)}`, options),
+      blocked: () => api.get<BlockedUser[]>("/blocks"),
+      block: (userId: string, options?: MutationOptions) =>
+        api.put(`/blocks/${encodeURIComponent(userId)}`, undefined, options),
+      unblock: (userId: string, options?: MutationOptions) =>
+        api.delete(`/blocks/${encodeURIComponent(userId)}`, options),
     },
     notifications: {
       /** The caller's notifications, newest first, and the unread count (PRD BL1). */
