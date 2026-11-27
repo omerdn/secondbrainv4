@@ -1,8 +1,14 @@
-import type { Item, SavedView, Tag } from "@secondbrain/api-types";
+import type { Friend, Item, SavedView, Tag } from "@secondbrain/api-types";
 import { act, fireEvent, screen, waitFor } from "expo-router/testing-library";
 import { useWindowDimensions } from "react-native";
 
-import { cleanFilter, isEmptyFilter, sameFilter, toggled } from "@/features/views/filterModel";
+import {
+  cleanFilter,
+  isEmptyFilter,
+  sameFilter,
+  toggled,
+  withLastDays,
+} from "@/features/views/filterModel";
 import { i18n } from "@/lib/i18n";
 
 import {
@@ -28,6 +34,8 @@ const setWidth = (width: number) => {
 const at = "2026-05-01T12:00:00Z";
 
 const tag: Tag = { id: "t1", name: "İş", color: null, created_at: at, updated_at: at };
+
+const friend: Friend = { user_id: "f1", display_name: "Ayşe", since: at };
 
 const item = (id: string, title: string, kind = "task"): Item => ({
   id,
@@ -67,6 +75,7 @@ function server(views: SavedView[] = [], extra: Record<string, (call: Call) => R
   return fakeServer({
     "GET /me": () => json(200, user),
     "GET /tags": () => json(200, [tag]),
+    "GET /friends": () => json(200, [friend]),
     "GET /saved-views": () => json(200, stored),
     "GET /items/filter": (call) => {
       const filter = filterOf(call) as { kinds?: string[] };
@@ -132,6 +141,15 @@ describe("filter model", () => {
     expect(cleanFilter({ state: "trash" })).toEqual({ state: "trash" });
   });
 
+  it("chooses and clears a relative date range", () => {
+    expect(withLastDays(undefined, 7)).toEqual({ field: "updated", last_days: 7 });
+    expect(withLastDays({ field: "created", last_days: 7 }, 30)).toEqual({
+      field: "created",
+      last_days: 30,
+    });
+    expect(withLastDays({ field: "created", last_days: 7 }, 7)).toBeUndefined();
+  });
+
   it("compares and detects empty filters", () => {
     expect(sameFilter({ kinds: ["a", "b"] }, { kinds: ["b", "a"], state: "active" })).toBe(true);
     expect(sameFilter({ kinds: ["a"] }, {})).toBe(false);
@@ -156,6 +174,36 @@ describe("filter bar", () => {
         state: "archived",
       });
     });
+  });
+
+  it("filters by status, a relative date and a friend (F1, F3)", async () => {
+    const s = server();
+    await open(s, "/views");
+    await screen.findByRole("button", { name: "Görev: Rapor yaz" });
+    await fireEvent.press(screen.getByRole("button", { name: "Tamamlandı" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Son 7 gün" }));
+    await fireEvent.press(await screen.findByRole("button", { name: "Oluşturma" }));
+    await fireEvent.press(await screen.findByRole("button", { name: "Ayşe" }));
+    await waitFor(() => {
+      expect(filterCalls(s.calls)).toContainEqual({
+        people: ["f1"],
+        date: { field: "created", last_days: 7 },
+        statuses: ["done"],
+      });
+    });
+    await fireEvent.press(screen.getByRole("button", { name: "Son 7 gün" }));
+    expect(screen.queryByRole("button", { name: "Oluşturma" })).toBeNull();
+    await waitFor(() => {
+      expect(filterCalls(s.calls)).toContainEqual({ people: ["f1"], statuses: ["done"] });
+    });
+  });
+
+  it("offers only friends as people (F3)", async () => {
+    const s = server([], { "GET /friends": () => json(200, []) });
+    await open(s, "/views");
+    await screen.findByRole("button", { name: "Görev: Rapor yaz" });
+    expect(screen.queryByText("Kişi")).toBeNull();
+    expect(s.calls.some((call) => call.path === "/friends")).toBe(true);
   });
 
   it("pages through results", async () => {
@@ -222,6 +270,26 @@ describe("saved views (F2)", () => {
       });
     });
     expect(await screen.findByRole("header", { name: "Koşu" })).toBeTruthy();
+  });
+
+  it("keeps the relative date, status and person in a saved view", async () => {
+    const s = server();
+    await open(s, "/views");
+    await fireEvent.press(await screen.findByRole("button", { name: "Açık" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Son 30 gün" }));
+    await fireEvent.press(await screen.findByRole("button", { name: "Ayşe" }));
+    await saveAs("Bu ay");
+    await waitFor(() => {
+      expect(writes(s.calls)[0]?.body).toEqual({
+        name: "Bu ay",
+        pinned: true,
+        filter: {
+          people: ["f1"],
+          date: { field: "updated", last_days: 30 },
+          statuses: ["open"],
+        },
+      });
+    });
   });
 
   it("explains a taken name", async () => {

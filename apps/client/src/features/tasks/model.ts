@@ -96,10 +96,16 @@ export function itemPatch(
 
 /** The server filter for the task list: always tasks, with the chosen state and tags. */
 export function taskFilter(selection: ItemFilter): ItemFilter {
-  const tagIds = [...(selection.tag_ids ?? [])].sort();
+  const sorted = (list: readonly string[] | undefined) => [...(list ?? [])].sort();
+  const tagIds = sorted(selection.tag_ids);
+  const statuses = sorted(selection.statuses);
+  const people = sorted(selection.people);
   return {
     kinds: ["task"],
     ...(tagIds.length === 0 ? {} : { tag_ids: tagIds }),
+    ...(statuses.length === 0 ? {} : { statuses }),
+    ...(people.length === 0 ? {} : { people }),
+    ...(selection.date === undefined ? {} : { date: selection.date }),
     ...(selection.state === undefined || selection.state === "active"
       ? {}
       : { state: selection.state }),

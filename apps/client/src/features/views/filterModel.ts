@@ -1,9 +1,38 @@
-import type { ItemFilter, ItemListState } from "@secondbrain/api-types";
+import type {
+  ItemFilter,
+  ItemFilterDate,
+  ItemFilterDateField,
+  ItemListState,
+} from "@secondbrain/api-types";
 
 /** Kinds the filter bar offers; module kinds arrive with the module registry. */
 export const FILTER_KINDS = ["task", "routine", "goal", "tracker", "notebook", "page"] as const;
 
 export const FILTER_STATES: readonly ItemListState[] = ["active", "archived", "trash"];
+
+/** Task statuses the server writes to the item (T3.0.3). */
+export const FILTER_STATUSES = ["open", "done"] as const;
+
+/** Relative ranges a saved view keeps as "the last N days" (T1.5.7). */
+export const FILTER_LAST_DAYS = [7, 30, 90] as const;
+
+export const FILTER_DATE_FIELDS: readonly ItemFilterDateField[] = [
+  "updated",
+  "created",
+  "last_touched",
+];
+
+/**
+ * The date filter after choosing `days`: choosing the current range again clears it, and the
+ * field stays as it was (last change by default).
+ */
+export function withLastDays(
+  date: ItemFilterDate | undefined,
+  days: number,
+): ItemFilterDate | undefined {
+  if (date?.last_days === days) return undefined;
+  return { field: date?.field ?? "updated", last_days: days };
+}
 
 /** `list` with `value` added, or removed if it was there. */
 export function toggled(list: readonly string[] | undefined, value: string): string[] {

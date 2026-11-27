@@ -9,7 +9,7 @@
 use std::collections::HashSet;
 
 use access::Perms;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use kernel::{AppError, FieldError, FieldErrorCode, Page, PageRequest, ValidationErrors};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -23,6 +23,8 @@ pub const FILTER_MAX_VALUES: usize = 50;
 /// Most people in one filter: each one costs an access lookup.
 pub const FILTER_MAX_PEOPLE: usize = 20;
 const STATUS_MAX_CHARS: usize = 40;
+/// Longest relative date range, in days.
+pub const FILTER_MAX_LAST_DAYS: u16 = 366;
 
 /// Which timestamp a date filter looks at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -44,7 +46,9 @@ impl DateField {
     }
 }
 
-/// A time range: `from` is included, `to` is not.
+/// A time range: `from` is included, `to` is not. `last_days` is a range relative to when the
+/// filter runs, so a saved view such as "the last 7 days" keeps moving (T1.5.7); it cannot be
+/// combined with `from` or `to`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 #[ts(export, rename = "ItemFilterDate")]
@@ -56,6 +60,20 @@ pub struct DateFilter {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub to: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub last_days: Option<u16>,
+}
+
+impl DateFilter {
+    /// The absolute range at `now`: `last_days` becomes `[now - days, now + ∞)`.
+    #[must_use]
+    pub fn bounds(&self, now: DateTime<Utc>) -> (Option<DateTime<Utc>>, Option<DateTime<Utc>>) {
+        match self.last_days {
+            Some(days) => (Some(now - Duration::days(i64::from(days))), None),
+            None => (self.from, self.to),
+        }
+    }
 }
 
 /// What to show. An absent or empty dimension does not filter.
@@ -161,6 +179,20 @@ impl ItemFilter {
             ));
         }
         if let Some(DateFilter {
+            last_days: Some(days),
+            from,
+            to,
+            ..
+        }) = self.date
+            && (days == 0 || days > FILTER_MAX_LAST_DAYS || from.is_some() || to.is_some())
+        {
+            errors.push(FieldError::new(
+                "date",
+                FieldErrorCode::Invalid,
+                format!("`last_days` is 1–{FILTER_MAX_LAST_DAYS} and stands alone"),
+            ));
+        }
+        if let Some(DateFilter {
             from: Some(from),
             to: Some(to),
             ..
@@ -215,6 +247,9 @@ impl ItemsService {
                 next_cursor: None,
             });
         }
+        let (date_from, date_to) = filter
+            .date
+            .map_or((None, None), |date| date.bounds(self.clock.now()));
         let date_column = filter
             .date
             .map_or(DateField::Created, |date| date.field)
@@ -240,8 +275,8 @@ impl ItemsService {
         .bind(non_empty(filter.team_ids.as_ref()))
         .bind(non_empty(filter.tag_ids.as_ref()))
         .bind(actor)
-        .bind(filter.date.and_then(|date| date.from))
-        .bind(filter.date.and_then(|date| date.to))
+        .bind(date_from)
+        .bind(date_to)
         .bind(after.map(|(at, _)| at))
         .bind(after.map(|(_, id)| id))
         .bind(page.fetch_limit())
@@ -309,7 +344,7 @@ impl ItemsService {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{Duration, TimeZone};
+    use chrono::TimeZone;
 
     use super::*;
 
@@ -347,6 +382,34 @@ mod tests {
                     field: DateField::Created,
                     from: Some(at),
                     to: Some(at - Duration::days(1)),
+                    last_days: None,
+                }),
+                ..ItemFilter::default()
+            },
+            ItemFilter {
+                date: Some(DateFilter {
+                    field: DateField::Created,
+                    from: None,
+                    to: None,
+                    last_days: Some(0),
+                }),
+                ..ItemFilter::default()
+            },
+            ItemFilter {
+                date: Some(DateFilter {
+                    field: DateField::Created,
+                    from: None,
+                    to: None,
+                    last_days: Some(FILTER_MAX_LAST_DAYS + 1),
+                }),
+                ..ItemFilter::default()
+            },
+            ItemFilter {
+                date: Some(DateFilter {
+                    field: DateField::Created,
+                    from: Some(at),
+                    to: None,
+                    last_days: Some(7),
                 }),
                 ..ItemFilter::default()
             },
@@ -354,6 +417,27 @@ mod tests {
         for filter in bad {
             assert!(filter.validate().is_err(), "{filter:?}");
         }
+    }
+
+    #[test]
+    fn last_days_moves_with_the_clock() {
+        let at = Utc.with_ymd_and_hms(2026, 11, 22, 12, 0, 0).unwrap();
+        let date = DateFilter {
+            field: DateField::Updated,
+            from: None,
+            to: None,
+            last_days: Some(7),
+        };
+        assert_eq!(date.bounds(at), (Some(at - Duration::days(7)), None));
+        let later = at + Duration::days(3);
+        assert_eq!(date.bounds(later), (Some(later - Duration::days(7)), None));
+        let absolute = DateFilter {
+            from: Some(at),
+            to: Some(later),
+            last_days: None,
+            ..date
+        };
+        assert_eq!(absolute.bounds(later), (Some(at), Some(later)));
     }
 
     #[test]

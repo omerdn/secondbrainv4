@@ -2,6 +2,8 @@
 import type { ItemFilterDateField } from "./ItemFilterDateField";
 
 /**
- * A time range: `from` is included, `to` is not.
+ * A time range: `from` is included, `to` is not. `last_days` is a range relative to when the
+ * filter runs, so a saved view such as "the last 7 days" keeps moving (T1.5.7); it cannot be
+ * combined with `from` or `to`.
  */
-export type ItemFilterDate = { field: ItemFilterDateField, from?: string, to?: string, };
+export type ItemFilterDate = { field: ItemFilterDateField, from?: string, to?: string, last_days?: number, };
