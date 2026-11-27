@@ -1,3 +1,21 @@
-//! `notifications`: Notification center, push, e-mail and preferences.
+//! `notifications`: Notification center, push, e-mail and preferences (PRD BL1–BL3,
+//! ARCHITECTURE §5.10, §14).
 //!
-//! Empty crate skeleton (T0.1.2). See ARCHITECTURE §3–§4 for module boundaries.
+//! - [`Notifications`]: the in-app center (T2.8.1): notifications made from outbox events, one
+//!   per event and user, listed and marked read by their recipient only, and announced with a
+//!   `notification.new` realtime event on the user's channel.
+//! - Channel preferences per type (BL3); push (T4.2.3, T4.2.4) and e-mail build on them.
+//! - [`register`]: turns other modules' events into notifications (invitations, G5).
+
+pub mod http;
+mod model;
+mod repo;
+mod service;
+mod subscribers;
+
+pub use model::{
+    Channel, NOTIFICATION_PAGE, Notification, NotificationKind, NotificationList,
+    NotificationPayload, NotificationPreference, NotificationsQuery, UpdatePreferenceRequest,
+};
+pub use service::{NEW_EVENT, Notifications};
+pub use subscribers::register;
