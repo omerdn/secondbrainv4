@@ -13,7 +13,9 @@ import {
   clockOffset,
   formatClock,
   hoursAndMinutes,
+  invitable,
   parseMinutes,
+  participantName,
   presetStart,
   rangeOf,
   segmentLog,
@@ -417,5 +419,95 @@ describe("statistics screen (W5)", () => {
     await fireEvent.press(await screen.findByRole("button", { name: "Geçmiş ve istatistik" }));
     expect(await screen.findByText("Bu aralıkta çalışma yok.")).toBeTruthy();
     expect(screen.getByText("Henüz oturum yok.")).toBeTruthy();
+  });
+});
+
+describe("shared sessions (W6)", () => {
+  const friends = [
+    { user_id: "u2", display_name: "Ayşe", since: iso(T0) },
+    { user_id: "u3", display_name: "Can", since: iso(T0) },
+  ];
+  const sharedSession = (extra: Partial<WorkSession> = {}) =>
+    session(stopped, {
+      id: "s2",
+      shared: true,
+      created_by: "u2",
+      participants: ["u2", "u1"],
+      ...extra,
+    });
+
+  it("names participants and offers only friends who are not in yet", () => {
+    const labels = { you: "Sen", someone: "Katılımcı" };
+    expect(participantName("u1", "u1", friends, labels)).toBe("Sen");
+    expect(participantName("u2", "u1", friends, labels)).toBe("Ayşe");
+    expect(participantName("x", "u1", friends, labels)).toBe("Katılımcı");
+    expect(invitable(friends, ["u1", "u2"]).map((f) => f.user_id)).toEqual(["u3"]);
+  });
+
+  it("joins a friend's session from an invitation", async () => {
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /sessions/current": () => json(404, { error: { code: "not_found", message: "x" } }),
+      "GET /friends": () => json(200, friends),
+      "GET /sessions/shared": () => json(200, []),
+      "GET /sessions/invitations": () =>
+        json(200, [{ session_id: "s2", invited_by: "u2", created_at: iso(T0) }]),
+      "POST /sessions/s2/join": () => json(200, sharedSession()),
+      "GET /sessions/s2": () => json(200, sharedSession()),
+    });
+    await open(server);
+    expect(await screen.findByText("Ayşe seni ortak oturuma çağırıyor.")).toBeTruthy();
+    await fireEvent.press(screen.getByRole("button", { name: "Ayşe kişisinin oturumuna katıl" }));
+    expect(await screen.findByText("Katılımcılar")).toBeTruthy();
+    expect(screen.getByText("Sen")).toBeTruthy();
+    expect(server.calls.find((c) => c.path === "/sessions/s2/join")?.body).toEqual({});
+  });
+
+  it("invites a friend and leaves a session someone else opened", async () => {
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /friends": () => json(200, friends),
+      "GET /sessions/s2": () => json(200, sharedSession()),
+      "POST /sessions/s2/invitations": () => json(204),
+      "POST /sessions/s2/leave": () => json(204),
+      "GET /sessions/current": () => json(404, { error: { code: "not_found", message: "x" } }),
+      "GET /sessions/shared": () => json(200, []),
+      "GET /sessions/invitations": () => json(200, []),
+    });
+    await renderApp(server.api, "/session?shared=s2", { tokenStore: memoryTokenStore("t") });
+    expect(await screen.findByText("Ayşe")).toBeTruthy();
+    // Ayşe is already in; only Can can be invited.
+    expect(screen.queryByRole("button", { name: "Ayşe kişisini oturuma çağır" })).toBeNull();
+    await fireEvent.press(screen.getByRole("button", { name: "Can kişisini oturuma çağır" }));
+    await waitFor(() => {
+      expect(server.calls.find((c) => c.path === "/sessions/s2/invitations")?.body).toEqual({
+        user_id: "u3",
+      });
+    });
+    expect(await screen.findByText("Davet gönderildi.")).toBeTruthy();
+    // Not the one who opened it: leaving, not closing for everyone.
+    expect(screen.queryByRole("button", { name: "Herkes için kapat" })).toBeNull();
+    await fireEvent.press(screen.getByRole("button", { name: "Oturumdan ayrıl" }));
+    await waitFor(() => {
+      expect(server.calls.some((c) => c.path === "/sessions/s2/leave")).toBe(true);
+    });
+    expect(server.calls.some((c) => c.path === "/sessions/s2/close")).toBe(false);
+  });
+
+  it("lets the one who opened it close it for everyone", async () => {
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /friends": () => json(200, friends),
+      "GET /sessions/s2": () => json(200, sharedSession({ created_by: "u1" })),
+      "POST /sessions/s2/close": () => json(200, sharedSession({ created_by: "u1", open: false })),
+      "GET /sessions/current": () => json(404, { error: { code: "not_found", message: "x" } }),
+      "GET /sessions/shared": () => json(200, []),
+      "GET /sessions/invitations": () => json(200, []),
+    });
+    await renderApp(server.api, "/session?shared=s2", { tokenStore: memoryTokenStore("t") });
+    await fireEvent.press(await screen.findByRole("button", { name: "Herkes için kapat" }));
+    await waitFor(() => {
+      expect(server.calls.some((c) => c.path === "/sessions/s2/close")).toBe(true);
+    });
   });
 });

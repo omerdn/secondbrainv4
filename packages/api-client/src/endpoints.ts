@@ -37,6 +37,7 @@ import type {
   ItemLink,
   ItemListState,
   ItemStatusLine,
+  JoinSessionRequest,
   LinkGoalRequest,
   LinkPreview,
   LoginRequest,
@@ -56,6 +57,7 @@ import type {
   SavedView,
   OpenSessionRequest,
   SessionInfo,
+  SessionInvitation,
   SessionStats,
   SessionSummary,
   TimerCommand,
@@ -364,6 +366,20 @@ export function endpoints(api: ApiClient) {
       /** Work and break time per local day and item (PRD W5). */
       stats: (range: { from?: string; to?: string } = {}) =>
         api.get<SessionStats>("/sessions/stats", { query: range }),
+      /** A new session shared with friends: one timer, everyone's own log (PRD W6). */
+      openShared: (body: OpenSessionRequest, options?: MutationOptions) =>
+        api.post<WorkSession>("/sessions/shared", body, options),
+      /** The open shared sessions the caller is in. */
+      shared: () => api.get<WorkSession[]>("/sessions/shared"),
+      invitations: () => api.get<SessionInvitation[]>("/sessions/invitations"),
+      /** Friends only (PRD V1). */
+      invite: (id: string, userId: string, options?: MutationOptions) =>
+        api.post(`/sessions/${encodeURIComponent(id)}/invitations`, { user_id: userId }, options),
+      join: (id: string, body: JoinSessionRequest, options?: MutationOptions) =>
+        api.post<WorkSession>(`/sessions/${encodeURIComponent(id)}/join`, body, options),
+      /** One's own segment ends; the last one out closes the session. */
+      leave: (id: string, options?: MutationOptions) =>
+        api.post(`/sessions/${encodeURIComponent(id)}/leave`, undefined, options),
     },
     goals: {
       /** Both dates are required (PRD D1). */

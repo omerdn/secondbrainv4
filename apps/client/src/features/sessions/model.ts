@@ -163,3 +163,22 @@ export function rangeOf(today: string, days: Range): { from: string; to: string 
 export function barShare(ms: number, busiest: number): number {
   return busiest <= 0 ? 0 : Math.min(1, Math.max(0, ms) / busiest);
 }
+
+/** Friends not in the session yet: whom one can still invite (W6). */
+export function invitable<T extends { user_id: string }>(
+  friends: readonly T[],
+  participants: readonly string[],
+): T[] {
+  return friends.filter((friend) => !participants.includes(friend.user_id));
+}
+
+/** A participant's name: "Sen", a friend's name, or a neutral word for anyone else. */
+export function participantName(
+  id: string,
+  me: string | null,
+  friends: readonly { user_id: string; display_name: string }[],
+  labels: { you: string; someone: string },
+): string {
+  if (id === me) return labels.you;
+  return friends.find((f) => f.user_id === id)?.display_name ?? labels.someone;
+}

@@ -9,10 +9,12 @@ import { useTranslation } from "react-i18next";
 import { Pressable, View } from "react-native";
 
 import { useServerEvent } from "@/connectivity";
+import { useSession } from "@/features/auth";
 import { Screen } from "@/features/shell";
 import { kindLabel } from "@/lib/items";
 
 import { useItemTitles } from "./itemTitles";
+import { Participants, SHARED_KEY, SharedSessions } from "./SharedSessions";
 import {
   clockFace,
   clockOffset,
@@ -58,25 +60,31 @@ function useNow(ticking: boolean, changed: unknown): number {
   return now;
 }
 
-/** Work session timer (PRD W1-W4, ARCHITECTURE §11): the server owns the timer. */
-export function SessionScreen() {
+/**
+ * Work session timer (PRD W1-W4, W6, ARCHITECTURE §11): the server owns the timer. With
+ * `sharedId`, a session shared with friends: the same timer for everyone, one's own item and log.
+ */
+export function SessionScreen({ sharedId }: { sharedId?: string | undefined }) {
   const { t } = useTranslation();
   const api = useApi();
   const client = useQueryClient();
+  const shared = sharedId !== undefined && sharedId !== "";
+  const key = shared ? (["session", sharedId] as const) : SESSION_KEY;
   const session = useQuery({
-    queryKey: SESSION_KEY,
+    queryKey: key,
     queryFn: async () => {
       try {
-        return loaded(await api.sessions.current());
+        return loaded(await (shared ? api.sessions.get(sharedId) : api.sessions.current()));
       } catch (error) {
         if (error instanceof ApiError && error.status === 404) return null;
         throw error;
       }
     },
   });
-  // Another device or tab changed the timer: read it again.
+  // Another device, tab or participant changed the timer: read it again.
   useServerEvent("session.timer", () => {
-    void client.invalidateQueries({ queryKey: SESSION_KEY });
+    void client.invalidateQueries({ queryKey: ["session"] });
+    void client.invalidateQueries({ queryKey: SHARED_KEY });
   });
 
   const router = useRouter();
@@ -85,7 +93,11 @@ export function SessionScreen() {
     router.push(href);
   };
   const settle = (next: WorkSession) => {
-    client.setQueryData(SESSION_KEY, loaded(next));
+    client.setQueryData(key, loaded(next));
+  };
+  const backToPersonal = () => {
+    void client.invalidateQueries({ queryKey: ["sessions"] });
+    router.replace("/session");
   };
   const open = useIdempotentMutation<WorkSession, PomodoroConfig>(
     (pomodoro, idempotencyKey) => api.sessions.open({ pomodoro }, { idempotencyKey }),
@@ -110,18 +122,29 @@ export function SessionScreen() {
           }}
         />
       ) : session.data === null ? (
-        <OpenForm
-          busy={open.isPending}
-          failed={open.isError}
-          onOpen={(pomodoro) => {
-            open.mutate(pomodoro);
-          }}
-        />
+        shared ? (
+          <EmptyState
+            title={t("sessions.shared.gone")}
+            action={{ title: t("sessions.shared.back"), onPress: backToPersonal }}
+          />
+        ) : (
+          <OpenForm
+            busy={open.isPending}
+            failed={open.isError}
+            onOpen={(pomodoro) => {
+              open.mutate(pomodoro);
+            }}
+          />
+        )
       ) : (
         <Timer
           loaded={session.data}
           onChange={settle}
           onClosed={() => {
+            if (shared) {
+              backToPersonal();
+              return;
+            }
             client.setQueryData(SESSION_KEY, null);
             void client.invalidateQueries({ queryKey: ["sessions"] });
           }}
@@ -130,6 +153,7 @@ export function SessionScreen() {
           }}
         />
       )}
+      {shared ? null : <SharedSessions />}
     </Screen>
   );
 }
@@ -231,8 +255,15 @@ function Timer({
       },
     },
   );
-  const close = useIdempotentMutation<WorkSession, undefined>(
-    (_, idempotencyKey) => api.sessions.close(session.id, { idempotencyKey }),
+  const { state } = useSession();
+  const me = state.status === "signedIn" ? state.user.id : null;
+  // W6: the one who opened it ends it for everyone; the others leave.
+  const leaves = session.shared && session.created_by !== me;
+  const close = useIdempotentMutation<unknown, undefined>(
+    (_, idempotencyKey) =>
+      leaves
+        ? api.sessions.leave(session.id, { idempotencyKey })
+        : api.sessions.close(session.id, { idempotencyKey }),
     { onSuccess: onClosed },
   );
   const busy = command.isPending || close.isPending;
@@ -348,6 +379,8 @@ function Timer({
         {command.isError ? <Text tone="danger">{t("sessions.saveFailed")}</Text> : null}
       </Card>
 
+      {session.shared ? <Participants session={session} me={me} /> : null}
+
       <Card className="gap-2">
         <Text variant="heading">{t("sessions.log")}</Text>
         {log.length === 0 ? (
@@ -372,7 +405,13 @@ function Timer({
 
       <View className="self-start">
         <Button
-          title={t("sessions.close")}
+          title={
+            session.shared
+              ? leaves
+                ? t("sessions.shared.leave")
+                : t("sessions.shared.closeForAll")
+              : t("sessions.close")
+          }
           variant="ghost"
           disabled={busy}
           onPress={() => {
