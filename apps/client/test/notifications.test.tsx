@@ -122,6 +122,26 @@ describe("notification center (BL1)", () => {
     });
   });
 
+  it("tells a removed person only the title, and does not open it (T4.3.8)", async () => {
+    const removed: Notification = {
+      id: "s1",
+      payload: {
+        type: "sharing_change",
+        change: "removed",
+        item_id: null,
+        item_title: "Doğum günü",
+        from_user: "u2",
+        from_name: "Ada",
+      },
+      read_at: null,
+      created_at: "2026-11-27T09:00:00Z",
+    };
+    const { server } = center([removed]);
+    await renderApp(server.api, "/notifications", { tokenStore: memoryTokenStore("t") });
+    await fireEvent.press(await screen.findByText('Ada seni "Doğum günü" paylaşımından çıkardı'));
+    expect(screen).toHavePathname("/notifications");
+  });
+
   it("shows the weekly summary with its parts (OZ1)", async () => {
     const summary: Notification = {
       id: "w1",

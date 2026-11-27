@@ -141,8 +141,28 @@ pub enum NotificationPayload {
         from_user: Uuid,
         from_name: String,
     },
+    /// The user's access to an item changed (BL2, V8, T4.3.8).
+    SharingChange {
+        change: SharingChangeKind,
+        /// Set only while the user can see the item (a new owner); never for someone removed.
+        item_id: Option<Uuid>,
+        item_title: String,
+        from_user: Uuid,
+        from_name: String,
+    },
     /// The weekly summary (OZ1).
     WeeklySummary(WeeklySummary),
+}
+
+/// How the user's access changed (T4.3.8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum SharingChangeKind {
+    /// The owner removed the user from the item; they no longer see it (V8).
+    Removed,
+    /// The user became the item's owner (handed over, or inherited, HS2).
+    BecameOwner,
 }
 
 /// A routine's week in the summary (OZ1).
@@ -212,6 +232,7 @@ impl NotificationPayload {
         match self {
             Self::WeeklySummary(_) => NotificationKind::WeeklySummary,
             Self::Assignment { .. } => NotificationKind::Assignment,
+            Self::SharingChange { .. } => NotificationKind::SharingChange,
             Self::Invitation { .. } => NotificationKind::Invitation,
             Self::RoutineReminder { .. } => NotificationKind::RoutineReminder,
             Self::Nudge { .. } => NotificationKind::Nudge,

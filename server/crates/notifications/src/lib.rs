@@ -21,8 +21,8 @@ mod summary;
 
 pub use model::{
     Channel, NOTIFICATION_PAGE, Notification, NotificationKind, NotificationList,
-    NotificationPayload, NotificationPreference, NotificationsQuery, SummaryGoal, SummaryRoutine,
-    SummarySession, UpdatePreferenceRequest, WeeklySummary,
+    NotificationPayload, NotificationPreference, NotificationsQuery, SharingChangeKind,
+    SummaryGoal, SummaryRoutine, SummarySession, UpdatePreferenceRequest, WeeklySummary,
 };
 pub use service::{NEW_EVENT, Notifications};
 pub use subscribers::register;

@@ -21,7 +21,7 @@ mod views;
 
 pub use activity::{Activity, ActivityKind};
 pub use context::ItemsAccessContext;
-pub use deletion::{OwnedSharedItem, TransferOwnershipRequest};
+pub use deletion::{OwnedSharedItem, OwnershipTransferred, TransferOwnershipRequest};
 pub use filters::{
     DateField, DateFilter, FILTER_MAX_LAST_DAYS, FILTER_MAX_PEOPLE, FILTER_MAX_VALUES, ItemFilter,
 };
@@ -30,7 +30,7 @@ pub use invitations::{
     InvitationRole, InvitationStatus, NoSharing, SharingFuture, SharingPolicy, role_allowed,
 };
 pub use links::{ItemLink, LinkDirection, link_allowed, register_link_cleanup};
-pub use members::{ItemMember, ItemMembers, MemberRole, PendingMember};
+pub use members::{ItemMember, ItemMembers, MemberRemoved, MemberRole, PendingMember};
 pub use model::{
     CreateItemRequest, DESCRIPTION_MAX_CHARS, Item, ItemChanges, ListQuery, ListState, NewItem,
     Owner, TITLE_MAX_CHARS, UpdateItemRequest, valid_kind,

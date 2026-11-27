@@ -4,12 +4,12 @@
 
 use db::outbox::{Dispatcher, HandlerError};
 use identity::IdentityService;
-use items::{InvitationCreated, ItemsService, ReactionAdded};
+use items::{InvitationCreated, ItemsService, MemberRemoved, OwnershipTransferred, ReactionAdded};
 use routines::reminders::RoutineReminderDue;
 use social::{FriendRequestSent, Nudged};
 use tasks::SubtaskAssigned;
 
-use crate::model::NotificationPayload;
+use crate::model::{NotificationPayload, SharingChangeKind};
 use crate::service::Notifications;
 
 /// Subscribes the notification center to the events it turns into notifications (call from
@@ -24,6 +24,9 @@ pub fn register(
     let (nudges, nudge_names) = (notifications.clone(), identity.clone());
     let (requests, request_names) = (notifications.clone(), identity.clone());
     let (assignments, assignment_items, assignment_names) =
+        (notifications.clone(), items.clone(), identity.clone());
+    let (removals, removal_names) = (notifications.clone(), identity.clone());
+    let (owners, owner_items, owner_names) =
         (notifications.clone(), items.clone(), identity.clone());
     let (reactions, reaction_items, reaction_names) =
         (notifications.clone(), items.clone(), identity.clone());
@@ -201,6 +204,68 @@ pub fn register(
                 };
                 notifications
                     .deliver(event.user_id, &payload, stored.id)
+                    .await
+                    .map_err(boxed)?;
+                Ok(())
+            }
+        },
+    );
+    // T4.3.8: removed from an item. The person no longer sees it: only its title is told (V9).
+    dispatcher.subscribe(
+        "notifications.member-removed",
+        move |event: MemberRemoved, stored| {
+            let (notifications, identity) = (removals.clone(), removal_names.clone());
+            async move {
+                let boxed = |err: kernel::AppError| Box::new(err) as HandlerError;
+                let from_name = identity
+                    .display_names(&[event.removed_by])
+                    .await
+                    .map_err(boxed)?
+                    .remove(&event.removed_by)
+                    .unwrap_or_default();
+                let payload = NotificationPayload::SharingChange {
+                    change: SharingChangeKind::Removed,
+                    item_id: None,
+                    item_title: event.item_title,
+                    from_user: event.removed_by,
+                    from_name,
+                };
+                notifications
+                    .deliver(event.user_id, &payload, stored.id)
+                    .await
+                    .map_err(boxed)?;
+                Ok(())
+            }
+        },
+    );
+    // T4.3.8: became the owner, while still seeing the item.
+    dispatcher.subscribe(
+        "notifications.ownership",
+        move |event: OwnershipTransferred, stored| {
+            let (notifications, items, identity) =
+                (owners.clone(), owner_items.clone(), owner_names.clone());
+            async move {
+                let boxed = |err: kernel::AppError| Box::new(err) as HandlerError;
+                let item = match items.get(event.to_user, event.item_id).await {
+                    Ok(item) => item,
+                    Err(kernel::AppError::NotFound) => return Ok(()),
+                    Err(err) => return Err(boxed(err)),
+                };
+                let from_name = identity
+                    .display_names(&[event.from_user])
+                    .await
+                    .map_err(boxed)?
+                    .remove(&event.from_user)
+                    .unwrap_or_default();
+                let payload = NotificationPayload::SharingChange {
+                    change: SharingChangeKind::BecameOwner,
+                    item_id: Some(item.id),
+                    item_title: item.title,
+                    from_user: event.from_user,
+                    from_name,
+                };
+                notifications
+                    .deliver(event.to_user, &payload, stored.id)
                     .await
                     .map_err(boxed)?;
                 Ok(())

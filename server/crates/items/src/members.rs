@@ -16,6 +16,21 @@ fn internal(err: impl std::error::Error + Send + Sync + 'static) -> AppError {
     AppError::Internal(Box::new(err))
 }
 
+/// The owner removed someone from an item (BL2, V8, T4.3.8); published in the removal's
+/// transaction. Leaving publishes nothing. The title is kept: the removed person no longer sees
+/// the item, and the notification shows nothing else about it (V9).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct MemberRemoved {
+    pub item_id: Uuid,
+    pub item_title: String,
+    pub removed_by: Uuid,
+    pub user_id: Uuid,
+}
+
+impl kernel::DomainEvent for MemberRemoved {
+    const EVENT_TYPE: &'static str = "item.member_removed";
+}
+
 /// What a member is to the item (N2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -245,6 +260,24 @@ impl ItemsService {
         }
         for tuple in theirs {
             self.access.revoke(&mut tx, tuple).await.map_err(internal)?;
+        }
+        if actor != member {
+            let title: String = sqlx::query_scalar("SELECT title FROM items WHERE id = $1")
+                .bind(item)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(internal)?;
+            db::outbox::publish(
+                &mut tx,
+                &MemberRemoved {
+                    item_id: item,
+                    item_title: title,
+                    removed_by: actor,
+                    user_id: member,
+                },
+            )
+            .await
+            .map_err(internal)?;
         }
         tx.commit().await.map_err(internal)
     }

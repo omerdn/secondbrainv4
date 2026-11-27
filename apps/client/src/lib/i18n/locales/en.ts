@@ -473,6 +473,8 @@ export const en: Catalog = {
     routineReminder: 'Reminder: "{{title}}" ({{time}})',
     assignment: '{{from}} assigned you to "{{title}}"',
     assignmentSubtask: '{{from}} assigned you to "{{subtask}}" in "{{title}}"',
+    sharingRemoved: '{{from}} removed you from "{{title}}"',
+    sharingOwner: '"{{title}}" is yours now',
     weeklySummary: "Your weekly summary: {{from}} – {{to}}",
     summary: {
       routines: "Routines",
