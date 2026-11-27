@@ -2,6 +2,7 @@ import { Slot } from "expo-router";
 import { useState } from "react";
 
 import { SessionGate, useSession, VerifyEmailBanner } from "@/features/auth";
+import { useUnreadCount } from "@/features/notifications";
 import { SearchSheet, useSearchShortcut } from "@/features/search";
 import { AppShell } from "@/features/shell";
 import { PinnedViews } from "@/features/views";
@@ -22,11 +23,13 @@ function Shell() {
     setSearching(true);
   };
   useSearchShortcut(openSearch);
+  const unread = useUnreadCount();
   return (
     <AppShell
       account={state.status === "signedIn" ? state.user.display_name : null}
       sidebarExtra={<PinnedViews />}
       onSearch={openSearch}
+      badges={{ notifications: unread }}
     >
       <VerifyEmailBanner />
       <Slot />
