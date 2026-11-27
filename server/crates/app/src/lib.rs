@@ -58,7 +58,7 @@ where
         pool.clone(),
         clock.clone(),
         identity::EmailSettings {
-            sender: email_sender,
+            sender: email_sender.clone(),
             web_url: config.public_web_url.clone(),
         },
     );
@@ -182,6 +182,13 @@ where
             idempotency::CleanupIdempotencyKeys {},
         )
         .map_err(RunError::Schedule)?;
+    // T3.7.1: invitation and friend request e-mails, retried by the worker.
+    notifications::email::register_email(
+        &mut worker,
+        identity.clone(),
+        email_sender.clone(),
+        config.public_web_url.clone(),
+    );
     identity::cleanup::register(identity.clone(), &mut worker, &mut scheduler)
         .map_err(RunError::Schedule)?;
     access_engine.register(&mut worker, pool.clone());

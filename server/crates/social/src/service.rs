@@ -9,8 +9,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::model::{
-    BlockedUser, DECLINE_COOLDOWN, Friend, IncomingRequest, Nudged, OutgoingRequest,
-    REQUESTS_PER_DAY, normalize_email, nudge_day, pair,
+    BlockedUser, DECLINE_COOLDOWN, Friend, FriendRequestSent, IncomingRequest, Nudged,
+    OutgoingRequest, REQUESTS_PER_DAY, normalize_email, nudge_day, pair,
 };
 use crate::repo;
 
@@ -103,6 +103,18 @@ impl Friendships {
             .map_err(internal)?
         {
             return Err(AppError::Conflict(ALREADY_ASKED.into()));
+        }
+        if let (Some(to_user), false) = (to, silenced) {
+            db::outbox::publish(
+                &mut tx,
+                &FriendRequestSent {
+                    request_id: id,
+                    from_user: actor,
+                    to_user,
+                },
+            )
+            .await
+            .map_err(internal)?;
         }
         tx.commit().await.map_err(internal)?;
         Ok(OutgoingRequest {

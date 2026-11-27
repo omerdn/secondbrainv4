@@ -21,6 +21,10 @@ pub enum EmailKind {
     VerifyEmail,
     /// Lets a user choose a new password.
     ResetPassword,
+    /// Someone invited the user to an item (G5, T3.7.1).
+    Invitation,
+    /// Someone asked the user to be friends (AK1, T3.7.1).
+    FriendRequest,
 }
 
 impl EmailKind {
@@ -29,6 +33,8 @@ impl EmailKind {
         match self {
             Self::VerifyEmail => "verify_email",
             Self::ResetPassword => "reset_password",
+            Self::Invitation => "invitation",
+            Self::FriendRequest => "friend_request",
         }
     }
 }

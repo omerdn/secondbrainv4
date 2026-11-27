@@ -16,7 +16,7 @@ mod repo;
 mod service;
 
 pub use model::{
-    BlockedUser, DECLINE_COOLDOWN, Friend, IncomingRequest, Nudged, OutgoingRequest,
-    REQUESTS_PER_DAY, SendFriendRequest, normalize_email, nudge_day,
+    BlockedUser, DECLINE_COOLDOWN, Friend, FriendRequestSent, IncomingRequest, Nudged,
+    OutgoingRequest, REQUESTS_PER_DAY, SendFriendRequest, normalize_email, nudge_day,
 };
 pub use service::Friendships;

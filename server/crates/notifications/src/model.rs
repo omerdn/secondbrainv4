@@ -55,10 +55,12 @@ impl NotificationKind {
         Self::ALL.into_iter().find(|kind| kind.as_str() == value)
     }
 
-    /// The channels of a type nobody changed: e-mail only for summaries (BL1).
+    /// The channels of a type nobody changed: e-mail for invitations, which wait for an answer,
+    /// and summaries (BL1, T3.7.1).
     #[must_use]
     pub fn default_channels(self) -> Vec<Channel> {
         match self {
+            Self::Invitation => vec![Channel::InApp, Channel::Push, Channel::Email],
             Self::WeeklySummary => vec![Channel::InApp, Channel::Email],
             _ => vec![Channel::InApp, Channel::Push],
         }

@@ -15,6 +15,7 @@ axum.workspace = true
 chrono.workspace = true
 db = { path = "../db" }
 identity = { path = "../identity" }
+jobs = { path = "../jobs" }
 items = { path = "../items" }
 kernel = { path = "../kernel" }
 realtime = { path = "../realtime" }

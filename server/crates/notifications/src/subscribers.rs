@@ -6,7 +6,7 @@ use db::outbox::{Dispatcher, HandlerError};
 use identity::IdentityService;
 use items::{InvitationCreated, ItemsService, ReactionAdded};
 use routines::reminders::RoutineReminderDue;
-use social::Nudged;
+use social::{FriendRequestSent, Nudged};
 
 use crate::model::NotificationPayload;
 use crate::service::Notifications;
@@ -21,6 +21,7 @@ pub fn register(
 ) {
     let reminders = notifications.clone();
     let (nudges, nudge_names) = (notifications.clone(), identity.clone());
+    let (requests, request_names) = (notifications.clone(), identity.clone());
     let (reactions, reaction_items, reaction_names) =
         (notifications.clone(), items.clone(), identity.clone());
     dispatcher.subscribe(
@@ -45,6 +46,12 @@ pub fn register(
                     .map_err(boxed)?
                     .remove(&event.from_user)
                     .unwrap_or_default();
+                let template = crate::email::Template::Invitation {
+                    from_name: from_name.clone(),
+                    item_kind: invitation.item_kind.clone(),
+                    item_title: invitation.item_title.clone(),
+                    role: invitation.role.as_str().to_owned(),
+                };
                 let payload = NotificationPayload::Invitation {
                     invitation_id: invitation.id,
                     item_id: invitation.item_id,
@@ -56,6 +63,16 @@ pub fn register(
                 };
                 notifications
                     .deliver(event.to_user, &payload, stored.id)
+                    .await
+                    .map_err(boxed)?;
+                // BL1: an invitation waits for an answer, so it may also go by e-mail (BL3).
+                notifications
+                    .queue_email(
+                        event.to_user,
+                        crate::model::NotificationKind::Invitation,
+                        template,
+                        stored.id,
+                    )
                     .await
                     .map_err(boxed)?;
                 Ok(())
@@ -116,6 +133,32 @@ pub fn register(
                 };
                 notifications
                     .deliver(event.to_user, &payload, stored.id)
+                    .await
+                    .map_err(boxed)?;
+                Ok(())
+            }
+        },
+    );
+    // A friend request has its own list in the app; it only adds an e-mail (BL1, T3.7.1).
+    dispatcher.subscribe(
+        "notifications.friend-request-email",
+        move |event: FriendRequestSent, stored| {
+            let (notifications, identity) = (requests.clone(), request_names.clone());
+            async move {
+                let boxed = |err: kernel::AppError| Box::new(err) as HandlerError;
+                let from_name = identity
+                    .display_names(&[event.from_user])
+                    .await
+                    .map_err(boxed)?
+                    .remove(&event.from_user)
+                    .unwrap_or_default();
+                notifications
+                    .queue_email(
+                        event.to_user,
+                        crate::model::NotificationKind::Invitation,
+                        crate::email::Template::FriendRequest { from_name },
+                        stored.id,
+                    )
                     .await
                     .map_err(boxed)?;
                 Ok(())
