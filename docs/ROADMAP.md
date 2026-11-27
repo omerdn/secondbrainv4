@@ -611,6 +611,8 @@ Her spike'ın sonucu bir ADR olarak yazılır.
   - TK7
 - **T5.1.7** · Filtre çubuğunda takım · client · S
   - T1.5.7'den ayrıldı; takım listesi ve kayıtlı görünümde saklama (F1, F3)
+- **T5.1.8** · Görev, rutin, hedef ve takipte takım sahipliği · backend · M
+  - T5.1.3'ten çıktı; takım adına oluşturma ve takım içi doğrudan atama (V12, TK2, TK4)
 
 ### E5.2 · Takım arayüzü · bağımlılık: E5.1
 - **T5.2.1** · Takım ayarları sayfası · client · L
@@ -620,6 +622,8 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 - **T5.2.3** · Aktivite log görünümü ve filtreleri · client · M
 - **T5.2.4** · Büyük takımlarda erişim hesabı performans testi · test · M
   - 1000 üye ve 50 bin nesne
+- **T5.2.5** · Takım nesnesi oluşturma ve görünürlük modu · client · M
+  - T5.1.3'ten çıktı; sahip seçimi, mod, sorumlular ve izleyiciler; genişletmeden önce uyarı (V12, V7)
 
 ---
 

@@ -8,6 +8,8 @@
 //! | GET    | `/items?state=active\|archived\|trash` | 200 `Item[]` |
 //! | GET    | `/items/{id}` | 200 [`Item`]; 404 if not visible (V9) |
 //! | PATCH  | `/items/{id}` | 200 [`Item`]; body [`UpdateItemRequest`]; EDIT |
+//! | POST   | `/teams/{team_id}/items` | 201 [`Item`]; body [`CreateTeamItemRequest`]; 404 outside the team, 403 without the role's right (V12, TK4) |
+//! | PUT    | `/items/{id}/visibility` | 200 [`Item`]; body [`SetTeamVisibilityRequest`]; MANAGE; 422 for a personal item (V12, V8) |
 //! | POST   | `/items/{id}/archive`, `/items/{id}/unarchive` | 200 [`Item`]; MANAGE |
 //! | DELETE | `/items/{id}` | 200 [`Item`] moved to the trash; owner only (V6) |
 //! | POST   | `/items/{id}/restore` | 200 [`Item`]; owner only |
@@ -58,6 +60,7 @@ use crate::links::ItemLink;
 use crate::model::{CreateItemRequest, Item, ListQuery, UpdateItemRequest};
 use crate::service::ItemsService;
 use crate::tags::{CreateTagRequest, Tag, UpdateTagRequest};
+use crate::team_items::{CreateTeamItemRequest, SetTeamVisibilityRequest};
 use crate::views::{CreateSavedViewRequest, SavedView, UpdateSavedViewRequest};
 
 /// `GET /items/filter` query. The filter is JSON because it holds lists.
@@ -86,6 +89,8 @@ pub fn router(state: ItemsHttpState) -> Router {
     Router::new()
         .route("/items", post(create).get(list))
         .route("/items/{id}", get(read).patch(update).delete(trash))
+        .route("/items/{id}/visibility", put(set_visibility))
+        .route("/teams/{team_id}/items", post(create_team_item))
         .route("/items/{id}/archive", post(archive))
         .route("/items/{id}/unarchive", post(unarchive))
         .route("/items/{id}/restore", post(restore))
@@ -498,6 +503,33 @@ async fn create(
     let new = request.validate()?;
     let item = state.items.create(auth.user_id.as_uuid(), new).await?;
     Ok((StatusCode::CREATED, Json(item)))
+}
+
+async fn create_team_item(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(team): Path<Uuid>,
+    Json(request): Json<CreateTeamItemRequest>,
+) -> Result<(StatusCode, Json<Item>), AppError> {
+    let new = request.validate()?;
+    let item = state
+        .items
+        .create_team_item(auth.user_id.as_uuid(), team, new)
+        .await?;
+    Ok((StatusCode::CREATED, Json(item)))
+}
+
+async fn set_visibility(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+    Json(request): Json<SetTeamVisibilityRequest>,
+) -> Result<Json<Item>, AppError> {
+    state
+        .items
+        .set_team_visibility(auth.user_id.as_uuid(), id, request.visibility)
+        .await
+        .map(Json)
 }
 
 async fn list(

@@ -29,6 +29,8 @@ pub struct Item {
     pub title: String,
     pub description: Option<String>,
     pub owner: Owner,
+    /// Who of the team sees a team item (V12); `null` for personal items.
+    pub team_visibility: Option<crate::team_items::TeamVisibilityMode>,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -61,7 +63,8 @@ pub struct ListQuery {
     pub state: Option<ListState>,
 }
 
-/// `POST /items` body. Items are personal for now; team items arrive with teams (T5.1.3).
+/// `POST /items` body: a personal item. Team items are created with
+/// [`crate::CreateTeamItemRequest`] (T5.1.3).
 #[derive(Debug, Clone, Deserialize, TS)]
 #[ts(export)]
 pub struct CreateItemRequest {

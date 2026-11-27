@@ -37,13 +37,15 @@ impl World {
         tx.commit().await.unwrap();
     }
 
-    /// The items service on this world's database and access engine, with the system clock.
+    /// The items service on this world's database and access engine, with the system clock and
+    /// the real team directory (T5.1.3).
     pub(crate) fn items(&self) -> ItemsService {
         ItemsService::new(
             self.pool().clone(),
             Arc::new(kernel::SystemClock),
             self.engine.clone(),
         )
+        .with_teams(Arc::new(self.teams()))
     }
 
     /// A real item of `kind` owned by `owner`.
@@ -88,26 +90,41 @@ impl World {
         team
     }
 
-    /// A task owned by `team` and created by `creator`, visible to `mode` (`all` or
-    /// `assignees`, V12). Until team items have their API (T5.1.3) the row is written here and
-    /// ownership goes through the access engine.
-    pub(crate) async fn team_task(&self, team: Uuid, creator: Uuid, mode: &str) -> Uuid {
-        let id = Uuid::now_v7();
-        sqlx::query(
-            "INSERT INTO items (id, kind, owner_team_id, title, team_visibility, created_by,
-                                created_at, updated_at, last_touched_at)
-             VALUES ($1, 'task', $2, 'Takım işi', $3, $4, now(), now(), now())",
-        )
-        .bind(id)
-        .bind(team)
-        .bind(mode)
-        .bind(creator)
-        .execute(self.pool())
-        .await
+    /// A task owned by `team`, created by `creator` through the API with visibility `mode`
+    /// (V12, T5.1.3).
+    pub(crate) async fn team_task(
+        &self,
+        team: Uuid,
+        creator: Uuid,
+        mode: items::TeamVisibilityMode,
+    ) -> Uuid {
+        self.team_task_with(team, creator, mode, &[], &[]).await
+    }
+
+    /// [`Self::team_task`] with assignees and watchers chosen at creation (TK4).
+    pub(crate) async fn team_task_with(
+        &self,
+        team: Uuid,
+        creator: Uuid,
+        mode: items::TeamVisibilityMode,
+        assignees: &[Uuid],
+        watchers: &[Uuid],
+    ) -> Uuid {
+        let new = items::CreateTeamItemRequest {
+            kind: "task".into(),
+            title: "Takım işi".into(),
+            description: None,
+            visibility: Some(mode),
+            assignees: Some(assignees.to_vec()),
+            watchers: Some(watchers.to_vec()),
+        }
+        .validate()
         .unwrap();
-        self.grant(&[RelationTuple::new(id, access::Relation::OwnedBy, team)])
-            .await;
-        id
+        self.items()
+            .create_team_item(creator, team, new)
+            .await
+            .unwrap()
+            .id
     }
 
     pub(crate) fn permissions(&self) -> PermissionService<ItemsAccessContext> {

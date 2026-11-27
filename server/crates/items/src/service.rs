@@ -15,6 +15,7 @@ use crate::activity::{self, ActivityKind, NewActivity};
 use crate::context::ItemsAccessContext;
 use crate::invitations::{NoSharing, SharingPolicy};
 use crate::model::{Item, ItemChanges, ListState, NewItem, Owner};
+use crate::team_items::{NoTeams, TeamDirectory, TeamVisibilityMode};
 use crate::touch::{self, TouchAction};
 
 /// How long an item stays in the trash before it is purged (N4).
@@ -26,8 +27,8 @@ pub const LIST_LIMIT: i64 = 500;
 /// Items purged per batch of the daily job.
 const PURGE_BATCH: i64 = 200;
 
-pub(crate) const COLUMNS: &str = "id, kind, title, description, owner_user_id, owner_team_id, created_by, \
-                       created_at, updated_at, last_touched_at, archived_at, deleted_at";
+pub(crate) const COLUMNS: &str = "id, kind, title, description, owner_user_id, owner_team_id, team_visibility, \
+                       created_by, created_at, updated_at, last_touched_at, archived_at, deleted_at";
 
 #[derive(FromRow)]
 pub(crate) struct ItemRow {
@@ -37,6 +38,7 @@ pub(crate) struct ItemRow {
     description: Option<String>,
     owner_user_id: Option<Uuid>,
     owner_team_id: Option<Uuid>,
+    team_visibility: Option<String>,
     created_by: Uuid,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -61,6 +63,10 @@ impl From<ItemRow> for Item {
             title: row.title,
             description: row.description,
             owner,
+            team_visibility: row
+                .team_visibility
+                .as_deref()
+                .and_then(TeamVisibilityMode::parse),
             created_by: row.created_by,
             created_at: row.created_at,
             updated_at: row.updated_at,
@@ -94,6 +100,7 @@ pub struct ItemsService {
     pub(crate) clock: SharedClock,
     pub(crate) access: AccessEngine<ItemsAccessContext>,
     pub(crate) sharing: Arc<dyn SharingPolicy>,
+    pub(crate) teams: Arc<dyn TeamDirectory>,
 }
 
 impl ItemsService {
@@ -103,6 +110,7 @@ impl ItemsService {
             clock,
             access,
             sharing: Arc::new(NoSharing),
+            teams: Arc::new(NoTeams),
         }
     }
 
@@ -110,6 +118,13 @@ impl ItemsService {
     #[must_use]
     pub fn with_sharing(mut self, sharing: Arc<dyn SharingPolicy>) -> Self {
         self.sharing = sharing;
+        self
+    }
+
+    /// Replaces the team directory (TK3). Without this, nobody may create team items ([`NoTeams`]).
+    #[must_use]
+    pub fn with_teams(mut self, teams: Arc<dyn TeamDirectory>) -> Self {
+        self.teams = teams;
         self
     }
 

@@ -4,7 +4,7 @@
 use access::Relation as R;
 use kernel::AppError;
 
-use crate::support::{World, id, pending, t};
+use crate::support::{World, id, t};
 
 /// Ayşe sees page P only through its link to task T. After Ali unlinks P from T she can no longer
 /// see P.
@@ -94,7 +94,9 @@ async fn team_role_change_recomputes() {
     let team = world
         .team(admin, &[(mehmet, teams::TeamRole::Manager)])
         .await;
-    let item = world.team_task(team, admin, "assignees").await;
+    let item = world
+        .team_task(team, admin, items::TeamVisibilityMode::Assignees)
+        .await;
     let items = world.items();
     assert_eq!(items.get(mehmet, item).await.unwrap().id, item);
 
@@ -111,7 +113,60 @@ async fn team_role_change_recomputes() {
 
 /// Switching a team task from "all team" to "assignees only" removes access for other members.
 #[tokio::test]
-#[ignore = "T5.1.3: team items and visibility mode"]
 async fn visibility_mode_change_recomputes() {
-    pending()
+    let world = World::new().await;
+    let (admin, _) = world.person("Admin").await;
+    let (zeynep, _) = world.person("Zeynep").await;
+    let (deniz, _) = world.person("Deniz").await;
+    let team = world
+        .team(
+            admin,
+            &[
+                (zeynep, teams::TeamRole::Member),
+                (deniz, teams::TeamRole::Member),
+            ],
+        )
+        .await;
+    let item = world
+        .team_task_with(team, admin, items::TeamVisibilityMode::All, &[zeynep], &[])
+        .await;
+    let items = world.items();
+    assert_eq!(items.get(deniz, item).await.unwrap().id, item);
+
+    // A member without MANAGE cannot change the mode.
+    assert!(matches!(
+        items
+            .set_team_visibility(zeynep, item, items::TeamVisibilityMode::Assignees)
+            .await,
+        Err(AppError::Forbidden)
+    ));
+    let changed = items
+        .set_team_visibility(admin, item, items::TeamVisibilityMode::Assignees)
+        .await
+        .unwrap();
+    assert_eq!(
+        changed.team_visibility,
+        Some(items::TeamVisibilityMode::Assignees)
+    );
+    assert!(matches!(
+        items.get(deniz, item).await,
+        Err(AppError::NotFound)
+    ));
+    assert_eq!(items.get(zeynep, item).await.unwrap().id, item);
+
+    // And back: access widens again.
+    items
+        .set_team_visibility(admin, item, items::TeamVisibilityMode::All)
+        .await
+        .unwrap();
+    assert_eq!(items.get(deniz, item).await.unwrap().id, item);
+
+    // Personal items have no mode.
+    let personal = world.item(admin, "task", "Kişisel").await;
+    assert!(matches!(
+        items
+            .set_team_visibility(admin, personal.id, items::TeamVisibilityMode::All)
+            .await,
+        Err(AppError::Validation(_))
+    ));
 }

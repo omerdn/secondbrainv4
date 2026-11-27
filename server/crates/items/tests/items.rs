@@ -53,12 +53,46 @@ impl items::SharingPolicy for FakeSharing {
     }
 }
 
+/// Stand-in for the teams module (T5.1.3): members and whether their role may create items and
+/// assign others.
+/// (team, user) → (may create items, may assign others).
+type TeamRights = std::collections::HashMap<(Uuid, Uuid), (bool, bool)>;
+
+#[derive(Clone, Default)]
+struct FakeTeams(Arc<Mutex<TeamRights>>);
+
+impl FakeTeams {
+    fn join(&self, team: Uuid, user: Uuid, create: bool, assign: bool) {
+        self.0
+            .lock()
+            .unwrap()
+            .insert((team, user), (create, assign));
+    }
+}
+
+impl items::TeamDirectory for FakeTeams {
+    fn is_member(&self, team: Uuid, user: Uuid) -> items::TeamFuture<'_> {
+        let member = self.0.lock().unwrap().contains_key(&(team, user));
+        Box::pin(async move { Ok(member) })
+    }
+
+    fn may(&self, actor: Uuid, team: Uuid, action: items::TeamAction) -> items::TeamFuture<'_> {
+        let rights = self.0.lock().unwrap().get(&(team, actor)).copied();
+        let allowed = rights.is_some_and(|(create, assign)| match action {
+            items::TeamAction::CreateItems => create,
+            items::TeamAction::Assign => assign,
+        });
+        Box::pin(async move { Ok(allowed) })
+    }
+}
+
 struct World {
     db: TestDb,
     clock: FixedClock,
     access: AccessEngine<ItemsAccessContext>,
     items: ItemsService,
     sharing: FakeSharing,
+    teams: FakeTeams,
     router: Router,
 }
 
@@ -69,8 +103,10 @@ impl World {
         let shared = Arc::new(clock.clone());
         let access = AccessEngine::new(ItemsAccessContext, AccessConfig::default());
         let sharing = FakeSharing::default();
+        let teams = FakeTeams::default();
         let items = ItemsService::new(db.pool().clone(), shared.clone(), access.clone())
-            .with_sharing(Arc::new(sharing.clone()));
+            .with_sharing(Arc::new(sharing.clone()))
+            .with_teams(Arc::new(teams.clone()));
         let identity = IdentityService::new(
             db.pool().clone(),
             shared,
@@ -89,6 +125,7 @@ impl World {
             access,
             items,
             sharing,
+            teams,
             router,
         }
     }
@@ -2216,4 +2253,126 @@ async fn ak4_only_visible_completions_of_friends_get_reactions() {
         w.items.react(ali, completion, emoji("👏")).await,
         Err(AppError::Forbidden)
     ));
+}
+
+// --- team items (T5.1.3, V12, TK4, V8, V9) -------------------------------------------------------
+
+#[tokio::test]
+async fn v12_team_items_over_http_leak_nothing() {
+    let w = World::new().await;
+    let (ali, ali_token) = w.user("ali@example.com").await;
+    let (ayse, ayse_token) = w.user("ayse@example.com").await;
+    let (_, outsider_token) = w.user("dis@example.com").await;
+    let team = Uuid::now_v7();
+    w.teams.join(team, ali, true, true);
+    w.teams.join(team, ayse, true, false);
+    w.grant(RelationTuple::new(team, R::TeamAdmin, ali)).await;
+    w.grant(RelationTuple::new(team, R::TeamMember, ayse)).await;
+    let body = json!({ "kind": "task", "title": "Rapor", "visibility": "assignees" });
+
+    // Outsiders get the same answer for a real team and a made-up one.
+    let real = w
+        .call(
+            Method::POST,
+            &format!("/teams/{team}/items"),
+            &outsider_token,
+            Some(body.clone()),
+        )
+        .await;
+    let fake = w
+        .call(
+            Method::POST,
+            &format!("/teams/{}/items", Uuid::now_v7()),
+            &outsider_token,
+            Some(body.clone()),
+        )
+        .await;
+    assert_eq!(real.status(), StatusCode::NOT_FOUND);
+    assert_eq!(fake.status(), StatusCode::NOT_FOUND);
+    assert_eq!(json_body(real).await, json_body(fake).await);
+
+    // A member without the assign right may not choose someone else.
+    let assigning = json!({ "kind": "task", "title": "X", "assignees": [ali] });
+    let response = w
+        .call(
+            Method::POST,
+            &format!("/teams/{team}/items"),
+            &ayse_token,
+            Some(assigning),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let response = w
+        .call(
+            Method::POST,
+            &format!("/teams/{team}/items"),
+            &ali_token,
+            Some(body),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let item = json_body(response).await;
+    assert_eq!(item["owner"], json!({ "type": "team", "team_id": team }));
+    assert_eq!(item["team_visibility"], "assignees");
+    let id = item["id"].as_str().unwrap();
+
+    // Ayşe is a member but not involved: the item does not exist for her, whatever she asks.
+    let missing = Uuid::now_v7();
+    for uri in [format!("/items/{id}"), format!("/items/{id}/visibility")] {
+        let method = if uri.ends_with("visibility") {
+            Method::PUT
+        } else {
+            Method::GET
+        };
+        let hidden = w
+            .call(
+                method.clone(),
+                &uri,
+                &ayse_token,
+                Some(json!({ "visibility": "all" })),
+            )
+            .await;
+        let absent = w
+            .call(
+                method,
+                &uri.replace(id, &missing.to_string()),
+                &ayse_token,
+                Some(json!({ "visibility": "all" })),
+            )
+            .await;
+        assert_eq!(hidden.status(), StatusCode::NOT_FOUND, "{uri}");
+        assert_eq!(json_body(hidden).await, json_body(absent).await, "{uri}");
+    }
+    let listed = json_body(w.call(Method::GET, "/items", &ayse_token, None).await).await;
+    assert!(listed.as_array().unwrap().iter().all(|i| i["id"] != id));
+
+    // The admin opens it to the whole team (V8): Ayşe sees it at once.
+    let response = w
+        .call(
+            Method::PUT,
+            &format!("/items/{id}/visibility"),
+            &ali_token,
+            Some(json!({ "visibility": "all" })),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["team_visibility"], "all");
+    let seen = w
+        .call(Method::GET, &format!("/items/{id}"), &ayse_token, None)
+        .await;
+    assert_eq!(seen.status(), StatusCode::OK);
+
+    // A personal item has no mode; personal items say so in their DTO.
+    let personal = w.items.create(ali, World::task("Kişisel")).await.unwrap();
+    let response = w
+        .call(
+            Method::PUT,
+            &format!("/items/{}/visibility", personal.id),
+            &ali_token,
+            Some(json!({ "visibility": "all" })),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(personal.team_visibility, None);
 }
