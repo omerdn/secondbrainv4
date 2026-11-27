@@ -481,6 +481,16 @@ pub fn message_of(payload: &NotificationPayload) -> PushMessage {
             url: "/notifications".into(),
             tag: format!("sharing:{item_title}"),
         },
+        NotificationPayload::ForgottenReminder {
+            local_date,
+            count,
+            titles,
+        } => PushMessage {
+            title: format!("{count} şey bir süredir bekliyor"),
+            body: titles.join(", "),
+            url: "/".into(),
+            tag: format!("forgotten:{local_date}"),
+        },
         NotificationPayload::WeeklySummary(summary) => PushMessage {
             title: "Haftalık özetin hazır".into(),
             body: format!(

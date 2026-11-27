@@ -150,6 +150,15 @@ pub enum NotificationPayload {
         from_user: Uuid,
         from_name: String,
     },
+    /// Items untouched for the user's threshold of days (BL2, H4, T4.3.9).
+    ForgottenReminder {
+        #[ts(type = "string")]
+        local_date: chrono::NaiveDate,
+        /// How many items are forgotten (as many as the Today screen lists).
+        count: u32,
+        /// The first few titles.
+        titles: Vec<String>,
+    },
     /// The weekly summary (OZ1).
     WeeklySummary(WeeklySummary),
 }
@@ -233,6 +242,7 @@ impl NotificationPayload {
             Self::WeeklySummary(_) => NotificationKind::WeeklySummary,
             Self::Assignment { .. } => NotificationKind::Assignment,
             Self::SharingChange { .. } => NotificationKind::SharingChange,
+            Self::ForgottenReminder { .. } => NotificationKind::ForgottenReminder,
             Self::Invitation { .. } => NotificationKind::Invitation,
             Self::RoutineReminder { .. } => NotificationKind::RoutineReminder,
             Self::Nudge { .. } => NotificationKind::Nudge,

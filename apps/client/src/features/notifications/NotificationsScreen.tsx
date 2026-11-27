@@ -136,12 +136,20 @@ function NotificationRow({
                     title: payload.item_title,
                   })
                 : t("notifications.sharingOwner", { title: payload.item_title })
-              : payload.type === "weekly_summary"
-                ? t("notifications.weeklySummary", {
-                    from: shortDate(payload.week_start, i18n.language),
-                    to: shortDate(payload.week_end, i18n.language),
+              : payload.type === "forgotten_reminder"
+                ? t("notifications.forgotten", {
+                    count: payload.count,
+                    titles: payload.titles.join(", "),
                   })
-                : t("notifications.routineReminder", { title: payload.title, time: payload.time });
+                : payload.type === "weekly_summary"
+                  ? t("notifications.weeklySummary", {
+                      from: shortDate(payload.week_start, i18n.language),
+                      to: shortDate(payload.week_end, i18n.language),
+                    })
+                  : t("notifications.routineReminder", {
+                      title: payload.title,
+                      time: payload.time,
+                    });
   const when = new Date(notification.created_at).toLocaleString(i18n.language, {
     dateStyle: "medium",
     timeStyle: "short",
@@ -154,6 +162,8 @@ function NotificationRow({
     } else if (payload.type === "reaction" || payload.type === "assignment") {
       const href = itemPath(payload.item_kind, payload.item_id) as Href;
       router.push(href);
+    } else if (payload.type === "forgotten_reminder") {
+      router.push("/");
     } else if (payload.type === "sharing_change" && payload.item_id !== null) {
       const href = `/items/${payload.item_id}` as Href;
       router.push(href);

@@ -481,6 +481,8 @@ export const tr = {
     assignmentSubtask: '{{from}} seni "{{title}}" içinde "{{subtask}}" adımına atadı',
     sharingRemoved: '{{from}} seni "{{title}}" paylaşımından çıkardı',
     sharingOwner: 'Artık "{{title}}" senin',
+    forgotten_one: "Bir süredir dokunmadığın bir şey var: {{titles}}",
+    forgotten_other: "Bir süredir dokunmadığın {{count}} şey var: {{titles}}",
     weeklySummary: "Haftalık özetin: {{from}} – {{to}}",
     summary: {
       routines: "Rutinler",
