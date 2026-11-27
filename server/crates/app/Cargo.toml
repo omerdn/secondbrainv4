@@ -27,6 +27,7 @@ notifications = { path = "../notifications" }
 routines = { path = "../routines" }
 search = { path = "../search" }
 sessions = { path = "../sessions" }
+social = { path = "../social" }
 today = { path = "../today" }
 tasks = { path = "../tasks" }
 tracking = { path = "../tracking" }
