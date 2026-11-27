@@ -362,6 +362,7 @@ impl World {
                     start_date: Some(day(1)),
                     end_date: None,
                     reminder_times: Some(times.iter().map(|t| (*t).to_owned()).collect()),
+                    completion_mode: None,
                 },
             )
             .await

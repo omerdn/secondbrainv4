@@ -14,6 +14,8 @@ pub struct RoutineRow {
     pub start_date: NaiveDate,
     pub end_date: Option<NaiveDate>,
     pub reminder_times: Vec<NaiveTime>,
+    /// `pool` or `individual` (R5).
+    pub completion_mode: String,
 }
 
 #[derive(FromRow)]
@@ -37,7 +39,8 @@ impl From<VersionRow> for PlanVersionView {
     }
 }
 
-const ROUTINE_COLUMNS: &str = "item_id, timezone, start_date, end_date, reminder_times";
+const ROUTINE_COLUMNS: &str =
+    "item_id, timezone, start_date, end_date, reminder_times, completion_mode";
 
 /// # Errors
 /// Database errors.
@@ -48,8 +51,8 @@ pub async fn insert_routine(
 ) -> sqlx::Result<()> {
     sqlx::query(
         "INSERT INTO routines (item_id, timezone, start_date, end_date, reminder_times,
-                               created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $6)",
+                               completion_mode, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $7, $6, $6)",
     )
     .bind(row.item_id)
     .bind(&row.timezone)
@@ -57,6 +60,7 @@ pub async fn insert_routine(
     .bind(row.end_date)
     .bind(&row.reminder_times)
     .bind(now)
+    .bind(&row.completion_mode)
     .execute(conn)
     .await?;
     Ok(())
@@ -94,7 +98,8 @@ pub async fn update_routine(
     now: DateTime<Utc>,
 ) -> sqlx::Result<()> {
     sqlx::query(
-        "UPDATE routines SET timezone = $2, end_date = $3, reminder_times = $4, updated_at = $5
+        "UPDATE routines SET timezone = $2, end_date = $3, reminder_times = $4, updated_at = $5,
+                             completion_mode = $6
          WHERE item_id = $1",
     )
     .bind(row.item_id)
@@ -102,6 +107,7 @@ pub async fn update_routine(
     .bind(row.end_date)
     .bind(&row.reminder_times)
     .bind(now)
+    .bind(&row.completion_mode)
     .execute(conn)
     .await?;
     Ok(())

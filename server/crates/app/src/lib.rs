@@ -254,7 +254,9 @@ where
     )
     .with_progress(
         "routine",
-        std::sync::Arc::new(routines::RoutineProgress::new(pool.clone())),
+        std::sync::Arc::new(
+            routines::RoutineProgress::new(pool.clone()).with_members(items.clone()),
+        ),
     )
     .with_progress(
         "tracker",

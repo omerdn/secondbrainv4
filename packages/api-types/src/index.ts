@@ -100,6 +100,7 @@ export type * from "./generated/RegisterRequest";
 export type * from "./generated/ResetPasswordRequest";
 export type * from "./generated/ResumeItem";
 export type * from "./generated/Routine";
+export type * from "./generated/RoutineCompletionMode";
 export type * from "./generated/RoutineDay";
 export type * from "./generated/RoutineOccurrences";
 export type * from "./generated/RoutinePlanVersion";

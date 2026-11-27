@@ -2,8 +2,6 @@
 //! plan and the entries; nothing is stored. The rules are pure functions; the clock comes in from
 //! outside.
 
-use std::collections::HashMap;
-
 use access::Perms;
 use chrono::{DateTime, NaiveDate, Utc};
 use kernel::AppError;
@@ -12,7 +10,7 @@ use serde::Serialize;
 use ts_rs::TS;
 use uuid::Uuid;
 
-use crate::completions::{done_by_day, internal, schedule_of};
+use crate::completions::{internal, schedule_of};
 use crate::model::{PlanVersionView, parse_timezone, target_on};
 use crate::repo;
 use crate::service::RoutinesService;
@@ -71,7 +69,7 @@ pub fn streak(days: &[StreakDay], today: NaiveDate) -> RoutineStreak {
 pub fn routine_streak(
     schedule: &Schedule,
     versions: &[PlanVersionView],
-    done: &HashMap<NaiveDate, i32>,
+    counts: &crate::counts::DayCounts,
     now: DateTime<Utc>,
 ) -> RoutineStreak {
     let today = schedule.today(now);
@@ -89,8 +87,11 @@ pub fn routine_streak(
             StreakDay {
                 date,
                 scheduled,
-                complete: scheduled
-                    && done.get(&date).copied().unwrap_or(0) >= target_on(versions, date),
+                complete: scheduled && {
+                    // R10: everyone reads the same counts, so a shared routine's streak is shared.
+                    let (done, target) = counts.day(date, target_on(versions, date));
+                    done >= target
+                },
             }
         })
         .collect();
@@ -120,12 +121,8 @@ impl RoutinesService {
         let entries = tracking::repo::list_entries(&self.pool, id, from, Some(schedule.today(now)))
             .await
             .map_err(internal)?;
-        Ok(routine_streak(
-            &schedule,
-            &versions,
-            &done_by_day(&entries),
-            now,
-        ))
+        let counts = self.counts(&row, &entries).await?;
+        Ok(routine_streak(&schedule, &versions, &counts, now))
     }
 }
 
@@ -137,7 +134,10 @@ mod tests {
     use proptest::prelude::*;
     use recurrence::{PlanVersion, local_date};
 
+    use std::collections::HashMap;
+
     use super::*;
+    use crate::counts::DayCounts;
 
     fn day(d: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 11, d).unwrap()
@@ -218,7 +218,10 @@ mod tests {
         let plan = schedule(chrono_tz::UTC, &versions);
         let done = HashMap::from([(day(1), 3), (day(2), 2), (day(3), 3), (day(4), 5)]);
         let now = Utc.with_ymd_and_hms(2026, 11, 4, 20, 0, 0).unwrap();
-        assert_eq!(routine_streak(&plan, &versions, &done, now).current, 2);
+        assert_eq!(
+            routine_streak(&plan, &versions, &DayCounts::pool(&done), now).current,
+            2
+        );
     }
 
     #[test]
@@ -263,10 +266,16 @@ mod tests {
         let done = HashMap::from([(day(1), 1), (day(2), 1)]);
         // 23:59 on 3 November in Istanbul (UTC+3): the 3rd is still today.
         let before = Utc.with_ymd_and_hms(2026, 11, 3, 20, 59, 0).unwrap();
-        assert_eq!(routine_streak(&plan, &versions, &done, before).current, 2);
+        assert_eq!(
+            routine_streak(&plan, &versions, &DayCounts::pool(&done), before).current,
+            2
+        );
         // 00:00 on the 4th: the 3rd was missed.
         let after = before + Duration::minutes(1);
-        assert_eq!(routine_streak(&plan, &versions, &done, after).current, 0);
+        assert_eq!(
+            routine_streak(&plan, &versions, &DayCounts::pool(&done), after).current,
+            0
+        );
     }
 
     #[test]
@@ -278,12 +287,18 @@ mod tests {
         let plan = schedule(chrono_tz::UTC, &versions);
         let done = HashMap::from([(day(2), 1), (day(9), 1), (day(16), 2), (day(17), 1)]);
         let on = |d: u32| Utc.with_ymd_and_hms(2026, 11, d, 12, 0, 0).unwrap();
-        assert_eq!(routine_streak(&plan, &versions, &done, on(16)).current, 3);
+        assert_eq!(
+            routine_streak(&plan, &versions, &DayCounts::pool(&done), on(16)).current,
+            3
+        );
         // The 17th is partial: pending while it is today, a break once it has passed.
-        let pending = routine_streak(&plan, &versions, &done, on(17));
+        let pending = routine_streak(&plan, &versions, &DayCounts::pool(&done), on(17));
         assert_eq!(pending.current, 3);
         assert!(pending.today_pending);
-        assert_eq!(routine_streak(&plan, &versions, &done, on(18)).current, 0);
+        assert_eq!(
+            routine_streak(&plan, &versions, &DayCounts::pool(&done), on(18)).current,
+            0
+        );
     }
 
     #[test]
@@ -292,7 +307,7 @@ mod tests {
         let plan = schedule(chrono_tz::UTC, &versions);
         let now = Utc.with_ymd_and_hms(2026, 11, 5, 12, 0, 0).unwrap();
         assert_eq!(
-            routine_streak(&plan, &versions, &HashMap::new(), now),
+            routine_streak(&plan, &versions, &DayCounts::default(), now),
             RoutineStreak {
                 current: 0,
                 today_pending: false
@@ -382,15 +397,15 @@ mod tests {
             prop_assert_eq!(done.len() as u64, length);
             // Any moment of the last day: all days count.
             let end_of_last = tracking::start_of_day(last + Days::new(1), zone) - Duration::seconds(1);
-            prop_assert_eq!(routine_streak(&plan, &versions, &done, end_of_last).current as u64, length);
+            prop_assert_eq!(routine_streak(&plan, &versions, &DayCounts::pool(&done), end_of_last).current as u64, length);
             // Any moment of the next day: the streak holds while the day is pending.
             let next = tracking::start_of_day(last + Days::new(1), zone);
-            let pending = routine_streak(&plan, &versions, &done, next);
+            let pending = routine_streak(&plan, &versions, &DayCounts::pool(&done), next);
             prop_assert_eq!(pending.current as u64, length);
             prop_assert!(pending.today_pending);
             // The day after that, the missed day breaks it.
             let later = tracking::start_of_day(last + Days::new(2), zone);
-            prop_assert_eq!(routine_streak(&plan, &versions, &done, later).current, 0);
+            prop_assert_eq!(routine_streak(&plan, &versions, &DayCounts::pool(&done), later).current, 0);
         }
     }
 }

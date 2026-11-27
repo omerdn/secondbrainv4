@@ -49,6 +49,7 @@ const routine: Routine = {
   start_date: "2026-11-23",
   end_date: null,
   reminder_times: ["08:00", "20:30"],
+  completion_mode: "pool",
   versions: [
     {
       id: "v1",

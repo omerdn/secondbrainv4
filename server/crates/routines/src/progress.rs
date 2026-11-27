@@ -1,8 +1,6 @@
 //! A routine's progress towards a goal (PRD D5, R4, T4, ARCHITECTURE §7.1, §7.2, T2.2.4). The
 //! calculation is a pure function; [`RoutineProgress`] only loads its inputs.
 
-use std::collections::HashMap;
-
 use chrono::NaiveDate;
 use kernel::AppError;
 use recurrence::Schedule;
@@ -10,7 +8,7 @@ use sqlx::PgPool;
 use tracking::{DateRange, Progress, ProgressFuture, ProgressProvider};
 use uuid::Uuid;
 
-use crate::completions::{done_by_day, internal, schedule_of};
+use crate::completions::{internal, schedule_of};
 use crate::model::{PlanVersionView, parse_timezone, target_on};
 use crate::repo;
 
@@ -36,7 +34,7 @@ pub fn overlap(
 pub fn routine_progress(
     schedule: &Schedule,
     versions: &[PlanVersionView],
-    done: &HashMap<NaiveDate, i32>,
+    counts: &crate::counts::DayCounts,
     (start, end): (NaiveDate, Option<NaiveDate>),
     range: DateRange,
     today: NaiveDate,
@@ -53,8 +51,10 @@ pub fn routine_progress(
         if !schedule.occurs_on(date) {
             continue;
         }
-        let target = target_on(versions, date).max(0);
-        let reached = done.get(&date).copied().unwrap_or(0).clamp(0, target);
+        // R5: the day's target and what counts toward it follow the routine's mode.
+        let (done, target) = counts.day(date, target_on(versions, date).max(0));
+        let target = target.max(0);
+        let reached = done.clamp(0, target);
         progress.total += f64::from(target);
         progress.done += f64::from(reached);
         if date <= today {
@@ -69,12 +69,42 @@ pub fn routine_progress(
 #[derive(Clone)]
 pub struct RoutineProgress {
     pool: PgPool,
+    items: Option<items::ItemsService>,
 }
 
 impl RoutineProgress {
     #[must_use]
     pub const fn new(pool: PgPool) -> Self {
-        Self { pool }
+        Self { pool, items: None }
+    }
+
+    /// Reads who is responsible for a routine, for routines where each person counts (R5).
+    /// Without it such a routine counts as one person's.
+    #[must_use]
+    pub fn with_members(mut self, items: items::ItemsService) -> Self {
+        self.items = Some(items);
+        self
+    }
+
+    async fn counts(
+        &self,
+        routine: &repo::RoutineRow,
+        entries: &[tracking::TrackerEntry],
+    ) -> Result<crate::counts::DayCounts, AppError> {
+        use crate::counts::{CompletionMode, DayCounts};
+        let mode = CompletionMode::parse(&routine.completion_mode).unwrap_or_default();
+        let people = match (&self.items, mode) {
+            (Some(items), CompletionMode::Individual) => {
+                let (owner, assignees) = items.owner_and_assignees(routine.item_id).await?;
+                if assignees.is_empty() {
+                    owner.into_iter().collect()
+                } else {
+                    assignees
+                }
+            }
+            _ => Vec::new(),
+        };
+        Ok(DayCounts::new(mode, people, entries))
     }
 
     async fn load(
@@ -99,10 +129,11 @@ impl RoutineProgress {
             }
             None => Vec::new(),
         };
+        let counts = self.counts(&routine, &entries).await?;
         Ok(routine_progress(
             &schedule,
             &versions,
-            &done_by_day(&entries),
+            &counts,
             (routine.start_date, routine.end_date),
             range,
             today,
@@ -123,7 +154,10 @@ mod tests {
     use proptest::prelude::*;
     use recurrence::PlanVersion;
 
+    use std::collections::HashMap;
+
     use super::*;
+    use crate::counts::DayCounts;
 
     fn day(d: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 11, d).unwrap()
@@ -172,7 +206,7 @@ mod tests {
         let p = routine_progress(
             &plan,
             &versions,
-            &done,
+            &DayCounts::pool(&done),
             (day(10), Some(day(20))),
             range(1, 15),
             day(30),
@@ -187,7 +221,7 @@ mod tests {
         let p = routine_progress(
             &plan,
             &versions,
-            &HashMap::from([(day(20), 1)]),
+            &DayCounts::pool(&HashMap::from([(day(20), 1)])),
             (day(20), None),
             range(1, 15),
             day(30),
@@ -206,7 +240,14 @@ mod tests {
         let versions = [version("FREQ=DAILY", 3, day(1), None)];
         let plan = schedule(&versions);
         let done = HashMap::from([(day(1), 5), (day(2), 1)]);
-        let p = routine_progress(&plan, &versions, &done, (day(1), None), range(1, 3), day(2));
+        let p = routine_progress(
+            &plan,
+            &versions,
+            &DayCounts::pool(&done),
+            (day(1), None),
+            range(1, 3),
+            day(2),
+        );
         assert_eq!(p.done, 4.0);
         assert_eq!(p.total, 9.0);
         assert_eq!(p.expected_to_date, 6.0);
@@ -224,7 +265,7 @@ mod tests {
         let p = routine_progress(
             &plan,
             &versions,
-            &done,
+            &DayCounts::pool(&done),
             (day(1), None),
             range(1, 15),
             day(14),
@@ -267,7 +308,7 @@ mod tests {
             for (offset, n) in entries {
                 *done.entry(base + Days::new(offset)).or_default() += n;
             }
-            let p = routine_progress(&plan, &versions, &done, (start, end), goal, today);
+            let p = routine_progress(&plan, &versions, &DayCounts::pool(&done), (start, end), goal, today);
             prop_assert!(p.done >= 0.0);
             prop_assert!(p.done <= p.total);
             prop_assert!(p.expected_to_date <= p.total);
@@ -282,7 +323,7 @@ mod tests {
                 .filter(|(date, _)| overlap(goal, start, end).is_some_and(|(f, l)| (f..=l).contains(*date)))
                 .map(|(date, n)| (*date, *n))
                 .collect();
-            prop_assert_eq!(routine_progress(&plan, &versions, &inside, (start, end), goal, today), p);
+            prop_assert_eq!(routine_progress(&plan, &versions, &DayCounts::pool(&inside), (start, end), goal, today), p);
         }
 
         #[test]
@@ -298,9 +339,9 @@ mod tests {
             for (d, n) in entries {
                 *done.entry(day(d)).or_default() += n;
             }
-            let before = routine_progress(&plan, &versions, &done, (day(1), None), range(1, 28), day(28));
+            let before = routine_progress(&plan, &versions, &DayCounts::pool(&done), (day(1), None), range(1, 28), day(28));
             *done.entry(day(extra_day)).or_default() += extra;
-            let after = routine_progress(&plan, &versions, &done, (day(1), None), range(1, 28), day(28));
+            let after = routine_progress(&plan, &versions, &DayCounts::pool(&done), (day(1), None), range(1, 28), day(28));
             prop_assert!(after.done >= before.done);
             prop_assert!(after.done - before.done <= f64::from(target));
             prop_assert_eq!(after.total, before.total);

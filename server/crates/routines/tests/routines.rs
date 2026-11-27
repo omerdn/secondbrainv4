@@ -38,6 +38,7 @@ fn request(rrule: &str) -> CreateRoutineRequest {
         start_date: Some(day(1)),
         end_date: None,
         reminder_times: None,
+        completion_mode: None,
     }
 }
 

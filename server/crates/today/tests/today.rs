@@ -199,6 +199,7 @@ impl World {
                     start_date: Some(day(1)),
                     end_date: None,
                     reminder_times: None,
+                    completion_mode: None,
                 },
             )
             .await

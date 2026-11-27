@@ -45,6 +45,10 @@ pub struct CreateRoutineRequest {
     #[serde(default)]
     #[ts(optional)]
     pub reminder_times: Option<Vec<String>>,
+    /// How a shared routine's day is completed; a shared pool when absent (R5).
+    #[serde(default)]
+    #[ts(optional)]
+    pub completion_mode: Option<crate::counts::CompletionMode>,
 }
 
 /// `PATCH /routines/{id}` body: only the fields present change, and a `null` end date clears it.
@@ -62,6 +66,10 @@ pub struct UpdateRoutineRequest {
     #[serde(default)]
     #[ts(optional)]
     pub reminder_times: Option<Vec<String>>,
+    /// R5; past days are read under the new mode too.
+    #[serde(default)]
+    #[ts(optional)]
+    pub completion_mode: Option<crate::counts::CompletionMode>,
 }
 
 /// `POST /routines/{id}/plan` body: opens a new plan version (R11).
@@ -112,6 +120,7 @@ pub struct RoutineView {
     pub end_date: Option<NaiveDate>,
     /// `HH:MM` local times, in order.
     pub reminder_times: Vec<String>,
+    pub completion_mode: crate::counts::CompletionMode,
     /// Plan history, oldest first (R11).
     pub versions: Vec<PlanVersionView>,
 }
