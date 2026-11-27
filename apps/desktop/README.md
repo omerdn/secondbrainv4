@@ -16,7 +16,7 @@ EXPO_PUBLIC_API_URL=https://api.routune.dev pnpm --filter @secondbrain/desktop b
 
 ## Sürüm yayınlama
 
-`desktop-v<sürüm>` biçiminde bir etiket push edilir (ör. `git tag desktop-v0.1.0 && git push origin desktop-v0.1.0`). `.github/workflows/desktop-release.yml` şunları üretip GitHub'da bir ön sürüme (pre-release) ekler:
+`desktop-v<sürüm>` biçiminde bir etiket push edilir (ör. `git tag desktop-v0.1.0 && git push origin desktop-v0.1.0`). `.github/workflows/desktop-release.yml` şunları üretip GitHub'da normal bir sürüme (ön sürüm değil; güncelleyici `releases/latest`'i okur) ekler:
 - macOS: universal `.dmg` (Apple Silicon ve Intel)
 - Windows: `.exe` (NSIS kurulum)
 - Linux: AppImage
@@ -25,11 +25,7 @@ Sürüm numarası etiketten alınır.
 
 ## Beta kullanıcıları için kurulum
 
-Paketler imzasızdır (ücretli Apple/Windows sertifikası yok). Bu yüzden ilk açılışta işletim sistemi uyarı verir:
-
-- **macOS:** `.dmg`'yi açın ve Routune'u Applications klasörüne sürükleyin. İlk açılışta "geliştirici doğrulanamadı" uyarısı çıkarsa uygulamaya **sağ tıklayıp → Aç → Aç** deyin. Bu sadece bir kez gerekir. Uyarıda "Aç" seçeneği yoksa Sistem Ayarları → Gizlilik ve Güvenlik bölümündeki **Yine de Aç** düğmesini kullanın.
-- **Windows:** `.exe`'yi çalıştırın. "Windows bilgisayarınızı korudu" (SmartScreen) uyarısında **Ek bilgi → Yine de çalıştır** deyin.
-- **Linux:** AppImage dosyasına çalıştırma izni verin (`chmod +x Routune_*.AppImage`) ve çalıştırın.
+Adım adım kurulum ve imzasız uygulama uyarılarının geçilmesi: [docs/BETA-INSTALL.md](../../docs/BETA-INSTALL.md).
 
 ## Deep link (T4.1.5)
 
