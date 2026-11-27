@@ -9,8 +9,8 @@
 //! others are skipped (no burst of catch-up runs).
 //!
 //! Expressions use 6 fields with seconds, in UTC: `sec min hour day-of-month month day-of-week`,
-//! e.g. `0 0 3 * * *` (daily 03:00 UTC). Per-user local times (e.g. routine reminders in the
-//! user's time zone) are not cron schedules; they are enqueued as individual jobs with `run_at`.
+//! e.g. `0 0 3 * * *` (daily 03:00 UTC). Per-user local times are not cron schedules: routine
+//! reminders run a minutely sweep that compares each routine's local time (T2.2.7).
 
 use std::fmt;
 use std::future::Future;

@@ -18,6 +18,7 @@ identity = { path = "../identity" }
 items = { path = "../items" }
 kernel = { path = "../kernel" }
 realtime = { path = "../realtime" }
+routines = { path = "../routines" }
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true

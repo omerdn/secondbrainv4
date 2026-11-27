@@ -212,6 +212,26 @@ impl ItemsService {
         Ok(ids.iter().filter_map(|id| by_id.remove(id)).collect())
     }
 
+    /// Active items among `ids`, with no caller: for background jobs that act for the items'
+    /// owners (routine reminders). Never answer a request with this.
+    ///
+    /// # Errors
+    /// [`AppError::Internal`] on database errors.
+    pub async fn active_items_for_jobs(&self, ids: &[Uuid]) -> Result<Vec<Item>, AppError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = sqlx::query_as::<_, ItemRow>(sqlx::AssertSqlSafe(format!(
+            "SELECT {COLUMNS} FROM items
+             WHERE id = ANY($1) AND deleted_at IS NULL AND archived_at IS NULL"
+        )))
+        .bind(ids)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(internal)?;
+        Ok(rows.into_iter().map(Item::from).collect())
+    }
+
     /// The item, if `actor` may view it; otherwise [`AppError::NotFound`] (V9).
     ///
     /// # Errors

@@ -173,3 +173,36 @@ describe("notification preferences (BL3)", () => {
     expect(screen.getByRole("checkbox", { name: "Haftalık özet: E-posta" })).toBeTruthy();
   });
 });
+
+describe("routine reminders (R13)", () => {
+  it("shows a reminder and opens its routine", async () => {
+    const reminder: Notification = {
+      id: "r1",
+      payload: {
+        type: "routine_reminder",
+        routine_id: "rt1",
+        title: "Su iç",
+        local_date: "2026-11-27",
+        time: "08:00",
+      },
+      read_at: null,
+      created_at: "2026-11-27T05:00:00Z",
+    };
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /notifications": () => json(200, { notifications: [reminder], unread: 1 }),
+      "POST /notifications/r1/read": () =>
+        json(200, { ...reminder, read_at: "2026-11-27T05:01:00Z" }),
+      "GET /routines/rt1": () => json(404, { error: { code: "not_found", message: "not_found" } }),
+    });
+    await renderApp(server.api, "/notifications", { tokenStore: memoryTokenStore("t") });
+    await fireEvent.press(
+      await screen.findByRole("button", { name: 'Okunmadı: Hatırlatma: "Su iç" (08:00)' }),
+    );
+    await waitFor(() => {
+      expect(server.calls.some((c) => c.path === "/notifications/r1/read")).toBe(true);
+      expect(server.calls.some((c) => c.path.startsWith("/routines/rt1"))).toBe(true);
+    });
+    expect(screen.queryByRole("button", { name: "Kabul et" })).toBeNull();
+  });
+});

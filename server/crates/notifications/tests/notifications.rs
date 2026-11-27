@@ -19,6 +19,7 @@ use items::{
 use kernel::email::RecordingEmailSender;
 use kernel::{AppError, FixedClock};
 use notifications::{Channel, NotificationKind, NotificationPayload, Notifications};
+use routines::{CompleteRoutineRequest, CreateRoutineRequest, RoutinesService};
 use uuid::Uuid;
 
 /// Everyone may share with everyone (friendships come later).
@@ -32,8 +33,10 @@ impl SharingPolicy for Anyone {
 
 struct World {
     db: TestDb,
+    clock: Arc<FixedClock>,
     identity: IdentityService,
     items: ItemsService,
+    routines: RoutinesService,
     notifications: Notifications,
     dispatcher: Dispatcher,
 }
@@ -54,9 +57,15 @@ impl World {
             },
         );
         let access = AccessEngine::new(ItemsAccessContext, AccessConfig::default());
-        let items =
-            ItemsService::new(pool.clone(), clock.clone(), access).with_sharing(Arc::new(Anyone));
-        let notifications = Notifications::new(pool, clock, realtime::Notifier::default());
+        let items = ItemsService::new(pool.clone(), clock.clone(), access.clone())
+            .with_sharing(Arc::new(Anyone));
+        let routines = RoutinesService::new(
+            pool.clone(),
+            clock.clone(),
+            access.permissions(),
+            items.clone(),
+        );
+        let notifications = Notifications::new(pool, clock.clone(), realtime::Notifier::default());
         let mut dispatcher = Dispatcher::new(DispatchConfig::default());
         notifications::register(
             &mut dispatcher,
@@ -66,8 +75,10 @@ impl World {
         );
         Self {
             db,
+            clock,
             identity,
             items,
+            routines,
             notifications,
             dispatcher,
         }
@@ -122,6 +133,15 @@ impl World {
             .dispatch_batch(self.db.pool())
             .await
             .unwrap();
+    }
+
+    /// Delivers every event again, as a retry would.
+    async fn redeliver_all(&self) {
+        sqlx::query("UPDATE outbox SET dispatched_at = NULL")
+            .execute(self.db.pool())
+            .await
+            .unwrap();
+        self.deliver().await;
     }
 
     /// Delivers every `invitation.created` event again, as a retry would.
@@ -322,4 +342,124 @@ async fn only_the_recipient_sees_and_reads_a_notification() {
     assert_eq!(w.notifications.list(bob, None).await.unwrap().unread, 1);
     assert_eq!(w.notifications.mark_all_read(bob).await.unwrap(), 1);
     assert_eq!(w.notifications.list(bob, None).await.unwrap().unread, 0);
+}
+
+fn day(d: u32) -> chrono::NaiveDate {
+    chrono::NaiveDate::from_ymd_opt(2026, 11, d).unwrap()
+}
+
+impl World {
+    async fn routine(&self, owner: Uuid, title: &str, rrule: &str, times: &[&str]) -> Uuid {
+        self.routines
+            .create(
+                owner,
+                CreateRoutineRequest {
+                    title: title.into(),
+                    description: None,
+                    timezone: "Europe/Istanbul".into(),
+                    rrule: rrule.into(),
+                    daily_target: None,
+                    start_date: Some(day(1)),
+                    end_date: None,
+                    reminder_times: Some(times.iter().map(|t| (*t).to_owned()).collect()),
+                },
+            )
+            .await
+            .unwrap()
+            .item
+            .id
+    }
+
+    /// Moves the clock to `hh:mm` UTC on 27 November 2026 (a Friday).
+    fn at(&self, hour: u32, minute: u32) {
+        self.clock
+            .set(Utc.with_ymd_and_hms(2026, 11, 27, hour, minute, 0).unwrap());
+    }
+}
+
+#[tokio::test]
+async fn r13_a_reminder_goes_out_once_at_the_routines_local_time() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    let routine = w.routine(ada, "Su iç", "FREQ=DAILY", &["08:00"]).await;
+    // 04:59 UTC is 07:59 in Istanbul: not yet.
+    w.at(4, 59);
+    assert_eq!(w.routines.send_due_reminders().await.unwrap(), 0);
+    // 08:02 in Istanbul: due; the next sweep sends nothing more.
+    w.at(5, 2);
+    assert_eq!(w.routines.send_due_reminders().await.unwrap(), 1);
+    assert_eq!(w.routines.send_due_reminders().await.unwrap(), 0);
+    w.at(5, 3);
+    assert_eq!(w.routines.send_due_reminders().await.unwrap(), 0);
+
+    w.deliver().await;
+    w.redeliver_all().await;
+    let list = w.notifications.list(ada, None).await.unwrap();
+    assert_eq!(list.notifications.len(), 1);
+    assert_eq!(
+        list.notifications[0].payload,
+        NotificationPayload::RoutineReminder {
+            routine_id: routine,
+            title: "Su iç".into(),
+            local_date: day(27),
+            time: "08:00".into(),
+        }
+    );
+}
+
+#[tokio::test]
+async fn r13_no_reminder_on_a_day_off_or_a_complete_day() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    // Mondays only; the 27th is a Friday.
+    w.routine(ada, "Haftalık", "FREQ=WEEKLY;BYDAY=MO", &["08:00"])
+        .await;
+    let done = w.routine(ada, "Yapıldı", "FREQ=DAILY", &["08:00"]).await;
+    w.at(4, 0);
+    w.routines
+        .complete(ada, done, CompleteRoutineRequest::default())
+        .await
+        .unwrap();
+    w.at(5, 1);
+    assert_eq!(w.routines.send_due_reminders().await.unwrap(), 0);
+}
+
+#[tokio::test]
+async fn bl3_reminders_follow_the_channel_preference() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    w.routine(ada, "Su iç", "FREQ=DAILY", &["08:00", "09:00"])
+        .await;
+    w.notifications
+        .set_preference(ada, NotificationKind::RoutineReminder, vec![Channel::Push])
+        .await
+        .unwrap();
+    w.at(5, 0);
+    assert_eq!(w.routines.send_due_reminders().await.unwrap(), 1);
+    w.deliver().await;
+    assert!(
+        w.notifications
+            .list(ada, None)
+            .await
+            .unwrap()
+            .notifications
+            .is_empty()
+    );
+    // Back on in the app: the 09:00 one arrives.
+    w.notifications
+        .set_preference(ada, NotificationKind::RoutineReminder, vec![Channel::InApp])
+        .await
+        .unwrap();
+    w.at(6, 0);
+    assert_eq!(w.routines.send_due_reminders().await.unwrap(), 1);
+    w.deliver().await;
+    assert_eq!(
+        w.notifications
+            .list(ada, None)
+            .await
+            .unwrap()
+            .notifications
+            .len(),
+        1
+    );
 }

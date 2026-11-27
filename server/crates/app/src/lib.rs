@@ -181,6 +181,18 @@ where
     identity::cleanup::register(identity.clone(), &mut worker, &mut scheduler)
         .map_err(RunError::Schedule)?;
     access_engine.register(&mut worker, pool.clone());
+    // Routine reminders in each routine's time zone (T2.2.7); the notification center turns
+    // them into notifications.
+    routines::reminders::register(
+        (&mut worker, &mut scheduler),
+        routines::RoutinesService::new(
+            pool.clone(),
+            clock.clone(),
+            access_engine.permissions(),
+            items.clone(),
+        ),
+    )
+    .map_err(RunError::Schedule)?;
     items::purge::register(items.clone(), clock.clone(), &mut worker, &mut scheduler)
         .map_err(RunError::Schedule)?;
     let (stop_jobs, jobs_stopped) = tokio::sync::watch::channel(false);

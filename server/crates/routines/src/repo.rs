@@ -198,3 +198,39 @@ pub async fn list_routines(
     .fetch_all(conn)
     .await
 }
+
+/// Routines with at least one reminder time.
+///
+/// # Errors
+/// Database errors.
+pub async fn routines_with_reminders(conn: impl PgExecutor<'_>) -> sqlx::Result<Vec<RoutineRow>> {
+    sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT {ROUTINE_COLUMNS} FROM routines WHERE cardinality(reminder_times) > 0"
+    )))
+    .fetch_all(conn)
+    .await
+}
+
+/// Records a sent reminder; false when it was already sent.
+///
+/// # Errors
+/// Database errors.
+pub async fn record_reminder(
+    conn: &mut PgConnection,
+    routine: Uuid,
+    day: NaiveDate,
+    time: NaiveTime,
+    now: DateTime<Utc>,
+) -> sqlx::Result<bool> {
+    let result = sqlx::query(
+        "INSERT INTO routine_reminders_sent (routine_id, local_date, reminder_time, sent_at)
+         VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+    )
+    .bind(routine)
+    .bind(day)
+    .bind(time)
+    .bind(now)
+    .execute(conn)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}

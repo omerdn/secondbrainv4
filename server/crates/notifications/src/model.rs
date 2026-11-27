@@ -108,6 +108,15 @@ pub enum NotificationPayload {
         from_name: String,
         role: InvitationRole,
     },
+    /// A routine's reminder time came (R13).
+    RoutineReminder {
+        routine_id: Uuid,
+        title: String,
+        #[ts(type = "string")]
+        local_date: chrono::NaiveDate,
+        /// `HH:MM` in the routine's time zone.
+        time: String,
+    },
 }
 
 impl NotificationPayload {
@@ -115,6 +124,7 @@ impl NotificationPayload {
     pub const fn kind(&self) -> NotificationKind {
         match self {
             Self::Invitation { .. } => NotificationKind::Invitation,
+            Self::RoutineReminder { .. } => NotificationKind::RoutineReminder,
         }
     }
 }

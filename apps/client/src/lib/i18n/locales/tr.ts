@@ -389,6 +389,7 @@ export const tr = {
     preferences: "Tercihler",
     unreadLabel: "Okunmadı: {{text}}",
     invitation: '{{from}} seni bir {{kind}} için davet etti: "{{title}}"',
+    routineReminder: 'Hatırlatma: "{{title}}" ({{time}})',
     accept: "Kabul et",
     decline: "Reddet",
     answerFailed: "Yanıtlanamadı. Davet artık geçerli olmayabilir.",

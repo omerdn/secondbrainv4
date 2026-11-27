@@ -4,4 +4,8 @@ import type { InvitationRole } from "./InvitationRole";
 /**
  * What the center shows, by type; written when the notification is made.
  */
-export type NotificationPayload = { "type": "invitation", invitation_id: string, item_id: string, item_kind: string, item_title: string, from_user: string, from_name: string, role: InvitationRole, };
+export type NotificationPayload = { "type": "invitation", invitation_id: string, item_id: string, item_kind: string, item_title: string, from_user: string, from_name: string, role: InvitationRole, } | { "type": "routine_reminder", routine_id: string, title: string, local_date: string, 
+/**
+ * `HH:MM` in the routine's time zone.
+ */
+time: string, };

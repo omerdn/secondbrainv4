@@ -86,6 +86,9 @@ export function NotificationsScreen() {
   );
 }
 
+type Payload = Notification["payload"];
+type InvitationPayload = Extract<Payload, { type: "invitation" }>;
+
 function NotificationRow({
   notification,
   onRead,
@@ -96,16 +99,64 @@ function NotificationRow({
   onChanged: () => Promise<void>;
 }) {
   const { t, i18n } = useTranslation();
-  const api = useApi();
   const router = useRouter();
   const { payload } = notification;
   const unread = notification.read_at === null;
-  const kind = t(`items.kinds.${kindLabel(payload.item_kind)}`);
-  const text = t("notifications.invitation", {
-    from: payload.from_name,
-    title: payload.item_title,
-    kind: kind.toLocaleLowerCase(i18n.language),
+  const text =
+    payload.type === "invitation"
+      ? t("notifications.invitation", {
+          from: payload.from_name,
+          title: payload.item_title,
+          kind: t(`items.kinds.${kindLabel(payload.item_kind)}`).toLocaleLowerCase(i18n.language),
+        })
+      : t("notifications.routineReminder", { title: payload.title, time: payload.time });
+  const when = new Date(notification.created_at).toLocaleString(i18n.language, {
+    dateStyle: "medium",
+    timeStyle: "short",
   });
+  const press = () => {
+    onRead();
+    if (payload.type === "routine_reminder") {
+      const href = itemPath("routine", payload.routine_id) as Href;
+      router.push(href);
+    }
+  };
+  return (
+    <Card className={unread ? "gap-2 border-primary" : "gap-2"}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={unread ? t("notifications.unreadLabel", { text }) : text}
+        onPress={press}
+        className="gap-1"
+      >
+        <View className="flex-row items-center gap-2">
+          {unread ? <View testID="unread-dot" className="h-2 w-2 rounded-full bg-primary" /> : null}
+          <Text className={unread ? "flex-1 font-semibold" : "flex-1"}>{text}</Text>
+        </View>
+        <Text variant="caption" tone="muted">
+          {when}
+        </Text>
+      </Pressable>
+      {payload.type === "invitation" ? (
+        <InvitationActions payload={payload} onRead={onRead} onChanged={onChanged} />
+      ) : null}
+    </Card>
+  );
+}
+
+/** Accept or decline an invitation from its notification (G5). */
+function InvitationActions({
+  payload,
+  onRead,
+  onChanged,
+}: {
+  payload: InvitationPayload;
+  onRead: () => void;
+  onChanged: () => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const api = useApi();
+  const router = useRouter();
   const answer = useIdempotentMutation<unknown, "accept" | "decline">(
     (choice, idempotencyKey) =>
       choice === "accept"
@@ -122,26 +173,8 @@ function NotificationRow({
       },
     },
   );
-  const when = new Date(notification.created_at).toLocaleString(i18n.language, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
   return (
-    <Card className={unread ? "gap-2 border-primary" : "gap-2"}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={unread ? t("notifications.unreadLabel", { text }) : text}
-        onPress={onRead}
-        className="gap-1"
-      >
-        <View className="flex-row items-center gap-2">
-          {unread ? <View testID="unread-dot" className="h-2 w-2 rounded-full bg-primary" /> : null}
-          <Text className={unread ? "flex-1 font-semibold" : "flex-1"}>{text}</Text>
-        </View>
-        <Text variant="caption" tone="muted">
-          {when}
-        </Text>
-      </Pressable>
+    <>
       <View className="flex-row gap-2">
         <Button
           title={t("notifications.accept")}
@@ -166,6 +199,6 @@ function NotificationRow({
           {t("notifications.answerFailed")}
         </Text>
       ) : null}
-    </Card>
+    </>
   );
 }
