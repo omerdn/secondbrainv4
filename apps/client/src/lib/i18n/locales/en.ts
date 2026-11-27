@@ -475,6 +475,8 @@ export const en: Catalog = {
     assignmentSubtask: '{{from}} assigned you to "{{subtask}}" in "{{title}}"',
     sharingRemoved: '{{from}} removed you from "{{title}}"',
     sharingOwner: '"{{title}}" is yours now',
+    forgotten_one: "Something has been untouched for a while: {{titles}}",
+    forgotten_other: "{{count}} things have been untouched for a while: {{titles}}",
     weeklySummary: "Your weekly summary: {{from}} – {{to}}",
     summary: {
       routines: "Routines",

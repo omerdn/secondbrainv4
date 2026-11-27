@@ -18,4 +18,12 @@ subtask_title: string | null, from_user: string, from_name: string, } | { "type"
 /**
  * Set only while the user can see the item (a new owner); never for someone removed.
  */
-item_id: string | null, item_title: string, from_user: string, from_name: string, } | { "type": "weekly_summary" } & WeeklySummary;
+item_id: string | null, item_title: string, from_user: string, from_name: string, } | { "type": "forgotten_reminder", local_date: string, 
+/**
+ * How many items are forgotten (as many as the Today screen lists).
+ */
+count: number, 
+/**
+ * The first few titles.
+ */
+titles: Array<string>, } | { "type": "weekly_summary" } & WeeklySummary;

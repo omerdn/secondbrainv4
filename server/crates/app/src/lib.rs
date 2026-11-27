@@ -12,6 +12,7 @@ use tokio::net::TcpListener;
 pub mod client_policy;
 pub mod config;
 pub mod exports;
+pub mod forgotten;
 pub mod http;
 pub mod idempotency;
 pub mod server;
@@ -297,6 +298,19 @@ where
             items: items.clone(),
             routines: routines_service.clone(),
             sessions: sessions_service.clone(),
+            today: today_service.clone(),
+            notifications: notifications_service.clone(),
+        },
+        &mut worker,
+        &mut scheduler,
+    )
+    .map_err(RunError::Schedule)?;
+    // H4 (T4.3.9): the forgotten items reminder at each user's local morning.
+    forgotten::register(
+        forgotten::ForgottenReminders {
+            pool: pool.clone(),
+            clock: clock.clone(),
+            identity: identity.clone(),
             today: today_service.clone(),
             notifications: notifications_service.clone(),
         },
