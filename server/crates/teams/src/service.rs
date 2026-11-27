@@ -8,6 +8,9 @@ use kernel::{AppError, FieldError, FieldErrorCode, SharedClock, ValidationErrors
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::matrix::{
+    RoleRights, TeamMatrix, TeamPermission, item_permissions, policy_of, team_rights,
+};
 use crate::model::{
     CreateTeamRequest, InviteToTeamRequest, Team, TeamDetail, TeamInvitation,
     TeamInvitationCreated, TeamMember, TeamRole,
@@ -213,7 +216,10 @@ impl TeamsService {
         request: InviteToTeamRequest,
     ) -> Result<(), AppError> {
         let role = self.role_of(actor, team).await?.ok_or(AppError::NotFound)?;
-        if !role.invites() {
+        if !self
+            .allows(role, team, TeamPermission::InviteMembers)
+            .await?
+        {
             return Err(AppError::Forbidden);
         }
         if request.role == TeamRole::Admin && role != TeamRole::Admin {
@@ -357,6 +363,207 @@ impl TeamsService {
         .await
         .map_err(internal)?
         .ok_or(AppError::NotFound)
+    }
+
+    /// The team permissions of `role` in `team` (TK3): admins have all, others the stored row
+    /// or the defaults.
+    ///
+    /// # Errors
+    /// [`AppError::Internal`].
+    pub async fn rights(
+        &self,
+        role: TeamRole,
+        team: Uuid,
+    ) -> Result<Vec<TeamPermission>, AppError> {
+        if role == TeamRole::Admin {
+            return Ok(TeamPermission::ALL.to_vec());
+        }
+        let stored: Option<Vec<String>> = sqlx::query_scalar(
+            "SELECT permissions FROM team_permissions WHERE team_id = $1 AND role = $2",
+        )
+        .bind(team)
+        .bind(role.as_str())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(internal)?;
+        Ok(match stored {
+            Some(names) => names
+                .iter()
+                .filter_map(|n| TeamPermission::parse(n))
+                .collect(),
+            None => TeamPermission::defaults(role),
+        })
+    }
+
+    async fn allows(
+        &self,
+        role: TeamRole,
+        team: Uuid,
+        permission: TeamPermission,
+    ) -> Result<bool, AppError> {
+        Ok(self.rights(role, team).await?.contains(&permission))
+    }
+
+    /// Whether `actor` is an active member whose role has `permission` in `team` (TK3), for the
+    /// modules that act in teams (team items, tags, notebooks).
+    ///
+    /// # Errors
+    /// [`AppError::Internal`].
+    pub async fn may(
+        &self,
+        actor: Uuid,
+        team: Uuid,
+        permission: TeamPermission,
+    ) -> Result<bool, AppError> {
+        match self.role_of(actor, team).await? {
+            Some(role) => self.allows(role, team, permission).await,
+            None => Ok(false),
+        }
+    }
+
+    /// The team's matrix, for its active members (TK3).
+    ///
+    /// # Errors
+    /// [`AppError::NotFound`] for anyone else, or [`AppError::Internal`].
+    pub async fn matrix(&self, actor: Uuid, team: Uuid) -> Result<TeamMatrix, AppError> {
+        self.role_of(actor, team).await?.ok_or(AppError::NotFound)?;
+        let mut conn = self.pool.acquire().await.map_err(internal)?;
+        let policy = self
+            .access
+            .team_policy(&mut conn, team)
+            .await
+            .map_err(internal)?;
+        drop(conn);
+        let mut roles = Vec::new();
+        for role in [
+            TeamRole::Admin,
+            TeamRole::Manager,
+            TeamRole::Member,
+            TeamRole::Guest,
+        ] {
+            roles.push(RoleRights {
+                role,
+                item: item_permissions(policy.perms(role.access_role())),
+                team: self.rights(role, team).await?,
+            });
+        }
+        Ok(TeamMatrix { roles })
+    }
+
+    /// Replaces the matrix (admins only, TK3). Item rights recompute the team's items at once
+    /// (V8); the admin row is ignored.
+    ///
+    /// # Errors
+    /// [`AppError::NotFound`] for a team the caller is not in, [`AppError::Forbidden`] for a
+    /// non-admin, or [`AppError::Internal`].
+    pub async fn set_matrix(
+        &self,
+        actor: Uuid,
+        team: Uuid,
+        matrix: TeamMatrix,
+    ) -> Result<TeamMatrix, AppError> {
+        let role = self.role_of(actor, team).await?.ok_or(AppError::NotFound)?;
+        if role != TeamRole::Admin {
+            return Err(AppError::Forbidden);
+        }
+        let mut tx = self.pool.begin().await.map_err(internal)?;
+        let current = self
+            .access
+            .team_policy(&mut tx, team)
+            .await
+            .map_err(internal)?;
+        self.access
+            .set_team_policy(&mut tx, team, policy_of(&matrix, current))
+            .await
+            .map_err(internal)?;
+        for role in [TeamRole::Manager, TeamRole::Member, TeamRole::Guest] {
+            if let Some(rights) = team_rights(&matrix, role) {
+                let names: Vec<&str> = rights.iter().map(|p| p.as_str()).collect();
+                sqlx::query(
+                    "INSERT INTO team_permissions (team_id, role, permissions) VALUES ($1, $2, $3)
+                     ON CONFLICT (team_id, role) DO UPDATE SET permissions = $3",
+                )
+                .bind(team)
+                .bind(role.as_str())
+                .bind(&names)
+                .execute(&mut *tx)
+                .await
+                .map_err(internal)?;
+            }
+        }
+        tx.commit().await.map_err(internal)?;
+        self.matrix(actor, team).await
+    }
+
+    /// Gives an active member another role (admins only, TK3); access follows at once (V8). The
+    /// last admin cannot step down.
+    ///
+    /// # Errors
+    /// [`AppError::NotFound`] for a team the caller is not in or someone not active in it,
+    /// [`AppError::Forbidden`] for a non-admin, [`AppError::Validation`] for the last admin, or
+    /// [`AppError::Internal`].
+    pub async fn set_role(
+        &self,
+        actor: Uuid,
+        team: Uuid,
+        member: Uuid,
+        role: TeamRole,
+    ) -> Result<(), AppError> {
+        let mine = self.role_of(actor, team).await?.ok_or(AppError::NotFound)?;
+        if mine != TeamRole::Admin {
+            return Err(AppError::Forbidden);
+        }
+        let mut tx = self.pool.begin().await.map_err(internal)?;
+        // Serialises role changes of one team (the last-admin check).
+        sqlx::query("SELECT id FROM teams WHERE id = $1 FOR UPDATE")
+            .bind(team)
+            .execute(&mut *tx)
+            .await
+            .map_err(internal)?;
+        let old: Option<String> = sqlx::query_scalar(
+            "SELECT role FROM team_members WHERE team_id = $1 AND user_id = $2 AND status = 'active'",
+        )
+        .bind(team)
+        .bind(member)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(internal)?;
+        let old = old
+            .as_deref()
+            .and_then(TeamRole::parse)
+            .ok_or(AppError::NotFound)?;
+        if old == role {
+            return Ok(());
+        }
+        if old == TeamRole::Admin {
+            let admins: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM team_members
+                 WHERE team_id = $1 AND role = 'admin' AND status = 'active'",
+            )
+            .bind(team)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(internal)?;
+            if admins <= 1 {
+                return Err(invalid("role", "a team keeps at least one admin"));
+            }
+        }
+        sqlx::query("UPDATE team_members SET role = $3 WHERE team_id = $1 AND user_id = $2")
+            .bind(team)
+            .bind(member)
+            .bind(role.as_str())
+            .execute(&mut *tx)
+            .await
+            .map_err(internal)?;
+        self.access
+            .grant(&mut tx, RelationTuple::new(team, role.relation(), member))
+            .await
+            .map_err(internal)?;
+        self.access
+            .revoke(&mut tx, RelationTuple::new(team, old.relation(), member))
+            .await
+            .map_err(internal)?;
+        tx.commit().await.map_err(internal)
     }
 
     /// Whether two people are active members of a common team (V1).

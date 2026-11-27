@@ -50,10 +50,15 @@ impl TeamRole {
         }
     }
 
-    /// Whether the role invites people until the permission matrix exists (T5.1.2).
+    /// The same role as `access` names it.
     #[must_use]
-    pub const fn invites(self) -> bool {
-        matches!(self, Self::Admin | Self::Manager)
+    pub const fn access_role(self) -> access::TeamRole {
+        match self {
+            Self::Admin => access::TeamRole::Admin,
+            Self::Manager => access::TeamRole::Manager,
+            Self::Member => access::TeamRole::Member,
+            Self::Guest => access::TeamRole::Guest,
+        }
     }
 }
 
@@ -168,6 +173,14 @@ pub struct InviteToTeamRequest {
     pub role: TeamRole,
 }
 
+/// `PUT /teams/{id}/members/{user_id}/role` body.
+#[derive(Debug, Clone, Copy, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export)]
+pub struct SetRoleRequest {
+    pub role: TeamRole,
+}
+
 /// Someone was invited to a team (TK2); published in the invitation's transaction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamInvitationCreated {
@@ -211,7 +224,7 @@ mod tests {
     }
 
     #[test]
-    fn roles_round_trip_and_only_admins_and_managers_invite() {
+    fn roles_round_trip() {
         for role in [
             TeamRole::Admin,
             TeamRole::Manager,
@@ -220,8 +233,6 @@ mod tests {
         ] {
             assert_eq!(TeamRole::parse(role.as_str()), Some(role));
         }
-        assert!(TeamRole::Manager.invites());
-        assert!(!TeamRole::Member.invites());
         assert_eq!(TeamRole::parse("owner"), None);
     }
 }
