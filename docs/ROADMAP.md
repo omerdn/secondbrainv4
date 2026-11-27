@@ -486,6 +486,8 @@ Her spike'ın sonucu bir ADR olarak yazılır.
   - AK4
 - **T3.5.3** · İstemci: dürtme, tepkiler ve yan yana ilerleme görünümü · client · M
   - AK5
+- **T3.5.4** · Takip kayıtlarına emoji tepkisi · backend + client · S
+  - AK4 (sahip kararı 2026-11-28: "kayıtlar" takip kayıtlarını kapsar)
 
 ### E3.6 · Ortak Work Session · bağımlılık: E2.6, E3.1
 - **T3.6.1** · Ortak oturum altyapısı · backend · M

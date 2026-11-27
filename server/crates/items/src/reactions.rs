@@ -1,4 +1,5 @@
-//! Emoji reactions to friends' completions (PRD AK4, T3.5.2). A person reacts to a "completed"
+//! Emoji reactions to friends' completions and tracker entries (PRD AK4, T3.5.2, T3.5.4). A
+//! person reacts to a "completed" or "recorded"
 //! activity event of an item they can view (A2), done by a friend (V1's friends, never oneself).
 //! One reaction per person and event; reacting again replaces it. A new reaction publishes
 //! [`ReactionAdded`], which the notification center turns into the completer's notification.
@@ -44,6 +45,13 @@ pub struct ReactionAdded {
     /// Who completed it.
     pub to_user: Uuid,
     pub emoji: String,
+    /// `completed` or `recorded` (a tracker entry, T3.5.4); older events are completions.
+    #[serde(default = "completed")]
+    pub activity_kind: String,
+}
+
+fn completed() -> String {
+    ActivityKind::Completed.as_str().to_owned()
 }
 
 impl DomainEvent for ReactionAdded {
@@ -83,7 +91,11 @@ pub fn tally(rows: &[(Uuid, String)], reader: Uuid) -> Vec<ReactionCount> {
 impl ItemsService {
     /// The event `actor` may react to: a completion of an item they can view (A2), done by a
     /// friend. Its item and the person who completed it.
-    async fn reactable(&self, actor: Uuid, activity: Uuid) -> Result<(Uuid, Uuid), AppError> {
+    async fn reactable(
+        &self,
+        actor: Uuid,
+        activity: Uuid,
+    ) -> Result<(Uuid, Uuid, String), AppError> {
         let row: Option<(Uuid, Option<Uuid>, String)> =
             sqlx::query_as("SELECT item_id, actor_id, type FROM activity_events WHERE id = $1")
                 .bind(activity)
@@ -93,8 +105,14 @@ impl ItemsService {
         let (item, completer, kind) = row.ok_or(AppError::NotFound)?;
         // Not visible: the same answer as an unknown event (V9).
         self.require(actor, item, Perms::VIEW).await?;
-        let Some(completer) = completer.filter(|_| kind == ActivityKind::Completed.as_str()) else {
-            return Err(invalid("activity", "only a completion can get a reaction"));
+        // A completion, or an entry on a tracker (AK4, T3.5.4).
+        let reactable = [ActivityKind::Completed, ActivityKind::Recorded];
+        let Some(completer) = completer.filter(|_| reactable.iter().any(|k| k.as_str() == kind))
+        else {
+            return Err(invalid(
+                "activity",
+                "only a completion or an entry can get a reaction",
+            ));
         };
         if completer == actor {
             return Err(invalid(
@@ -105,7 +123,7 @@ impl ItemsService {
         if !self.sharing.can_share(actor, completer).await? {
             return Err(AppError::Forbidden);
         }
-        Ok((item, completer))
+        Ok((item, completer, kind))
     }
 
     /// Reacts to a friend's completion with one of [`REACTIONS`], replacing an earlier reaction
@@ -124,7 +142,7 @@ impl ItemsService {
         if !REACTIONS.contains(&request.emoji.as_str()) {
             return Err(invalid("emoji", "not one of the offered reactions"));
         }
-        let (item, completer) = self.reactable(actor, activity).await?;
+        let (item, completer, kind) = self.reactable(actor, activity).await?;
         let now = self.clock.now();
         let mut tx = self.pool.begin().await.map_err(internal)?;
         let changed = sqlx::query(
@@ -152,6 +170,7 @@ impl ItemsService {
                     from_user: actor,
                     to_user: completer,
                     emoji: request.emoji,
+                    activity_kind: kind,
                 },
             )
             .await

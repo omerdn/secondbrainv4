@@ -335,6 +335,7 @@ describe("reactions (AK4)", () => {
         from_user: "u2",
         from_name: "Ayşe",
         emoji: "🎉",
+        activity_kind: null,
       },
       read_at: null,
       created_at: "2026-11-27T09:00:00Z",
@@ -356,5 +357,30 @@ describe("reactions (AK4)", () => {
       expect(server.calls.some((c) => c.path === "/notifications/re1/read")).toBe(true);
       expect(server.calls.some((c) => c.path.startsWith("/tasks/t9"))).toBe(true);
     });
+  });
+
+  it("names a tracker entry when someone reacts to it (T3.5.4)", async () => {
+    const reaction: Notification = {
+      id: "re2",
+      payload: {
+        type: "reaction",
+        activity_id: "a2",
+        item_id: "tr1",
+        item_kind: "tracker",
+        item_title: "Koşu",
+        from_user: "u2",
+        from_name: "Ayşe",
+        emoji: "💪",
+        activity_kind: "recorded",
+      },
+      read_at: null,
+      created_at: "2026-11-27T09:00:00Z",
+    };
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /notifications": () => json(200, { notifications: [reaction], unread: 1 }),
+    });
+    await renderApp(server.api, "/notifications", { tokenStore: memoryTokenStore("t") });
+    expect(await screen.findByText('Ayşe, "Koşu" kaydına 💪 bıraktı')).toBeTruthy();
   });
 });

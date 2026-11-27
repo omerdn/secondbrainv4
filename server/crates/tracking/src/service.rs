@@ -12,7 +12,7 @@ use chrono::{DateTime, Duration, NaiveDate, Utc};
 use chrono_tz::Tz;
 use identity::IdentityService;
 use identity::model::UserId;
-use items::{ItemsAccessContext, ItemsService, TouchAction};
+use items::{ItemsAccessContext, ItemsService};
 use kernel::{
     AppError, Cursor, FieldError, FieldErrorCode, Page, PageRequest, SharedClock, ValidationErrors,
 };
@@ -301,8 +301,9 @@ impl TrackerEntries {
         let stored = repo::insert_entry(&mut *tx, &new, now)
             .await
             .map_err(internal)?;
+        // Touches the tracker and writes the "recorded" activity friends react to (AK4).
         self.items
-            .touch(&mut tx, tracker, TouchAction::EntryLogged)
+            .record_entry(&mut tx, actor, tracker)
             .await
             .map_err(internal)?;
         if let Some(note) = &stored.note {

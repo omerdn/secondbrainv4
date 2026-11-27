@@ -189,14 +189,15 @@ const completion = (over: Partial<Activity> = {}): Activity => ({
 });
 
 describe("social model (AK4)", () => {
-  it("keeps friends' completions only and toggles one's own reaction", () => {
+  it("keeps friends' completions and entries only and toggles one's own reaction", () => {
     const feed = [
       completion(),
       completion({ id: "a2", actor_id: "u1" }),
       completion({ id: "a3", actor_id: "stranger" }),
       completion({ id: "a4", kind: "created" }),
+      completion({ id: "a5", kind: "recorded", item_kind: "tracker" }),
     ];
-    expect(friendCompletions(feed, new Set(["u3"]), "u1").map((e) => e.id)).toEqual(["a1"]);
+    expect(friendCompletions(feed, new Set(["u3"]), "u1").map((e) => e.id)).toEqual(["a1", "a5"]);
     const mine = [{ emoji: "🎉", count: 2, mine: true }];
     expect(reactionAction(mine, "🎉")).toBe("unreact");
     expect(reactionAction(mine, "🔥")).toBe("react");

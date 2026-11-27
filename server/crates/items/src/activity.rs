@@ -29,6 +29,8 @@ pub enum ActivityKind {
     Shared,
     Linked,
     Unlinked,
+    /// Someone entered a value on a tracker (AK4, T3.5.4).
+    Recorded,
 }
 
 impl ActivityKind {
@@ -40,6 +42,7 @@ impl ActivityKind {
             Self::Shared => "shared",
             Self::Linked => "linked",
             Self::Unlinked => "unlinked",
+            Self::Recorded => "recorded",
         }
     }
 
@@ -51,6 +54,7 @@ impl ActivityKind {
             "shared" => Some(Self::Shared),
             "linked" => Some(Self::Linked),
             "unlinked" => Some(Self::Unlinked),
+            "recorded" => Some(Self::Recorded),
             _ => None,
         }
     }
@@ -235,6 +239,23 @@ impl ItemsService {
         record(conn, now, event).await
     }
 
+    /// Records that `actor` entered a value on a tracker (A1, AK4): the tracker is touched and
+    /// friends can react to the entry. Call it inside the transaction of the entry.
+    ///
+    /// # Errors
+    /// Database errors.
+    pub async fn record_entry(
+        &self,
+        conn: &mut PgConnection,
+        actor: Uuid,
+        tracker: Uuid,
+    ) -> sqlx::Result<()> {
+        let now = self.clock.now();
+        touch::apply(&mut *conn, tracker, TouchAction::EntryLogged, now).await?;
+        let event = NewActivity::new(Some(actor), tracker, ActivityKind::Recorded);
+        record(conn, now, event).await
+    }
+
     /// Records that `actor` became an assignee of an item (A1), for the modules that own
     /// assignment. Call it inside the transaction of the change.
     ///
@@ -343,6 +364,7 @@ mod tests {
             ActivityKind::Shared,
             ActivityKind::Linked,
             ActivityKind::Unlinked,
+            ActivityKind::Recorded,
         ] {
             assert_eq!(ActivityKind::parse(kind.as_str()), Some(kind));
         }
