@@ -648,6 +648,8 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 
 **Amaç:** Gelir modelini devreye almak, dış entegrasyonları eklemek ve uygulamayı mağazalarda yayınlamak.
 
+> **Not (sahip kararı, 2026-11-27):** F7'nin monetizasyon, takvim, Wrapped, widget ve yayın işleri betada gerekmez. Bunlar v1 sürümünde, herkese açılırken yapılır; board'da "Going to be done in the release" sütununda ve `zamanlama:sürüm` etiketlidir. Ücretli paketlerin içeriği henüz belirlenmedi. F7'de şimdilik yalnız T7.3.3 (şablon galerisi ve mağazası altyapısı) yapılır.
+
 ### E7.1 · Monetizasyon
 - **T7.1.1** · Paket tanımı ve yetkilendirme (entitlement) altyapısı · backend · M
 - **T7.1.2** · Web ve masaüstü ödeme (Stripe) · backend · L
@@ -664,7 +666,8 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 - **T7.3.2** · Widget'lar · client · L
   - iOS ve Android ana ekran widget'ları (native kod gerektirir)
   - macOS menü çubuğu
-- **T7.3.3** · Şablon galerisi · backend+client · L
+- **T7.3.3** · Şablon galerisi ve mağazası altyapısı · backend+client · L
+  - Şablon modeli, galeri, şablondan oluşturma; ödeme ve herkese açık yayımlama yok
 
 ### E7.4 · Yayın
 - **T7.4.1** · Kod imzalama · infra · M
@@ -673,6 +676,9 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 - **T7.4.3** · Masaüstü otomatik güncelleme · infra · M
   - Tauri updater
 
+
+### Faz içi düzenlemeler (sonradan açılan)
+- **T7.0.1** · F7'nin sürüm işlerinin "release" sütununa alınması · docs · S (#405)
 ---
 
 ## Backlog (faza atanmamış)
