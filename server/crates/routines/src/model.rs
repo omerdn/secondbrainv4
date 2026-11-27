@@ -49,6 +49,10 @@ pub struct CreateRoutineRequest {
     #[serde(default)]
     #[ts(optional)]
     pub completion_mode: Option<crate::counts::CompletionMode>,
+    /// Who is responsible rotates between the members (R6); fixed assignees when absent.
+    #[serde(default)]
+    #[ts(optional)]
+    pub rotation: Option<crate::rotation::RoutineRotation>,
 }
 
 /// `PATCH /routines/{id}` body: only the fields present change, and a `null` end date clears it.
@@ -70,6 +74,14 @@ pub struct UpdateRoutineRequest {
     #[serde(default)]
     #[ts(optional)]
     pub completion_mode: Option<crate::counts::CompletionMode>,
+    /// R6; `null` goes back to fixed assignees and drops the swaps.
+    #[serde(default, deserialize_with = "present")]
+    #[ts(optional = nullable, as = "Option<crate::rotation::RoutineRotation>")]
+    pub rotation: Option<Option<crate::rotation::RoutineRotation>>,
+    /// The turn order: current members, each once. Members left out join at the end.
+    #[serde(default)]
+    #[ts(optional)]
+    pub rotation_order: Option<Vec<Uuid>>,
 }
 
 /// `POST /routines/{id}/plan` body: opens a new plan version (R11).
@@ -89,8 +101,10 @@ pub struct ChangePlanRequest {
 }
 
 /// Tells a field set to `null` (`Some(None)`) from an absent one (`None`).
-fn present<'de, D: Deserializer<'de>>(de: D) -> Result<Option<Option<NaiveDate>>, D::Error> {
-    Option::<NaiveDate>::deserialize(de).map(Some)
+fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
+    de: D,
+) -> Result<Option<Option<T>>, D::Error> {
+    Option::<T>::deserialize(de).map(Some)
 }
 
 /// One plan version as the API returns it.
@@ -121,6 +135,8 @@ pub struct RoutineView {
     /// `HH:MM` local times, in order.
     pub reminder_times: Vec<String>,
     pub completion_mode: crate::counts::CompletionMode,
+    /// `null` for fixed assignees (R6).
+    pub rotation: Option<crate::rotation::RoutineRotation>,
     /// Plan history, oldest first (R11).
     pub versions: Vec<PlanVersionView>,
 }

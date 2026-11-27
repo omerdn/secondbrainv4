@@ -200,6 +200,7 @@ impl World {
                     end_date: None,
                     reminder_times: None,
                     completion_mode: None,
+                    rotation: None,
                 },
             )
             .await

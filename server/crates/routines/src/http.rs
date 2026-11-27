@@ -12,6 +12,8 @@
 //! | DELETE | `/routines/{id}/completions?date=` | 200 [`RoutineDay`]; takes back the latest; EDIT |
 //! | GET   | `/routines/{id}/completions?from=&to=` | 200 `RoutineDay[]`; VIEW |
 //! | GET   | `/routines/{id}/streak` | 200 [`RoutineStreak`]; R9; VIEW |
+//! | GET   | `/routines/{id}/rotation?from=&to=` | 200 [`RotationView`]; who is responsible (R6); VIEW |
+//! | POST  | `/routines/{id}/rotation/swaps` | 200 [`RotationView`] of the swapped range; own turn or MANAGE |
 
 use axum::extract::{FromRef, Path, Query, State};
 use axum::http::StatusCode;
@@ -26,6 +28,7 @@ use crate::completions::{
     CompleteRoutineRequest, RoutineDay, RoutineDaysQuery, UndoCompletionQuery,
 };
 use crate::model::{ChangePlanRequest, CreateRoutineRequest, RoutineView, UpdateRoutineRequest};
+use crate::rotation::{RotationQuery, RotationView, SwapRequest};
 use crate::service::RoutinesService;
 use crate::streak::RoutineStreak;
 
@@ -53,6 +56,8 @@ pub fn router(state: RoutinesHttpState) -> Router {
             post(complete).get(list_days).delete(undo),
         )
         .route("/routines/{id}/streak", get(read_streak))
+        .route("/routines/{id}/rotation", get(read_rotation))
+        .route("/routines/{id}/rotation/swaps", post(swap))
         .with_state(state)
 }
 
@@ -153,6 +158,32 @@ async fn read_streak(
     state
         .routines
         .streak(auth.user_id.as_uuid(), id)
+        .await
+        .map(Json)
+}
+
+async fn read_rotation(
+    State(state): State<RoutinesHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+    Query(query): Query<RotationQuery>,
+) -> Result<Json<RotationView>, AppError> {
+    state
+        .routines
+        .rotation(auth.user_id.as_uuid(), id, query)
+        .await
+        .map(Json)
+}
+
+async fn swap(
+    State(state): State<RoutinesHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+    Json(request): Json<SwapRequest>,
+) -> Result<Json<RotationView>, AppError> {
+    state
+        .routines
+        .swap(auth.user_id.as_uuid(), id, request)
         .await
         .map(Json)
 }
