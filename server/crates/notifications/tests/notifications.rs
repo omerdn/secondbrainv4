@@ -465,3 +465,268 @@ async fn bl3_reminders_follow_the_channel_preference() {
         1
     );
 }
+
+impl World {
+    /// Ada's daily 08:00 routine shared with `people` as assignees, in `mode`.
+    async fn shared_routine(
+        &self,
+        owner: Uuid,
+        people: &[Uuid],
+        mode: routines::counts::CompletionMode,
+        rotation: Option<routines::rotation::RoutineRotation>,
+    ) -> Uuid {
+        let id = self
+            .routines
+            .create(
+                owner,
+                CreateRoutineRequest {
+                    title: "Bulaşık".into(),
+                    description: None,
+                    timezone: "Europe/Istanbul".into(),
+                    rrule: "FREQ=DAILY".into(),
+                    daily_target: None,
+                    start_date: Some(day(1)),
+                    end_date: None,
+                    reminder_times: Some(vec!["08:00".into()]),
+                    completion_mode: Some(mode),
+                    rotation,
+                },
+            )
+            .await
+            .unwrap()
+            .item
+            .id;
+        for &person in people {
+            let invitation = self
+                .items
+                .invite(
+                    owner,
+                    id,
+                    CreateInvitationRequest {
+                        to_user: person,
+                        role: InvitationRole::Assignee,
+                    },
+                )
+                .await
+                .unwrap()
+                .id;
+            self.items
+                .accept_invitation(person, invitation)
+                .await
+                .unwrap();
+        }
+        id
+    }
+
+    /// Whether `user` has a routine reminder in the app.
+    async fn reminded(&self, user: Uuid) -> bool {
+        self.notifications
+            .list(user, None)
+            .await
+            .unwrap()
+            .notifications
+            .iter()
+            .any(|n| matches!(n.payload, NotificationPayload::RoutineReminder { .. }))
+    }
+}
+
+#[tokio::test]
+async fn t3_3_4_a_shared_pool_reminds_every_responsible_person_once() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    let bob = w.user("bob@example.com", "Bob").await;
+    let can = w.user("can@example.com", "Can").await;
+    w.shared_routine(
+        ada,
+        &[bob, can],
+        routines::counts::CompletionMode::Pool,
+        None,
+    )
+    .await;
+    w.at(5, 1);
+    assert_eq!(w.routines.send_due_reminders().await.unwrap(), 2);
+    assert_eq!(
+        w.routines.send_due_reminders().await.unwrap(),
+        0,
+        "once per person"
+    );
+    w.deliver().await;
+    assert!(w.reminded(bob).await && w.reminded(can).await);
+    assert!(!w.reminded(ada).await, "the owner is not responsible here");
+}
+
+#[tokio::test]
+async fn t3_3_4_a_complete_pool_day_reminds_nobody() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    let bob = w.user("bob@example.com", "Bob").await;
+    let can = w.user("can@example.com", "Can").await;
+    let id = w
+        .shared_routine(
+            ada,
+            &[bob, can],
+            routines::counts::CompletionMode::Pool,
+            None,
+        )
+        .await;
+    w.at(4, 0);
+    w.routines
+        .complete(can, id, CompleteRoutineRequest::default())
+        .await
+        .unwrap();
+    w.at(5, 1);
+    assert_eq!(w.routines.send_due_reminders().await.unwrap(), 0);
+}
+
+#[tokio::test]
+async fn t3_3_4_each_person_mode_reminds_only_those_behind() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    let bob = w.user("bob@example.com", "Bob").await;
+    let can = w.user("can@example.com", "Can").await;
+    let id = w
+        .shared_routine(
+            ada,
+            &[bob, can],
+            routines::counts::CompletionMode::Individual,
+            None,
+        )
+        .await;
+    w.at(4, 0);
+    w.routines
+        .complete(bob, id, CompleteRoutineRequest::default())
+        .await
+        .unwrap();
+    w.at(5, 1);
+    assert_eq!(w.routines.send_due_reminders().await.unwrap(), 1);
+    w.deliver().await;
+    assert!(w.reminded(can).await);
+    assert!(!w.reminded(bob).await, "Bob already did his part");
+}
+
+#[tokio::test]
+async fn t3_3_4_a_rotation_reminds_the_person_on_duty_and_follows_swaps() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    let bob = w.user("bob@example.com", "Bob").await;
+    let can = w.user("can@example.com", "Can").await;
+    let id = w
+        .shared_routine(
+            ada,
+            &[bob, can],
+            routines::counts::CompletionMode::Pool,
+            Some(routines::rotation::RoutineRotation::EveryOccurrence),
+        )
+        .await;
+    w.at(4, 0);
+    let schedule = w
+        .routines
+        .rotation(
+            ada,
+            id,
+            routines::rotation::RotationQuery {
+                from: Some(day(27)),
+                to: Some(day(28)),
+            },
+        )
+        .await
+        .unwrap();
+    let today = schedule.assignments[0].user_id;
+    let tomorrow = schedule.assignments[1].user_id;
+    assert_ne!(today, tomorrow);
+    // Swap today's turn with tomorrow's: tomorrow's person is on duty today.
+    w.routines
+        .swap(
+            today,
+            id,
+            routines::rotation::SwapRequest {
+                first: day(27),
+                second: day(28),
+            },
+        )
+        .await
+        .unwrap();
+    w.at(5, 1);
+    assert_eq!(w.routines.send_due_reminders().await.unwrap(), 1);
+    w.deliver().await;
+    assert!(w.reminded(tomorrow).await);
+    assert!(!w.reminded(today).await);
+}
+
+#[tokio::test]
+async fn t3_3_4_v9_someone_who_lost_access_is_not_reminded() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    let bob = w.user("bob@example.com", "Bob").await;
+    let can = w.user("can@example.com", "Can").await;
+    let id = w
+        .shared_routine(
+            ada,
+            &[bob, can],
+            routines::counts::CompletionMode::Pool,
+            None,
+        )
+        .await;
+    w.items.remove_member(ada, id, can).await.unwrap();
+    w.at(5, 1);
+    assert_eq!(w.routines.send_due_reminders().await.unwrap(), 1);
+    w.deliver().await;
+    assert!(w.reminded(bob).await);
+    assert!(!w.reminded(can).await);
+}
+
+#[tokio::test]
+async fn t3_3_4_bl3_each_person_has_their_own_channels() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    let bob = w.user("bob@example.com", "Bob").await;
+    let can = w.user("can@example.com", "Can").await;
+    w.shared_routine(
+        ada,
+        &[bob, can],
+        routines::counts::CompletionMode::Pool,
+        None,
+    )
+    .await;
+    w.notifications
+        .set_preference(bob, NotificationKind::RoutineReminder, vec![Channel::Push])
+        .await
+        .unwrap();
+    w.at(5, 1);
+    assert_eq!(w.routines.send_due_reminders().await.unwrap(), 2);
+    w.deliver().await;
+    assert!(!w.reminded(bob).await, "Bob turned in-app reminders off");
+    assert!(w.reminded(can).await);
+}
+
+#[tokio::test]
+async fn t3_3_4_reminders_already_sent_before_the_change_are_not_repeated() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    let id = w.routine(ada, "Su iç", "FREQ=DAILY", &["08:00"]).await;
+    // As the old sweep left it: one row per reminder, nothing per person.
+    sqlx::query(
+        "INSERT INTO routine_reminders_sent (routine_id, local_date, reminder_time, sent_at)
+         VALUES ($1, $2, '08:00', now())",
+    )
+    .bind(id)
+    .bind(day(27))
+    .execute(w.db.pool())
+    .await
+    .unwrap();
+    sqlx::query("DELETE FROM routine_reminders_sent_to")
+        .execute(w.db.pool())
+        .await
+        .unwrap();
+    sqlx::raw_sql(
+        include_str!("../../../migrations/20261127000800_routine_reminders_sent_to.sql")
+            .split("-- copy-sent-reminders")
+            .nth(1)
+            .unwrap(),
+    )
+    .execute(w.db.pool())
+    .await
+    .unwrap();
+    w.at(5, 1);
+    assert_eq!(w.routines.send_due_reminders().await.unwrap(), 0);
+}

@@ -2,15 +2,19 @@
 //!
 //! A sweep runs every minute. For each active routine with reminder times it finds the times
 //! that came due in the last [`REMINDER_WINDOW`], in the routine's own time zone, on days the
-//! plan has an occurrence that is not complete yet. Each due reminder is recorded in
-//! `routine_reminders_sent` and announced with [`RoutineReminderDue`] in one transaction, so it
-//! is sent at most once; the notification center turns the event into a notification and
-//! honours the user's channels (BL3). Reminders go to the routine's owner; shared routines'
-//! members follow with F3.
+//! plan has an occurrence that is not complete yet. Each due reminder is recorded per person in
+//! `routine_reminders_sent_to` and announced with [`RoutineReminderDue`] in one transaction, so
+//! each person gets it at most once; the notification center turns the event into a
+//! notification and honours that person's channels (BL3).
+//!
+//! Who gets it (R5, R6, T3.3.4): in a rotation, the person responsible for that occurrence (swaps
+//! included); with fixed assignees, everyone in a shared pool until the day is complete, and in
+//! each-person mode those below their target; with no assignees, the owner. Only people who can
+//! still view the routine are reminded (V9).
 
+use access::Perms;
 use chrono::{DateTime, Duration, NaiveDate, NaiveTime, TimeZone, Utc};
 use chrono_tz::Tz;
-use items::Owner;
 use kernel::AppError;
 use kernel::event::DomainEvent;
 use recurrence::local_date;
@@ -92,9 +96,6 @@ impl RoutinesService {
             let Some(item) = items.iter().find(|item| item.id == row.item_id) else {
                 continue;
             };
-            let Owner::User { user_id } = item.owner else {
-                continue;
-            };
             let Ok(timezone) = parse_timezone(&row.timezone) else {
                 continue;
             };
@@ -117,34 +118,49 @@ impl RoutinesService {
                     tracking::repo::list_entries(&self.pool, row.item_id, Some(day), Some(day))
                         .await
                         .map_err(internal)?;
-                let (done, target) = self
-                    .counts(&row, &entries)
-                    .await?
-                    .day(day, target_on(&versions, day));
-                if done >= target {
-                    continue;
-                }
-                let mut tx = self.pool.begin().await.map_err(internal)?;
-                if !repo::record_reminder(&mut tx, row.item_id, day, time, now)
-                    .await
-                    .map_err(internal)?
+                let people = self.people(row.item_id).await?;
+                let mut recipients = self.counts(&row, &entries).await?.still_to_do(
+                    day,
+                    target_on(&versions, day),
+                    &people,
+                );
+                if !recipients.is_empty()
+                    && let Some(responsible) = self.responsible_on(&row, day).await?
                 {
-                    continue;
+                    // R6: a rotation (always a shared pool) hands the day to one person.
+                    recipients = vec![responsible];
                 }
-                db::outbox::publish(
-                    &mut tx,
-                    &RoutineReminderDue {
-                        routine_id: row.item_id,
-                        user_id,
-                        title: item.title.clone(),
-                        local_date: day,
-                        time: time.format("%H:%M").to_string(),
-                    },
-                )
-                .await
-                .map_err(internal)?;
-                tx.commit().await.map_err(internal)?;
-                sent += 1;
+                for user_id in recipients {
+                    if !self
+                        .permissions
+                        .check(&self.pool, user_id, row.item_id, Perms::VIEW)
+                        .await
+                        .map_err(internal)?
+                    {
+                        continue;
+                    }
+                    let mut tx = self.pool.begin().await.map_err(internal)?;
+                    if !repo::record_reminder(&mut tx, (row.item_id, user_id), day, time, now)
+                        .await
+                        .map_err(internal)?
+                    {
+                        continue;
+                    }
+                    db::outbox::publish(
+                        &mut tx,
+                        &RoutineReminderDue {
+                            routine_id: row.item_id,
+                            user_id,
+                            title: item.title.clone(),
+                            local_date: day,
+                            time: time.format("%H:%M").to_string(),
+                        },
+                    )
+                    .await
+                    .map_err(internal)?;
+                    tx.commit().await.map_err(internal)?;
+                    sent += 1;
+                }
             }
         }
         Ok(sent)
