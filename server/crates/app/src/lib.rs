@@ -108,7 +108,9 @@ where
         .with_sharing(std::sync::Arc::new(items::AnyOf(vec![
             std::sync::Arc::new(friendships.clone()),
             std::sync::Arc::new(teams_service.clone()),
-        ])));
+        ])))
+        // Team items ask the teams module who is in a team and what their role may do (T5.1.3).
+        .with_teams(std::sync::Arc::new(teams_service.clone()));
 
     // Domain modules register their subscribers here as they are implemented.
     let mut dispatcher = db::outbox::Dispatcher::new(db::outbox::DispatchConfig::default());

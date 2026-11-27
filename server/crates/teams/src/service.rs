@@ -3,7 +3,9 @@
 use access::{AccessEngine, RelationTuple};
 use chrono::{DateTime, Utc};
 use identity::IdentityService;
-use items::{ItemsAccessContext, SharingFuture, SharingPolicy};
+use items::{
+    ItemsAccessContext, SharingFuture, SharingPolicy, TeamAction, TeamDirectory, TeamFuture,
+};
 use kernel::{AppError, FieldError, FieldErrorCode, SharedClock, ValidationErrors};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -566,6 +568,14 @@ impl TeamsService {
         tx.commit().await.map_err(internal)
     }
 
+    /// Whether `user` is an active member of `team`.
+    ///
+    /// # Errors
+    /// [`AppError::Internal`].
+    pub async fn is_member(&self, team: Uuid, user: Uuid) -> Result<bool, AppError> {
+        Ok(self.role_of(user, team).await?.is_some())
+    }
+
     /// Whether two people are active members of a common team (V1).
     ///
     /// # Errors
@@ -589,5 +599,20 @@ impl TeamsService {
 impl SharingPolicy for TeamsService {
     fn can_share(&self, from: Uuid, to: Uuid) -> SharingFuture<'_> {
         Box::pin(self.teammates(from, to))
+    }
+}
+
+/// Team items (T5.1.3): who belongs to a team and what their role may do with its items.
+impl TeamDirectory for TeamsService {
+    fn is_member(&self, team: Uuid, user: Uuid) -> TeamFuture<'_> {
+        Box::pin(Self::is_member(self, team, user))
+    }
+
+    fn may(&self, actor: Uuid, team: Uuid, action: TeamAction) -> TeamFuture<'_> {
+        let permission = match action {
+            TeamAction::CreateItems => TeamPermission::CreateItems,
+            TeamAction::Assign => TeamPermission::Assign,
+        };
+        Box::pin(Self::may(self, actor, team, permission))
     }
 }

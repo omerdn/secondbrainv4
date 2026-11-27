@@ -50,6 +50,7 @@ const item = (id: string, kind: string, title: string): Item => ({
   updated_at: iso(T0),
   last_touched_at: iso(T0),
   archived_at: null,
+  team_visibility: null,
   deleted_at: null,
 });
 

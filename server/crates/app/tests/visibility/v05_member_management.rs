@@ -81,7 +81,9 @@ async fn team_role_matrix_controls_member_management() {
             ],
         )
         .await;
-    let task = world.team_task(team, admin, "all").await;
+    let task = world
+        .team_task(team, admin, items::TeamVisibilityMode::All)
+        .await;
     let teams = world.teams();
     let mut matrix = teams.matrix(admin, team).await.unwrap();
     for row in &mut matrix.roles {

@@ -15,6 +15,7 @@ mod reactions;
 mod search;
 mod service;
 mod tags;
+mod team_items;
 mod touch;
 mod touched;
 mod views;
@@ -39,6 +40,10 @@ pub use reactions::{REACTIONS, ReactRequest, ReactionAdded, ReactionCount, tally
 pub use service::{ItemsService, LIST_LIMIT, TRASH_RETENTION};
 pub use tags::{
     CreateTagRequest, NewTag, TAG_LIST_LIMIT, TAG_NAME_MAX_CHARS, Tag, TagChanges, UpdateTagRequest,
+};
+pub use team_items::{
+    CreateTeamItemRequest, NewTeamItem, NoTeams, SetTeamVisibilityRequest, TEAM_ITEM_MAX_PEOPLE,
+    TeamAction, TeamDirectory, TeamFuture, TeamVisibilityMode,
 };
 pub use touch::{TouchAction, touched_at};
 pub use touched::Touched;

@@ -48,6 +48,7 @@ const item = (id: string, title: string, kind = "task"): Item => ({
   updated_at: at,
   last_touched_at: at,
   archived_at: null,
+  team_visibility: null,
   deleted_at: null,
 });
 
