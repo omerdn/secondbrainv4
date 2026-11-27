@@ -175,12 +175,39 @@ impl App {
         self.router.clone().oneshot(request).await.unwrap()
     }
 
-    async fn native(&self, body: Value) -> Response {
+    async fn post_json(&self, uri: &str, body: Value) -> Response {
         self.send(
-            Request::post("/auth/apple/native")
+            Request::post(uri)
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(body.to_string()))
                 .unwrap(),
+        )
+        .await
+    }
+
+    /// The native sign-in, finished through the consent screen when it asks for one (HS5).
+    async fn native(&self, body: Value) -> Response {
+        let response = self.post_json("/auth/apple/native", body).await;
+        if response.status() != StatusCode::CONFLICT {
+            return response;
+        }
+        let (parts, body) = response.into_parts();
+        let bytes = body.collect().await.unwrap().to_bytes();
+        let value: Value = serde_json::from_slice(&bytes).unwrap();
+        match value["error"]["consent_ticket"].as_str() {
+            Some(ticket) => self.consent(ticket, "native").await,
+            None => Response::from_parts(parts, Body::from(bytes)),
+        }
+    }
+
+    async fn consent(&self, ticket: &str, client: &str) -> Response {
+        self.post_json(
+            "/auth/consent",
+            json!({
+                "ticket": ticket,
+                "accepted": identity::legal::current_acceptances(),
+                "client": client
+            }),
         )
         .await
     }
@@ -253,10 +280,15 @@ async fn web_flow_uses_form_post_and_takes_the_name_from_the_first_authorization
     let form = format!("code=c-1&state={state}&user={}", urlencode(user));
     let response = app.callback(&form, Some(&state)).await;
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        header_values(&response, header::LOCATION),
-        ["https://app.test/"]
+    // HS5: the account is created only after consent, with the name from this callback.
+    let consent = header_values(&response, header::LOCATION).remove(0);
+    assert!(
+        consent.starts_with("https://app.test/consent?ticket="),
+        "{consent}"
     );
+    assert!(app.users().await.is_empty());
+    let response = app.consent(&param(&consent, "ticket"), "web").await;
+    assert_eq!(response.status(), StatusCode::OK);
     assert!(
         header_values(&response, header::SET_COOKIE)
             .iter()

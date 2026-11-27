@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { platformLabel } from "@/lib/app-info";
 
 import { AuthScaffold, FormMessage } from "./AuthScaffold";
+import { ConsentCheckbox, acceptancesOf, consentHref, useLegalDocuments } from "./legal";
 import { ProviderButtons } from "./ProviderButtons";
 import { useSession } from "./session";
 import { type FieldErrors, fromApiError, hasErrors, validateRegister } from "./validation";
@@ -26,6 +27,9 @@ export function RegisterScreen() {
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [accepted, setAccepted] = useState(false);
+  const [consentError, setConsentError] = useState<string | null>(null);
+  const documents = useLegalDocuments();
   const register = useMutation({
     mutationFn: (body: RegisterRequest) => api.auth.register(body),
   });
@@ -34,9 +38,11 @@ export function RegisterScreen() {
     const found = validateRegister({ email, password, displayName });
     setErrors(found);
     setFormError(null);
-    if (hasErrors(found)) return;
+    setConsentError(accepted ? null : t("auth.legal.required"));
+    if (hasErrors(found) || !accepted || !documents.data) return;
     try {
       const response = await register.mutateAsync({
+        accepted_legal: acceptancesOf(documents.data),
         display_name: displayName.trim(),
         email: email.trim(),
         password,
@@ -83,6 +89,14 @@ export function RegisterScreen() {
         textContentType="newPassword"
         onSubmitEditing={() => void submit()}
       />
+      {documents.data ? (
+        <ConsentCheckbox
+          documents={documents.data}
+          checked={accepted}
+          onChange={setAccepted}
+          error={consentError}
+        />
+      ) : null}
       <FormMessage message={formError} />
       <Button
         title={t("auth.register.submit")}
@@ -91,6 +105,7 @@ export function RegisterScreen() {
       />
       <ProviderButtons
         onSignedIn={session.signedIn}
+        onConsent={(ticket) => router.push(consentHref(ticket))}
         onError={setFormError}
         disabled={register.isPending}
       />

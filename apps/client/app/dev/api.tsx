@@ -33,7 +33,9 @@ function Check() {
   const health = useQuery({ queryKey: ["health"], queryFn: api.health });
 
   const register = useIdempotentMutation(async () => {
+    const legal = await api.legal.list();
     const res = await api.auth.register({
+      accepted_legal: legal.map((doc) => ({ kind: doc.kind, version: doc.version })),
       email: `dev${Date.now()}@example.test`,
       password: "correct horse",
       display_name: "Dev User",

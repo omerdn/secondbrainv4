@@ -10,6 +10,8 @@ export interface ProviderButtonsProps {
   /** Native only: a provider sign-in finished in the app. */
   onSignedIn: (response: AuthResponse) => Promise<void>;
   onError: (message: string) => void;
+  /** A sign-in held for legal consent (HS5): open the consent screen with this ticket. */
+  onConsent?: (ticket: string) => void;
   disabled?: boolean;
   config?: ProviderConfig;
   /** Web only, injected for tests; defaults to a full-page navigation. */

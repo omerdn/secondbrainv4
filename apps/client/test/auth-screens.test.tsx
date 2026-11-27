@@ -16,6 +16,14 @@ import { renderApp } from "./support/router";
 
 const tr = i18n.getFixedT("tr");
 
+const LEGAL = [
+  { kind: "privacy", version: 1, title: "Gizlilik Politikası" },
+  { kind: "kvkk", version: 1, title: "KVKK Aydınlatma Metni" },
+  { kind: "terms", version: 2, title: "Kullanım Koşulları" },
+];
+const acceptLegal = () =>
+  act(() => fireEvent.press(screen.getByRole("checkbox", { name: tr("auth.legal.accept") })));
+
 beforeEach(resetCredentials);
 
 const press = (name: string) => act(() => fireEvent.press(screen.getByRole("button", { name })));
@@ -123,8 +131,9 @@ describe("login", () => {
 });
 
 describe("register", () => {
-  it("creates the account and signs in", async () => {
+  it("needs the legal texts accepted, then creates the account and signs in (HS5)", async () => {
     const { api, calls } = fakeServer({
+      "GET /legal": () => json(200, LEGAL),
       "POST /auth/register": () => json(201, { user, token: "tok", expires_at: "x" }),
     });
     await renderApp(api, "/register");
@@ -132,14 +141,29 @@ describe("register", () => {
     await type(tr("auth.displayName"), " Ali ");
     await type(tr("auth.email"), "ali@example.com");
     await type(tr("auth.password"), "correct horse");
+    await screen.findByRole("checkbox", { name: tr("auth.legal.accept") });
+    expect(screen.getByRole("link", { name: "KVKK Aydınlatma Metni" })).toBeOnTheScreen();
+    await press(tr("auth.register.submit"));
+    expect(await screen.findByText(tr("auth.legal.required"))).toBeOnTheScreen();
+    expect(calls.some((c) => c.path === "/auth/register")).toBe(false);
+    await acceptLegal();
     await press(tr("auth.register.submit"));
     expect(await screen.findByRole("header", { name: "Bugün" })).toBeOnTheScreen();
-    expect(calls[0]?.body).toMatchObject({ display_name: "Ali", client: "native" });
+    expect(calls.find((c) => c.path === "/auth/register")?.body).toMatchObject({
+      display_name: "Ali",
+      client: "native",
+      accepted_legal: [
+        { kind: "privacy", version: 1 },
+        { kind: "kvkk", version: 1 },
+        { kind: "terms", version: 2 },
+      ],
+    });
   });
 
   it("shows a taken address and server field errors on the field", async () => {
     let conflict = true;
     const { api } = fakeServer({
+      "GET /legal": () => json(200, LEGAL),
       "POST /auth/register": () =>
         conflict
           ? apiError(409, "conflict")
@@ -152,12 +176,64 @@ describe("register", () => {
     await type(tr("auth.displayName"), "Ali");
     await type(tr("auth.email"), "ali@example.com");
     await type(tr("auth.password"), "correct horse");
+    await screen.findByRole("checkbox", { name: tr("auth.legal.accept") });
+    await acceptLegal();
     await press(tr("auth.register.submit"));
     expect(await screen.findByText(tr("auth.errors.emailTaken"))).toBeOnTheScreen();
     conflict = false;
     await press(tr("auth.register.submit"));
     expect(await screen.findByText(tr("auth.validation.passwordShort"))).toBeOnTheScreen();
     expect(screen.queryByText(tr("auth.errors.emailTaken"))).toBeNull();
+  });
+});
+
+describe("legal consent (HS5)", () => {
+  it("holds a sign-in on the consent screen and finishes it once accepted", async () => {
+    const { api, calls } = fakeServer({
+      "GET /legal": () => json(200, LEGAL),
+      "POST /auth/login": () =>
+        new Response(
+          JSON.stringify({
+            error: { code: "consent_required", message: "consent required", consent_ticket: "tk" },
+          }),
+          { status: 409, headers: { "content-type": "application/json" } },
+        ),
+      "POST /auth/consent": () => json(200, { user, token: "tok", expires_at: "x" }),
+    });
+    await renderApp(api, "/login");
+    await screen.findByRole("header", { name: tr("auth.login.title") });
+    await type(tr("auth.email"), "ali@example.com");
+    await type(tr("auth.password"), "correct horse");
+    await press(tr("auth.login.submit"));
+    expect(await screen.findByRole("header", { name: tr("auth.legal.title") })).toBeOnTheScreen();
+    await screen.findByRole("checkbox", { name: tr("auth.legal.accept") });
+    await acceptLegal();
+    await press(tr("auth.legal.continue"));
+    expect(await screen.findByRole("header", { name: "Bugün" })).toBeOnTheScreen();
+    expect(calls.find((c) => c.path === "/auth/consent")?.body).toEqual({
+      ticket: "tk",
+      accepted: [
+        { kind: "privacy", version: 1 },
+        { kind: "kvkk", version: 1 },
+        { kind: "terms", version: 2 },
+      ],
+      client: "native",
+    });
+  });
+
+  it("shows a legal text signed out", async () => {
+    const { api } = fakeServer({
+      "GET /legal/kvkk": () =>
+        json(200, {
+          kind: "kvkk",
+          version: 1,
+          title: "KVKK Aydınlatma Metni",
+          body: "# KVKK Aydınlatma Metni\n\nYer tutucu metin.",
+        }),
+    });
+    await renderApp(api, "/legal/kvkk");
+    expect(await screen.findByText("Yer tutucu metin.")).toBeOnTheScreen();
+    expect(screen.getByText(tr("auth.legal.version", { version: 1 }))).toBeOnTheScreen();
   });
 });
 

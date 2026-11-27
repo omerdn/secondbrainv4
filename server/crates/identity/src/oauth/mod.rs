@@ -42,8 +42,9 @@ impl Provider {
     }
 }
 
-/// Facts about the user, already verified by the provider integration.
-#[derive(Clone, PartialEq, Eq)]
+/// Facts about the user, already verified by the provider integration. Serialized only into a
+/// consent ticket (T4.3.3), which lives 15 minutes.
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ProviderClaims {
     /// Stable account id at the provider (`sub`).
     pub subject: String,
@@ -104,7 +105,10 @@ fn display_name(claims: &ProviderClaims, email: &str) -> String {
 }
 
 impl IdentityService {
-    /// Signs in (creating or linking the account per the module rules) and opens a session.
+    /// Signs in a linked account that accepted the current legal texts and opens a session.
+    /// Anyone else (no account yet, not linked yet, or a new text version) is held for consent:
+    /// [`AppError::ConsentRequired`] carries the ticket, and the account is created or linked
+    /// only when they accept (T4.3.3, HS5).
     pub async fn sign_in_with_provider(
         &self,
         provider: Provider,
@@ -113,32 +117,76 @@ impl IdentityService {
     ) -> Result<(CurrentUser, IssuedSession), AppError> {
         let now = self.now();
         let mut tx = self.pool().begin().await.map_err(AppError::internal)?;
+        let known = self.known_account(&mut tx, provider, &claims).await?;
+        if let Some(user_id) = known
+            && self.has_current_consent(&mut tx, user_id).await?
+        {
+            let user = self.user_in(&mut tx, user_id).await?;
+            let session = insert_session(&mut tx, user.id, device, now).await?;
+            tx.commit().await.map_err(AppError::internal)?;
+            return Ok((user, session));
+        }
+        drop(tx);
+        // Checked now so a refused sign-in is refused before the consent screen.
+        if known.is_none() {
+            claims
+                .email
+                .as_deref()
+                .map(str::trim)
+                .filter(|e| !e.is_empty())
+                .ok_or_else(|| refused("no e-mail from provider"))?;
+            if !claims.email_verified {
+                return Err(refused("provider e-mail not verified"));
+            }
+        }
+        Err(self.hold_provider_sign_in(provider, claims, device).await)
+    }
 
-        let known = sqlx::query_scalar::<_, Uuid>(
+    async fn known_account(
+        &self,
+        tx: &mut sqlx::PgConnection,
+        provider: Provider,
+        claims: &ProviderClaims,
+    ) -> Result<Option<UserId>, AppError> {
+        Ok(sqlx::query_scalar::<_, Uuid>(
             "SELECT user_id FROM auth_identities WHERE provider = $1 AND provider_uid = $2",
         )
         .bind(provider.as_str())
         .bind(&claims.subject)
         .fetch_optional(&mut *tx)
         .await
-        .map_err(AppError::internal)?;
+        .map_err(AppError::internal)?
+        .map(UserId::from_uuid))
+    }
 
-        let user_id = match known {
-            Some(id) => UserId::from_uuid(id),
-            None => self.link_or_create(&mut tx, provider, &claims, now).await?,
-        };
+    /// The account of a provider sign-in, created or linked per the module rules.
+    pub(crate) async fn provider_account(
+        &self,
+        tx: &mut sqlx::PgConnection,
+        provider: Provider,
+        claims: &ProviderClaims,
+        now: DateTime<Utc>,
+    ) -> Result<UserId, AppError> {
+        match self.known_account(tx, provider, claims).await? {
+            Some(id) => Ok(id),
+            None => self.link_or_create(tx, provider, claims, now).await,
+        }
+    }
 
-        let user = sqlx::query_as::<_, UserRow>(sqlx::AssertSqlSafe(format!(
+    /// The user `id` inside a transaction.
+    pub(crate) async fn user_in(
+        &self,
+        tx: &mut sqlx::PgConnection,
+        id: UserId,
+    ) -> Result<CurrentUser, AppError> {
+        sqlx::query_as::<_, UserRow>(sqlx::AssertSqlSafe(format!(
             "SELECT {USER_COLUMNS} FROM users WHERE id = $1"
         )))
-        .bind(user_id.as_uuid())
+        .bind(id.as_uuid())
         .fetch_one(&mut *tx)
         .await
         .map(to_user)
-        .map_err(AppError::internal)?;
-        let session = insert_session(&mut tx, user.id, device, now).await?;
-        tx.commit().await.map_err(AppError::internal)?;
-        Ok((user, session))
+        .map_err(AppError::internal)
     }
 
     async fn link_or_create(

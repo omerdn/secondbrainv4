@@ -23,6 +23,8 @@ export class ApiError extends Error {
     readonly fields: Readonly<Record<string, readonly FieldError[]>> = {},
     /** Seconds to wait before retrying (`Retry-After` of a 429). */
     readonly retryAfter: number | null = null,
+    /** With `consent_required`: the ticket that finishes the sign-in (`auth.consent`, HS5). */
+    readonly consentTicket: string | null = null,
   ) {
     super(message);
   }
@@ -52,6 +54,7 @@ const SERVER_CODES: ReadonlySet<string> = new Set<ErrorCode>([
   "forbidden",
   "validation_failed",
   "conflict",
+  "consent_required",
   "rate_limited",
   "internal",
 ]);
@@ -86,12 +89,12 @@ export function errorFromResponse(status: number, body: unknown, headers: Header
   if (!isErrorBody(body)) {
     return new ApiError("unknown", `unexpected response (HTTP ${status})`, status, {}, retryAfter);
   }
-  const { code, message, fields } = body.error;
+  const { code, message, fields, consent_ticket } = body.error;
   const grouped: Record<string, FieldError[]> = {};
   for (const field of fields ?? []) {
     (grouped[field.field] ??= []).push(field);
   }
-  return new ApiError(code, message, status, grouped, retryAfter);
+  return new ApiError(code, message, status, grouped, retryAfter, consent_ticket ?? null);
 }
 
 /** The error for a request that got no response. */

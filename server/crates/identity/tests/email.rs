@@ -82,7 +82,7 @@ impl App {
                 Method::POST,
                 "/auth/register",
                 None,
-                Some(json!({ "email": email, "password": PASSWORD, "display_name": "Ada", "client": "native" })),
+                Some(json!({ "email": email, "password": PASSWORD, "display_name": "Ada", "client": "native", "accepted_legal": identity::legal::current_acceptances() })),
             )
             .await;
         assert_eq!(response.status(), StatusCode::CREATED);

@@ -95,6 +95,7 @@ impl World {
             display_name: name.into(),
             client: identity::model::ClientKind::Native,
             device: None,
+            accepted_legal: identity::legal::current_acceptances(),
         }
         .validate()
         .unwrap();

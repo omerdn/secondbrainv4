@@ -5,6 +5,10 @@
  */
 
 import type {
+  ConsentRequest,
+  LegalDocument,
+  LegalDocumentKind,
+  LegalDocumentSummary,
   AccountDeletion,
   DataExport,
   OwnedSharedItem,
@@ -131,6 +135,15 @@ export function endpoints(api: ApiClient) {
         api.post<AuthResponse>("/auth/google/native", body),
       /** iOS only: exchanges a Sign in with Apple credential for a bearer session. */
       appleNative: (body: AppleNativeRequest) => api.post<AuthResponse>("/auth/apple/native", body),
+      /** Finishes a sign-in held for consent with every current legal text accepted (HS5). */
+      consent: (body: ConsentRequest) => api.post<AuthResponse>("/auth/consent", body),
+    },
+    legal: {
+      /** The legal texts in force (HS5, T4.3.3). */
+      list: () => api.get<LegalDocumentSummary[]>("/legal"),
+      /** One text in force, as Markdown. */
+      get: (kind: LegalDocumentKind) =>
+        api.get<LegalDocument>(`/legal/${encodeURIComponent(kind)}`),
     },
     me: {
       get: () => api.get<CurrentUser>("/me"),

@@ -38,6 +38,7 @@ async fn register(service: &IdentityService, email: &str) {
         display_name: "Ada".into(),
         client: identity::model::ClientKind::Native,
         device: None,
+        accepted_legal: identity::legal::current_acceptances(),
     }
     .validate()
     .unwrap();
@@ -87,6 +88,7 @@ async fn only_expired_rows_are_deleted() {
             sessions: 1,
             email_tokens: 1,
             oauth_states: 1,
+            consent_tickets: 0,
         }
     );
     assert_eq!(count(pool, "sessions").await, 1);

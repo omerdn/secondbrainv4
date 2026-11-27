@@ -53,6 +53,9 @@ pub struct RegisterRequest {
     #[serde(default)]
     #[ts(optional)]
     pub device: Option<String>,
+    /// The legal texts the user accepted: every current one is required (HS5, T4.3.3).
+    #[serde(default)]
+    pub accepted_legal: Vec<crate::legal::LegalAcceptance>,
 }
 
 /// `POST /auth/login`.
@@ -354,6 +357,10 @@ impl RegisterRequest {
         if let Some(device) = &device {
             errors.check(max_chars("device", device, MAX_DEVICE_CHARS));
         }
+        errors.check(crate::legal::check_acceptance(
+            "accepted_legal",
+            &self.accepted_legal,
+        ));
         if !errors.is_empty() {
             return Err(errors);
         }
@@ -410,6 +417,7 @@ mod tests {
             display_name: name.into(),
             client: ClientKind::Web,
             device: Some("  ".into()),
+            accepted_legal: crate::legal::current_acceptances(),
         }
     }
 

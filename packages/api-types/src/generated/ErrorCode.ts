@@ -3,4 +3,4 @@
 /**
  * Machine-readable error code sent to clients (`error.code`).
  */
-export type ErrorCode = "not_found" | "unauthenticated" | "forbidden" | "validation_failed" | "conflict" | "rate_limited" | "internal";
+export type ErrorCode = "not_found" | "unauthenticated" | "forbidden" | "validation_failed" | "conflict" | "consent_required" | "rate_limited" | "internal";

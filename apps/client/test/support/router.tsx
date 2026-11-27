@@ -29,9 +29,11 @@ import TrackerDetail from "../../app/(app)/trackers/[id]";
 import Trash from "../../app/(app)/trash";
 import Views from "../../app/(app)/views";
 import AuthLayout from "../../app/(auth)/_layout";
+import Consent from "../../app/(auth)/consent";
 import ForgotPassword from "../../app/(auth)/forgot-password";
 import Login from "../../app/(auth)/login";
 import Register from "../../app/(auth)/register";
+import Legal from "../../app/legal/[kind]";
 import ResetPassword from "../../app/reset-password";
 import VerifyEmail from "../../app/verify-email";
 import { type fakeServer, memoryTokenStore, Providers } from "./api";
@@ -85,6 +87,8 @@ export function renderApp(
       "(auth)/login": Login,
       "(auth)/register": Register,
       "(auth)/forgot-password": ForgotPassword,
+      "(auth)/consent": Consent,
+      "legal/[kind]": Legal,
       "reset-password": ResetPassword,
       "verify-email": VerifyEmail,
     },

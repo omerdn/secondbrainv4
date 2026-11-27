@@ -200,7 +200,38 @@ impl App {
         .await
     }
 
+    /// The native sign-in, finished through the consent screen when it asks for one (HS5).
     async fn native(&self, code: &str, client_id: &str) -> Response {
+        let response = self.native_raw(code, client_id).await;
+        self.finish_consent(response, "native").await
+    }
+
+    /// Accepts the legal texts when `response` holds the sign-in for consent; else `response`.
+    async fn finish_consent(&self, response: Response, client: &str) -> Response {
+        if response.status() != StatusCode::CONFLICT {
+            return response;
+        }
+        let (parts, body) = response.into_parts();
+        let bytes = body.collect().await.unwrap().to_bytes();
+        let value: Value = serde_json::from_slice(&bytes).unwrap();
+        match value["error"]["consent_ticket"].as_str() {
+            Some(ticket) => {
+                self.post(
+                    "/auth/consent",
+                    None,
+                    json!({
+                        "ticket": ticket,
+                        "accepted": identity::legal::current_acceptances(),
+                        "client": client
+                    }),
+                )
+                .await
+            }
+            None => Response::from_parts(parts, Body::from(bytes)),
+        }
+    }
+
+    async fn native_raw(&self, code: &str, client_id: &str) -> Response {
         self.post(
             "/auth/google/native",
             None,
@@ -259,9 +290,25 @@ async fn web_flow_creates_a_verified_google_account_and_sets_the_cookie() {
     assert!(url.contains("scope=openid+email+profile"));
     let challenge = query_param(&url, "code_challenge");
 
+    // HS5: a new account waits for consent; nothing exists before it.
     let response = app.callback("code-1", &state, Some(&state)).await;
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(location(&response), "https://app.test/");
+    let consent = location(&response);
+    assert!(
+        consent.starts_with("https://app.test/consent?ticket="),
+        "{consent}"
+    );
+    assert!(session_cookie(&response).is_none());
+    assert_eq!(app.scalar("SELECT count(*) FROM users").await, 0);
+    let ticket = query_param(consent, "ticket");
+    let response = app
+        .post(
+            "/auth/consent",
+            None,
+            json!({ "ticket": ticket, "accepted": identity::legal::current_acceptances(), "client": "web" }),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
     let cookie = session_cookie(&response).expect("session cookie");
 
     // PKCE: the verifier sent to Google matches the challenge from /start.
@@ -409,7 +456,7 @@ async fn register(app: &App, email: &str) -> String {
         .post(
             "/auth/register",
             None,
-            json!({ "email": email, "password": "correct horse", "display_name": "Ada", "client": "native" }),
+            json!({ "email": email, "password": "correct horse", "display_name": "Ada", "client": "native", "accepted_legal": identity::legal::current_acceptances() }),
         )
         .await;
     json_body(response).await["token"]

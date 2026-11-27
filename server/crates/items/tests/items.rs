@@ -141,6 +141,7 @@ impl World {
                             "password": "correct horse",
                             "display_name": "Test",
                             "client": "native",
+                            "accepted_legal": identity::legal::current_acceptances(),
                         })
                         .to_string(),
                     ))

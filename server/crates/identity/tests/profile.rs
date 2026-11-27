@@ -78,6 +78,7 @@ impl App {
                     "password": "correct horse",
                     "display_name": "Ada",
                     "client": "native",
+                    "accepted_legal": identity::legal::current_acceptances(),
                 })),
             )
             .await;
@@ -237,6 +238,7 @@ async fn cookie_patch_needs_the_csrf_token() {
                 "password": "correct horse",
                 "display_name": "Ada",
                 "client": "web",
+                "accepted_legal": identity::legal::current_acceptances(),
             })),
         )
         .await;
