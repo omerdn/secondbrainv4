@@ -10,6 +10,8 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
+  // One at a time: every test signs up, and sign-ups are rate limited.
+  workers: 1,
   reporter: "list",
   use: {
     baseURL: process.env.E2E_WEB_URL ?? "http://localhost:8081",

@@ -1,5 +1,7 @@
 import { type Page, expect, test } from "@playwright/test";
 
+import { signUp } from "./helpers";
+
 /**
  * Critical flow of the web editor (T2.5.7, PRD Y3, Y4): a page edited in two tabs at once, the
  * Y4 formats, and an offline tab that turns read-only and catches up when it is back.
@@ -17,13 +19,7 @@ test("two tabs edit one page live; offline is read-only and catches up", async (
   context,
 }) => {
   const first = await context.newPage();
-  // A fresh local account (localhost only; e-mail goes to the log driver).
-  await first.goto("/register");
-  await first.getByLabel("Adın").fill("E2E");
-  await first.getByLabel("E-posta").fill(`e2e-${Date.now()}@example.test`);
-  await first.getByLabel("Şifre").fill("e2e correct horse battery");
-  await first.getByRole("button", { name: "Kayıt ol" }).click();
-  await first.waitForURL((url) => !url.pathname.startsWith("/register"));
+  await signUp(first);
 
   await first.goto("/notebooks");
   await first.getByRole("button", { name: "Defterim defterine sayfa ekle" }).click();
@@ -66,7 +62,8 @@ test("two tabs edit one page live; offline is read-only and catches up", async (
   await first.getByRole("button", { name: "Tablo" }).click();
   await first.keyboard.type("Hücre");
   await expect(editor(second).locator("h2")).toHaveText("Başlık");
-  await expect(editor(second).locator('ul[data-type="taskList"] li')).toContainText("Süt al");
+  // The list, not its items: the empty item before the list is left may still be on its way.
+  await expect(editor(second).locator('ul[data-type="taskList"]')).toContainText("Süt al");
   await expect(editor(second).locator("blockquote")).toContainText("Söz");
   await expect(editor(second).locator("table")).toContainText("Hücre");
 

@@ -398,6 +398,9 @@ Her spike'ın sonucu bir ADR olarak yazılır.
 - **T2.7.6** · İstemci: global arama · client · M
   - Klavye kısayolu
   - Sonuç listesi
+- **T2.7.7** · E2E: kalan kritik akışlar için Playwright testleri · client · M
+  - Görev ve kanban, hedef ilerlemesi, takip kaydı, çalışma oturumu, arama, takvim
+  - F2 çıkış kontrolünde eklendi
 
 ### E2.8 · Bildirim merkezi (uygulama içi) · bağımlılık: E1.2
 - **T2.8.1** · Bildirim şeması, API ve tercihler · backend · M
