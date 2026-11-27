@@ -563,6 +563,12 @@ Her spike'ın sonucu bir ADR olarak yazılır.
   - E-posta ve uygulama içi gösterim (OZ1)
 - **T4.3.6** · Yasal metinler · docs · S
   - Gizlilik politikası, KVKK aydınlatma metni, kullanım koşulları (HS5); en sona
+- **T4.3.7** · Atama bildirimleri · backend · S (#407)
+  - BL2; F3 sonunda eksik bulundu
+- **T4.3.8** · Paylaşım değişikliği bildirimleri · backend · S (#408)
+  - BL2, V9
+- **T4.3.9** · Unutulanlar hatırlatması · backend · S (#409)
+  - BL2, H4
 
 ### E4.4 · Beta
 - **T4.4.1** · Beta kurulum dokümanı · docs · S
