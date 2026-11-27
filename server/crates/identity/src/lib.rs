@@ -18,6 +18,7 @@ pub mod deletion;
 pub mod email_flow;
 pub mod events;
 pub mod http;
+pub mod legal;
 pub mod model;
 pub mod oauth;
 pub mod password;

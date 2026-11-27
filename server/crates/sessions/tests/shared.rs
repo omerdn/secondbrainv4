@@ -101,6 +101,7 @@ impl World {
             display_name: "Ada".into(),
             client: ClientKind::Native,
             device: None,
+            accepted_legal: identity::legal::current_acceptances(),
         }
         .validate()
         .unwrap();

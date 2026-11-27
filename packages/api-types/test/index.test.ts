@@ -38,6 +38,7 @@ describe("@secondbrain/api-types", () => {
       | "forbidden"
       | "validation_failed"
       | "conflict"
+      | "consent_required"
       | "rate_limited"
       | "internal"
     >();

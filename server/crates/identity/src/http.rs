@@ -18,6 +18,13 @@
 //! | GET    | `/auth/apple/start`    | –    | 303 to Apple (web) |
 //! | POST   | `/auth/apple/callback` | –    | Apple's form POST; 303 to the web app |
 //! | POST   | `/auth/apple/native`   | –    | 200 [`AuthResponse`] with bearer token |
+//! | POST   | `/auth/consent`        | –    | 200 [`AuthResponse`]; body [`ConsentRequest`] (HS5, T4.3.3) |
+//! | GET    | `/legal`               | –    | 200 [`LegalDocumentSummary`]`[]`: the texts in force |
+//! | GET    | `/legal/{kind}`        | –    | 200 [`LegalDocument`] (Markdown) |
+//!
+//! Sign-in endpoints answer 409 `consent_required` with `consent_ticket` instead of a session
+//! while the current legal texts are not accepted; web provider sign-ins redirect to
+//! `/consent?ticket=…` of the web app instead.
 //!
 //! Profile routes ([`profile_router`], T0.3.7). The application mounts them inside
 //! `app::idempotency::protect`, so `PATCH` needs an `Idempotency-Key`.
@@ -60,6 +67,7 @@ use kernel::AppError;
 use uuid::Uuid;
 
 use crate::deletion::AccountDeletion;
+use crate::legal::{ConsentRequest, LegalDocument};
 use crate::model::{
     AppleNativeRequest, AuthResponse, ClientKind, CurrentUser, ForgotPasswordRequest,
     GoogleNativeRequest, LoginRequest, RegisterRequest, ResetPasswordRequest, SessionId,
@@ -97,7 +105,8 @@ fn routes(service: IdentityService, limits: Option<RateLimits>) -> Router {
         .route("/auth/password/reset", post(reset_password))
         .route("/auth/email/verify", post(verify_email))
         .route("/auth/google/native", post(google_native))
-        .route("/auth/apple/native", post(apple_native));
+        .route("/auth/apple/native", post(apple_native))
+        .route("/auth/consent", post(consent));
     let email = Router::new()
         .route("/auth/password/forgot", post(forgot_password))
         .route("/auth/email/verification", post(resend_verification));
@@ -110,6 +119,8 @@ fn routes(service: IdentityService, limits: Option<RateLimits>) -> Router {
     };
     Router::new()
         .route("/auth/logout", post(logout))
+        .route("/legal", get(legal_documents))
+        .route("/legal/{kind}", get(legal_document))
         .route("/auth/csrf", get(csrf))
         .route("/auth/sessions", get(list_sessions))
         .route("/auth/sessions/{id}", delete(revoke_session))
@@ -498,6 +509,11 @@ fn finish_web_sign_in(
             format!("{web_url}/"),
             Some(session_cookie(session.token.expose())),
         ),
+        // HS5: the web app asks for consent, then finishes with `POST /auth/consent`. The
+        // ticket is single-use, short-lived and URL-safe.
+        Err(AppError::ConsentRequired { ticket }) => {
+            (format!("{web_url}/consent?ticket={ticket}"), None)
+        }
         Err(err) => {
             if let AppError::Internal(_) = err {
                 // Logged with the request context; the user still lands on the login page.
@@ -603,6 +619,26 @@ async fn apple_native(
     let sign_in = request.validate()?;
     let (user, session) = service.apple_native(sign_in).await?;
     Ok(signed_in(StatusCode::OK, ClientKind::Native, user, session))
+}
+
+async fn consent(
+    State(service): State<IdentityService>,
+    Json(request): Json<ConsentRequest>,
+) -> Result<Response, AppError> {
+    let client = request.client;
+    let (user, session) = service.complete_consent(&request).await?;
+    Ok(signed_in(StatusCode::OK, client, user, session))
+}
+
+async fn legal_documents() -> Json<Vec<crate::legal::LegalDocumentSummary>> {
+    Json(crate::legal::summaries())
+}
+
+async fn legal_document(Path(kind): Path<String>) -> Result<Json<LegalDocument>, AppError> {
+    crate::legal::LegalKind::parse(&kind)
+        .and_then(crate::legal::document)
+        .map(Json)
+        .ok_or(AppError::NotFound)
 }
 
 async fn google_native(

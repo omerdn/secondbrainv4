@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 
 import { platformLabel } from "@/lib/app-info";
 
+import { consentTicketOf } from "./legal";
 import { OrDivider, type ProviderButtonsProps } from "./provider-shared";
 import { googleRedirectUri, providerConfig } from "./providers";
 import { fromApiError } from "./validation";
@@ -28,6 +29,7 @@ const GOOGLE_DISCOVERY: AuthSession.DiscoveryDocument = {
 export function ProviderButtons({
   onSignedIn,
   onError,
+  onConsent,
   disabled = false,
   config = providerConfig,
 }: ProviderButtonsProps) {
@@ -47,7 +49,7 @@ export function ProviderButtons({
 
   const googleClientId = Platform.OS === "ios" ? config.googleIosClientId : null;
   if (googleClientId === null && !appleAvailable) return null;
-  const props = { onSignedIn, onError, disabled };
+  const props = { onSignedIn, onError, onConsent, disabled };
   return (
     <View className="gap-3">
       <OrDivider />
@@ -57,12 +59,13 @@ export function ProviderButtons({
   );
 }
 
-type ButtonProps = Pick<ProviderButtonsProps, "onSignedIn" | "onError" | "disabled">;
+type ButtonProps = Pick<ProviderButtonsProps, "onSignedIn" | "onError" | "onConsent" | "disabled">;
 
 function GoogleButton({
   clientId,
   onSignedIn,
   onError,
+  onConsent,
   disabled,
 }: ButtonProps & { clientId: string }) {
   const { t } = useTranslation();
@@ -101,6 +104,8 @@ function GoogleButton({
         }),
       );
     } catch (error) {
+      const ticket = consentTicketOf(error);
+      if (ticket !== null) return onConsent?.(ticket);
       onError(fromApiError(error, "other").form ?? t("auth.providers.failed.google"));
     } finally {
       setBusy(false);
@@ -119,7 +124,7 @@ function GoogleButton({
 }
 
 /** Apple's own button, as its Human Interface Guidelines require on iOS. */
-function AppleButton({ onSignedIn, onError, disabled }: ButtonProps) {
+function AppleButton({ onSignedIn, onError, onConsent, disabled }: ButtonProps) {
   const { t } = useTranslation();
   const api = useApi();
   const scheme = useScheme();
@@ -148,6 +153,8 @@ function AppleButton({ onSignedIn, onError, disabled }: ButtonProps) {
       );
     } catch (error) {
       if ((error as { code?: string }).code === "ERR_REQUEST_CANCELED") return;
+      const ticket = consentTicketOf(error);
+      if (ticket !== null) return onConsent?.(ticket);
       onError(fromApiError(error, "other").form ?? t("auth.providers.failed.apple"));
     } finally {
       setBusy(false);

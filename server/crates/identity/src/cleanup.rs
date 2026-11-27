@@ -34,6 +34,7 @@ pub struct CleanupReport {
     pub sessions: u64,
     pub email_tokens: u64,
     pub oauth_states: u64,
+    pub consent_tickets: u64,
 }
 
 /// The tables cleaned, as fixed SQL (never built from input).
@@ -78,6 +79,7 @@ impl IdentityService {
             sessions: self.delete_expired_in(Table::Sessions, now).await?,
             email_tokens: self.delete_expired_in(Table::EmailTokens, now).await?,
             oauth_states: self.delete_expired_in(Table::OauthStates, now).await?,
+            consent_tickets: self.delete_expired_tickets(now).await?,
         })
     }
 
@@ -113,6 +115,7 @@ pub fn register(
                 sessions = report.sessions,
                 email_tokens = report.email_tokens,
                 oauth_states = report.oauth_states,
+                consent_tickets = report.consent_tickets,
                 "expired identity rows deleted"
             );
             Ok(())

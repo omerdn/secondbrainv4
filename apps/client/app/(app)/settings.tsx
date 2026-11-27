@@ -1,6 +1,7 @@
 import { useIdempotentMutation, useApi } from "@secondbrain/api-client/react";
 import { Button, Card, Text } from "@secondbrain/ui";
 import { useTranslation } from "react-i18next";
+import { type Href, useRouter } from "expo-router";
 import { View } from "react-native";
 
 import { AccountDeletionCard, DataExportCard } from "@/features/account";
@@ -13,6 +14,7 @@ export default function Settings() {
   const { t } = useTranslation();
   const api = useApi();
   const { state, signOut, updateUser } = useSession();
+  const router = useRouter();
   const current = state.status === "signedIn" ? resolveLanguage(state.user.locale) : null;
   const setLocale = useIdempotentMutation(
     (locale: Language, idempotencyKey: string) => api.me.update({ locale }, { idempotencyKey }),
@@ -54,6 +56,25 @@ export default function Settings() {
           ))}
         </View>
         {setLocale.isError ? <Text tone="danger">{t("settings.languageFailed")}</Text> : null}
+      </Card>
+      <Card className="gap-2">
+        <Text variant="label">{t("settings.legal")}</Text>
+        <View className="flex-row flex-wrap gap-2">
+          {(["privacy", "kvkk", "terms"] as const).map((kind) => {
+            const href = `/legal/${kind}` as Href;
+            return (
+              <Button
+                key={kind}
+                title={t(`settings.legalDocs.${kind}`)}
+                variant="ghost"
+                size="sm"
+                onPress={() => {
+                  router.push(href);
+                }}
+              />
+            );
+          })}
+        </View>
       </Card>
       {state.status === "signedIn" ? <DataExportCard /> : null}
       {state.status === "signedIn" ? <AccountDeletionCard /> : null}

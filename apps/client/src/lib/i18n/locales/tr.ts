@@ -218,6 +218,12 @@ export const tr = {
     },
   },
   settings: {
+    legal: "Yasal",
+    legalDocs: {
+      privacy: "Gizlilik Politikası",
+      kvkk: "KVKK Aydınlatma Metni",
+      terms: "Kullanım Koşulları",
+    },
     account: "Hesap",
     language: "Dil",
     languages: { tr: "Türkçe", en: "English" },
@@ -854,6 +860,19 @@ export const tr = {
     },
   },
   auth: {
+    legal: {
+      title: "Yasal metinler",
+      intro: "Devam etmek için güncel metinleri okuyup kabul etmen gerekiyor.",
+      accept:
+        "Gizlilik Politikası, KVKK Aydınlatma Metni ve Kullanım Koşulları'nı okudum, kabul ediyorum.",
+      required: "Devam etmek için metinleri kabul etmelisin.",
+      continue: "Kabul et ve devam et",
+      back: "Girişe dön",
+      expired: "Bu onay ekranının süresi doldu. Tekrar giriş yap.",
+      version: "Sürüm {{version}}",
+      missing: "Bu metin bulunamadı.",
+      close: "Kapat",
+    },
     email: "E-posta",
     password: "Şifre",
     newPassword: "Yeni şifre",

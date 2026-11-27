@@ -157,7 +157,8 @@ async fn register_shares_the_credentials_bucket() {
     for i in 0..CREDENTIALS.burst {
         let body = json!({
             "email": format!("u{i}@example.test"), "password": "correct horse",
-            "display_name": "U", "client": "native"
+            "display_name": "U", "client": "native",
+            "accepted_legal": identity::legal::current_acceptances()
         });
         let response = Call::new(Method::POST, "/auth/register")
             .json(body)
@@ -244,7 +245,7 @@ async fn proxy_headers_select_the_client_only_when_trusted() {
 async fn web_session(router: &Router, email: &str) -> (String, String) {
     let response = Call::new(Method::POST, "/auth/register")
         .peer("192.0.2.200:1")
-        .json(json!({ "email": email, "password": "correct horse", "display_name": "W", "client": "web" }))
+        .json(json!({ "email": email, "password": "correct horse", "display_name": "W", "client": "web", "accepted_legal": identity::legal::current_acceptances() }))
         .send(router)
         .await;
     assert_eq!(response.status(), StatusCode::CREATED);
@@ -332,7 +333,7 @@ async fn a_csrf_token_only_works_for_its_own_session() {
 async fn bearer_requests_need_no_csrf_token() {
     let (_db, router) = app(false).await;
     let response = Call::new(Method::POST, "/auth/register")
-        .json(json!({ "email": "n@example.test", "password": "correct horse", "display_name": "N", "client": "native" }))
+        .json(json!({ "email": "n@example.test", "password": "correct horse", "display_name": "N", "client": "native", "accepted_legal": identity::legal::current_acceptances() }))
         .send(&router)
         .await;
     let body = json_body(response).await;

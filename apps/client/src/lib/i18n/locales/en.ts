@@ -216,6 +216,8 @@ export const en: Catalog = {
     },
   },
   settings: {
+    legal: "Legal",
+    legalDocs: { privacy: "Privacy Policy", kvkk: "KVKK Notice", terms: "Terms of Use" },
     account: "Account",
     language: "Language",
     languages: { tr: "Türkçe", en: "English" },
@@ -851,6 +853,18 @@ export const en: Catalog = {
     },
   },
   auth: {
+    legal: {
+      title: "Legal texts",
+      intro: "To continue, read and accept the current texts.",
+      accept: "I have read and accept the Privacy Policy, the KVKK Notice and the Terms of Use.",
+      required: "Accept the texts to continue.",
+      continue: "Accept and continue",
+      back: "Back to sign in",
+      expired: "This consent screen has expired. Sign in again.",
+      version: "Version {{version}}",
+      missing: "This text was not found.",
+      close: "Close",
+    },
     email: "Email",
     password: "Password",
     newPassword: "New password",

@@ -45,6 +45,10 @@ pub enum AppError {
     #[error("{0}")]
     Conflict(String),
     /// Too many requests (AK2, ARCHITECTURE §15).
+    /// Sign-in is held until the user accepts the current legal texts (HS5, T4.3.3); the ticket
+    /// finishes it through `POST /auth/consent`. Never contains personal data.
+    #[error("consent required")]
+    ConsentRequired { ticket: String },
     #[error("too many requests")]
     RateLimited {
         /// Value for the `Retry-After` header, if known.
@@ -69,6 +73,7 @@ impl AppError {
             Self::Forbidden => ErrorCode::Forbidden,
             Self::Validation(_) => ErrorCode::ValidationFailed,
             Self::Conflict(_) => ErrorCode::Conflict,
+            Self::ConsentRequired { .. } => ErrorCode::ConsentRequired,
             Self::RateLimited { .. } => ErrorCode::RateLimited,
             Self::Internal(_) => ErrorCode::Internal,
         }
@@ -81,7 +86,7 @@ impl AppError {
             Self::Unauthenticated => StatusCode::UNAUTHORIZED,
             Self::Forbidden => StatusCode::FORBIDDEN,
             Self::Validation(_) => StatusCode::UNPROCESSABLE_ENTITY,
-            Self::Conflict(_) => StatusCode::CONFLICT,
+            Self::Conflict(_) | Self::ConsentRequired { .. } => StatusCode::CONFLICT,
             Self::RateLimited { .. } => StatusCode::TOO_MANY_REQUESTS,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -109,6 +114,8 @@ pub enum ErrorCode {
     ValidationFailed,
     /// See [`AppError::Conflict`].
     Conflict,
+    /// See [`AppError::ConsentRequired`].
+    ConsentRequired,
     /// See [`AppError::RateLimited`].
     RateLimited,
     /// See [`AppError::Internal`].
@@ -135,6 +142,10 @@ pub struct ErrorPayload<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub fields: Option<&'a ValidationErrors>,
+    /// With `consent_required`: the ticket for `POST /auth/consent`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub consent_ticket: Option<&'a str>,
 }
 
 /// `err: cause: cause...` for logging.
@@ -165,12 +176,17 @@ impl IntoResponse for AppError {
             Self::Validation(errors) => Some(errors),
             _ => None,
         };
+        let consent_ticket = match &self {
+            Self::ConsentRequired { ticket } => Some(ticket.as_str()),
+            _ => None,
+        };
         // `Display` of `Internal` is the generic "internal error"; the source is not exposed.
         let body = ErrorBody {
             error: ErrorPayload {
                 code: self.code(),
                 message: self.to_string(),
                 fields,
+                consent_ticket,
             },
         };
         let mut response = (self.status(), Json(body)).into_response();
@@ -222,6 +238,11 @@ mod tests {
                 "rate_limited",
             ),
             (AppError::internal("boom"), 500, "internal"),
+            (
+                AppError::ConsentRequired { ticket: "t".into() },
+                409,
+                "consent_required",
+            ),
         ];
         for (err, status, code) in cases {
             let (actual_status, headers, body) = render(err).await;

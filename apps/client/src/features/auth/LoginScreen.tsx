@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { platformLabel } from "@/lib/app-info";
 
 import { AuthScaffold, FormMessage } from "./AuthScaffold";
+import { consentHref, consentTicketOf } from "./legal";
 import { ProviderButtons } from "./ProviderButtons";
 import { providerFromError } from "./providers";
 import { useSession } from "./session";
@@ -46,6 +47,12 @@ export function LoginScreen() {
       });
       await session.signedIn(response);
     } catch (error) {
+      // HS5: the current legal texts are not accepted yet.
+      const ticket = consentTicketOf(error);
+      if (ticket !== null) {
+        router.push(consentHref(ticket));
+        return;
+      }
       const mapped = fromApiError(error, "login");
       setErrors(mapped.fields);
       setFormError(mapped.form);
@@ -89,6 +96,7 @@ export function LoginScreen() {
       />
       <ProviderButtons
         onSignedIn={session.signedIn}
+        onConsent={(ticket) => router.push(consentHref(ticket))}
         onError={setFormError}
         disabled={login.isPending}
       />

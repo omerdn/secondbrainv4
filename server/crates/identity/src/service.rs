@@ -238,6 +238,8 @@ impl IdentityService {
         .await
         .map_err(AppError::internal)?;
 
+        // The request was validated with every current legal text accepted (HS5, T4.3.3).
+        self.record_consent(&mut tx, user.id, now).await?;
         let session = insert_session(&mut tx, user.id, device.as_deref(), now).await?;
         let verification = crate::email_flow::create_token(
             &mut tx,
@@ -295,11 +297,9 @@ impl IdentityService {
             _ => return Err(AppError::Unauthenticated),
         };
 
-        let now = self.now();
-        let mut tx = self.pool().begin().await.map_err(AppError::internal)?;
-        let session = insert_session(&mut tx, user.id, device.as_deref(), now).await?;
-        tx.commit().await.map_err(AppError::internal)?;
-        Ok((user, session))
+        // HS5 (T4.3.3): no session before the current legal texts are accepted.
+        self.open_session_if_consented(user, device.as_deref())
+            .await
     }
 
     /// Resolves a presented token. Records activity (sliding expiry) at most every

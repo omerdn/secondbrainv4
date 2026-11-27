@@ -17,4 +17,8 @@ message: string,
 /**
  * Field errors, only for `validation_failed`.
  */
-fields?: ValidationErrors, };
+fields?: ValidationErrors, 
+/**
+ * With `consent_required`: the ticket for `POST /auth/consent`.
+ */
+consent_ticket?: string, };

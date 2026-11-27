@@ -75,6 +75,7 @@ impl App {
                 "password": "correct horse",
                 "display_name": "Ada",
                 "client": client,
+                "accepted_legal": identity::legal::current_acceptances(),
                 "device": "Test device",
             })),
         )
@@ -218,7 +219,7 @@ async fn invalid_registration_reports_field_errors() {
             Method::POST,
             "/auth/register",
             Auth::None,
-            Some(json!({ "email": "nope", "password": "short", "display_name": " ", "client": "web" })),
+            Some(json!({ "email": "nope", "password": "short", "display_name": " ", "client": "web", "accepted_legal": identity::legal::current_acceptances() })),
         )
         .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -332,6 +333,7 @@ async fn session_activity_is_checked_without_extending_the_session() {
         display_name: "Ada".into(),
         client: identity::model::ClientKind::Native,
         device: None,
+        accepted_legal: identity::legal::current_acceptances(),
     }
     .validate()
     .unwrap();

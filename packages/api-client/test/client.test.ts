@@ -154,6 +154,21 @@ describe("responses", () => {
     expect([error.code, error.status, error.retryable]).toEqual([code, status, retryable]);
   });
 
+  it("carries the consent ticket of a held sign-in (HS5)", async () => {
+    const error = (await api(() =>
+      json(409, {
+        error: { code: "consent_required", message: "consent required", consent_ticket: "tk" },
+      }),
+    )
+      .post("/auth/login", {})
+      .catch((e: unknown) => e)) as ApiError;
+    expect([error.code, error.consentTicket, error.retryable]).toEqual([
+      "consent_required",
+      "tk",
+      false,
+    ]);
+  });
+
   it("reads Retry-After of a 429", async () => {
     const error = (await api(() =>
       json(429, { error: { code: "rate_limited", message: "slow down" } }, { "retry-after": "42" }),
