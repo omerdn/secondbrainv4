@@ -354,6 +354,19 @@ impl IdentityService {
         .ok_or(AppError::Unauthenticated)
     }
 
+    /// The user with this e-mail address (case-insensitive), if any. For flows that address a
+    /// person by e-mail (friend requests, AK1); callers must not reveal whether one exists.
+    ///
+    /// # Errors
+    /// [`AppError::Internal`] on database errors.
+    pub async fn user_id_by_email(&self, email: &str) -> Result<Option<uuid::Uuid>, AppError> {
+        sqlx::query_scalar("SELECT id FROM users WHERE lower(email) = lower($1)")
+            .bind(email.trim())
+            .fetch_optional(self.pool())
+            .await
+            .map_err(AppError::internal)
+    }
+
     /// Display names of `ids`, for screens that show who is affected (PRD V7). Unknown ids are
     /// absent from the result. Callers decide who may see them.
     ///

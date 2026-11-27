@@ -44,15 +44,6 @@ where
     // Access engine (T1.1.3, T1.1.4) with item facts from `items`; team policies are defaults
     // until `teams` provides them (T5.1.2).
     let access_engine = access::AccessEngine::new(items::ItemsAccessContext, config.access);
-    let items = items::ItemsService::new(pool.clone(), clock.clone(), access_engine.clone());
-
-    // Domain modules register their subscribers here as they are implemented.
-    let mut dispatcher = db::outbox::Dispatcher::new(db::outbox::DispatchConfig::default());
-    realtime::sessions::register(&mut dispatcher, pool.clone(), realtime::Notifier::default());
-    realtime::access::register(&mut dispatcher, pool.clone(), realtime::Notifier::default());
-    items::register_link_cleanup(&mut dispatcher, items.clone());
-    let collab = notebooks::collab::Collab::new(pool.clone(), clock.clone());
-    notebooks::collab::register_revocation(&mut dispatcher, collab.clone());
 
     // `Config` guarantees `resend` is set exactly when `EMAIL_DRIVER=resend`.
     let email_sender: kernel::SharedEmailSender = match &config.resend {
@@ -101,6 +92,19 @@ where
         identity = identity.with_apple(apple);
         tracing::info!("sign in with apple enabled");
     }
+
+    // Friendships decide who may share with whom (V1, T3.1.1); invitations ask them.
+    let friendships = social::Friendships::new(pool.clone(), clock.clone(), identity.clone());
+    let items = items::ItemsService::new(pool.clone(), clock.clone(), access_engine.clone())
+        .with_sharing(std::sync::Arc::new(friendships.clone()));
+
+    // Domain modules register their subscribers here as they are implemented.
+    let mut dispatcher = db::outbox::Dispatcher::new(db::outbox::DispatchConfig::default());
+    realtime::sessions::register(&mut dispatcher, pool.clone(), realtime::Notifier::default());
+    realtime::access::register(&mut dispatcher, pool.clone(), realtime::Notifier::default());
+    items::register_link_cleanup(&mut dispatcher, items.clone());
+    let collab = notebooks::collab::Collab::new(pool.clone(), clock.clone());
+    notebooks::collab::register_revocation(&mut dispatcher, collab.clone());
 
     // Background jobs: modules register handlers and schedules here as they are implemented.
     let mut worker = jobs::Worker::new(jobs::WorkerConfig::default());
@@ -330,6 +334,10 @@ where
                         identity: identity.clone(),
                     },
                 ))
+                .merge(social::http::router(social::http::SocialHttpState {
+                    friendships,
+                    identity: identity.clone(),
+                }))
                 .merge(search::http::router(search::http::SearchHttpState {
                     search: search_service,
                     identity: identity.clone(),

@@ -75,7 +75,7 @@
 │  │  ├─ app/            # binary: config, router birleştirme, sunucu başlatma
 │  │  ├─ kernel/         # ortak tipler: Id'ler, hata, saat (Clock), domain olay veriyolu, sayfalama
 │  │  ├─ db/             # bağlantı havuzu, migration'lar, test yardımcıları
-│  │  ├─ identity/       # kullanıcılar, kimlik doğrulama, oturumlar, arkadaşlık, engelleme
+│  │  ├─ identity/       # kullanıcılar, kimlik doğrulama, oturumlar
 │  │  ├─ access/         # ilişki tuple'ları, erişim hesaplama, PermissionService
 │  │  ├─ items/          # nesne tabanı, etiketler, bağlantılar, kayıtlı görünümler, aktivite
 │  │  ├─ tracking/       # takip motoru: takipler, kayıtlar, ProgressProvider
@@ -86,7 +86,7 @@
 │  │  ├─ notebooks/      # defterler, sayfalar, collab sunucusu (yrs)
 │  │  ├─ sessions/       # Work Session
 │  │  ├─ today/          # "Bugün" ekranı ve takvim: modüllerin servislerinden derlenir (H1–H6, C1)
-│  │  ├─ social/         # dürtme, emoji tepkileri
+│  │  ├─ social/         # arkadaşlık, engelleme, paylaşım ön koşulu (V1), dürtme, emoji tepkileri
 │  │  ├─ teams/          # takımlar, roller, yetki matrisi
 │  │  ├─ notifications/  # bildirim merkezi, push, e-posta, tercihler
 │  │  ├─ search/         # global arama
@@ -124,7 +124,7 @@
 - `users(id, email, display_name, avatar_url, timezone, locale, created_at, deletion_requested_at)`
 - `auth_identities(user_id, provider[password|google|apple], provider_uid, password_hash)`
 - `sessions(id, user_id, token_hash, device, created_at, last_seen_at, expires_at)`
-- `friend_requests(id, from_user, to_user, status[pending|accepted|declined], created_at, responded_at)`
+- `friend_requests(id, from_user, to_email, to_user, silenced, status[pending|accepted|declined|cancelled], created_at, responded_at)`: istek e-postayla gönderilir; bilinmeyen adres ve gönderenin engellendiği istek gönderene bekleyen bir istek gibi görünür, karşıya ulaşmaz (AK2).
 - `friendships(user_a, user_b, created_at)`: `user_a < user_b` sırasıyla tek satır.
 - `blocks(blocker, blocked, created_at)`
 

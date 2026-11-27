@@ -1,6 +1,6 @@
 [package]
 name = "social"
-description = "Nudges and emoji reactions."
+description = "Friendships, blocks, nudges and emoji reactions."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,3 +9,20 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+axum.workspace = true
+chrono.workspace = true
+identity = { path = "../identity" }
+items = { path = "../items" }
+kernel = { path = "../kernel" }
+serde.workspace = true
+sqlx.workspace = true
+ts-rs.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+access = { path = "../access" }
+db = { path = "../db", features = ["testing"] }
+proptest.workspace = true
+tokio.workspace = true

@@ -95,6 +95,7 @@ dependencies = [
  "serde_json",
  "sessions",
  "sha2 0.11.1",
+ "social",
  "sqlx",
  "tasks",
  "today",
@@ -3929,6 +3930,21 @@ dependencies = [
 [[package]]
 name = "social"
 version = "0.0.0"
+dependencies = [
+ "access",
+ "axum",
+ "chrono",
+ "db",
+ "identity",
+ "items",
+ "kernel",
+ "proptest",
+ "serde",
+ "sqlx",
+ "tokio",
+ "ts-rs",
+ "uuid",
+]
 
 [[package]]
 name = "socket2"
