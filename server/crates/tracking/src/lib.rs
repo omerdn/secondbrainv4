@@ -27,4 +27,4 @@ pub use service::{
     CreateEntryRequest, EntryView, ListEntriesQuery, NOTE_MAX_CHARS, NoteSource, NotesFuture,
     TrackerEntries,
 };
-pub use summary::{TrackerSummary, summarize};
+pub use summary::{PersonValue, TrackerSummary, per_person, summarize};

@@ -8,6 +8,8 @@ import type {
   AccessExplanation,
   AccessPreview,
   AccessPreviewRequest,
+  Activity,
+  ActivityReaction,
   AppleNativeRequest,
   Board,
   CreateBoardColumnRequest,
@@ -263,6 +265,20 @@ export function endpoints(api: ApiClient) {
       processLines: (ids: readonly string[]) =>
         api.get<ItemStatusLine[]>("/process-lines", { query: { ids: ids.join(",") } }),
     },
+    activity: {
+      /** Activity across the items the caller can view, newest first (PRD A2). */
+      feed: (query: { limit?: number; cursor?: string } = {}) =>
+        api.get<Page<Activity>>("/activity", { query }),
+      /** Reacts to a friend's completion; replaces an earlier reaction (PRD AK4). */
+      react: (id: string, emoji: string, options?: MutationOptions) =>
+        api.put<ActivityReaction[]>(
+          `/activity/${encodeURIComponent(id)}/reaction`,
+          { emoji },
+          options,
+        ),
+      unreact: (id: string, options?: MutationOptions) =>
+        api.delete<ActivityReaction[]>(`/activity/${encodeURIComponent(id)}/reaction`, options),
+    },
     friends: {
       /** The caller's friends, newest first (PRD AK1). */
       list: () => api.get<Friend[]>("/friends"),
@@ -279,6 +295,9 @@ export function endpoints(api: ApiClient) {
         api.delete(`/friend-requests/${encodeURIComponent(id)}`, options),
       unfriend: (userId: string, options?: MutationOptions) =>
         api.delete(`/friends/${encodeURIComponent(userId)}`, options),
+      /** At most once a day per friend; a second one is 429 (PRD AK3). */
+      nudge: (userId: string, options?: MutationOptions) =>
+        api.post(`/friends/${encodeURIComponent(userId)}/nudges`, undefined, options),
       blocked: () => api.get<BlockedUser[]>("/blocks"),
       block: (userId: string, options?: MutationOptions) =>
         api.put(`/blocks/${encodeURIComponent(userId)}`, undefined, options),

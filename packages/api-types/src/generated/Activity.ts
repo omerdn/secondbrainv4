@@ -10,7 +10,11 @@ export type Activity = { id: string,
 /**
  * `None` when the system made the change (V13).
  */
-actor_id: string | null, item_id: string, kind: ActivityKind, 
+actor_id: string | null, item_id: string, 
+/**
+ * The item's kind and title, which the reader can see (A2), for a feed (AK4).
+ */
+item_kind: string, item_title: string, kind: ActivityKind, 
 /**
  * The other end of a link; always an item the reader can view.
  */

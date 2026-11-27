@@ -10,6 +10,7 @@ import {
   isDay,
   normalizeDecimal,
   progressShare,
+  sideBySide,
   validateForm,
 } from "@/features/trackers/model";
 import { i18n } from "@/lib/i18n";
@@ -58,6 +59,7 @@ const summary: TrackerSummary = {
   period_end: "2026-11-30",
   value: "30.5",
   target_value: "100",
+  people: [],
   remaining: "69.5",
   exceeded_by: "0",
   over_limit: false,
@@ -302,5 +304,58 @@ describe("tracker detail (K1-K3)", () => {
   it("looks the same for a hidden and a missing tracker (V9)", async () => {
     await open(fakeServer({ "GET /me": () => json(200, user) }), "/trackers/t1");
     expect(await screen.findByText(i18n.t("items.detail.notFound"))).toBeTruthy();
+  });
+});
+
+describe("side-by-side progress (AK5)", () => {
+  it("puts the reader first, then the others by value", () => {
+    const people = [
+      { user_id: "u3", value: "2" },
+      { user_id: "u2", value: "9" },
+      { user_id: "u1", value: "1" },
+    ];
+    expect(sideBySide(people, "u1").map((p) => p.user_id)).toEqual(["u1", "u2", "u3"]);
+  });
+
+  it("shows each person's value for a shared tracker and nothing for one person", async () => {
+    await open(
+      fakeServer({
+        ...detailRoutes,
+        "GET /trackers/t1/summary": () =>
+          json(200, {
+            ...summary,
+            people: [
+              { user_id: "u2", value: "20" },
+              { user_id: "u1", value: "10.5" },
+            ],
+          }),
+        "GET /items/t1/members": () =>
+          json(200, {
+            members: [
+              { user_id: "u1", display_name: "Ali", roles: ["owner"] },
+              { user_id: "u2", display_name: "Ayşe", roles: ["watcher"] },
+            ],
+            pending: [],
+            can_manage: true,
+          }),
+      }),
+      "/trackers/t1",
+    );
+    expect(await screen.findByText("Kişi bazında")).toBeTruthy();
+    expect(await screen.findByLabelText("Ayşe: 20 TL")).toBeTruthy();
+    expect(screen.getByLabelText("Sen: 10,5 TL")).toBeTruthy();
+  });
+
+  it("is hidden while only one person has entries", async () => {
+    await open(
+      fakeServer({
+        ...detailRoutes,
+        "GET /trackers/t1/summary": () =>
+          json(200, { ...summary, people: [{ user_id: "u1", value: "30.5" }] }),
+      }),
+      "/trackers/t1",
+    );
+    await screen.findByText("30,5 TL / 100 TL kullanıldı");
+    expect(screen.queryByText("Kişi bazında")).toBeNull();
   });
 });

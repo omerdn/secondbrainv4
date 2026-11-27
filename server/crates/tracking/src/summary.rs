@@ -48,16 +48,49 @@ pub struct TrackerSummary {
     pub exceeded_by: Decimal,
     /// A limit tracker that went past its limit (K2).
     pub over_limit: bool,
+    /// Each person's value in the period, for a tracker shared with friends (AK5); people
+    /// without an entry are left out.
+    pub people: Vec<PersonValue>,
+}
+
+/// One person's value in a summary's period (AK5).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export, rename = "TrackerPersonValue")]
+pub struct PersonValue {
+    pub user_id: Uuid,
+    #[serde(with = "rust_decimal::serde::str")]
+    #[ts(type = "string")]
+    pub value: Decimal,
+}
+
+/// Each person's value under the tracker's aggregation, in user id order.
+#[must_use]
+pub fn per_person(tracker: &Tracker, entries: &[&TrackerEntry]) -> Vec<PersonValue> {
+    let mut people: std::collections::BTreeMap<Uuid, Vec<&TrackerEntry>> =
+        std::collections::BTreeMap::new();
+    for entry in entries {
+        people.entry(entry.user_id).or_default().push(entry);
+    }
+    people
+        .into_iter()
+        .filter_map(|(user_id, theirs)| {
+            aggregate(tracker.aggregation, theirs).map(|value| PersonValue {
+                user_id,
+                value: value.normalize(),
+            })
+        })
+        .collect()
 }
 
 /// The summary of the period containing `today`. Entries outside it are ignored.
 #[must_use]
 pub fn summarize(tracker: &Tracker, entries: &[TrackerEntry], today: NaiveDate) -> TrackerSummary {
     let window = window_for(tracker.period, today);
-    let value = aggregate(
-        tracker.aggregation,
-        entries.iter().filter(|e| window.contains(e.local_date)),
-    );
+    let in_period: Vec<&TrackerEntry> = entries
+        .iter()
+        .filter(|e| window.contains(e.local_date))
+        .collect();
+    let value = aggregate(tracker.aggregation, in_period.iter().copied());
     let used = value.unwrap_or(Decimal::ZERO);
     let remaining = tracker.target_value.saturating_sub(used).max(Decimal::ZERO);
     let exceeded_by = used.saturating_sub(tracker.target_value).max(Decimal::ZERO);
@@ -70,6 +103,7 @@ pub fn summarize(tracker: &Tracker, entries: &[TrackerEntry], today: NaiveDate) 
         remaining: remaining.normalize(),
         exceeded_by: exceeded_by.normalize(),
         over_limit: tracker.direction == Direction::Limit && exceeded_by > Decimal::ZERO,
+        people: per_person(tracker, &in_period),
     }
 }
 
@@ -144,6 +178,39 @@ mod tests {
             created_at: at,
             deleted_at: None,
         }
+    }
+
+    #[test]
+    fn ak5_each_person_gets_their_own_value_in_the_period() {
+        let t = tracker(Period::Week, Aggregation::Sum, Direction::Increase);
+        let (ali, ayse) = (Uuid::from_u128(1), Uuid::from_u128(2));
+        let by = |who, value: i64, on| TrackerEntry {
+            user_id: who,
+            ..entry(Decimal::from(value), on, 0)
+        };
+        // 23 November 2026 is a Monday; the 22nd is in the week before.
+        let entries = [
+            by(ali, 3, day(23)),
+            by(ayse, 2, day(24)),
+            by(ali, 4, day(25)),
+            by(ayse, 9, day(22)),
+        ];
+        let summary = summarize(&t, &entries, day(25));
+        assert_eq!(summary.value, Some(Decimal::from(9)));
+        assert_eq!(
+            summary.people,
+            [
+                PersonValue {
+                    user_id: ali,
+                    value: Decimal::from(7)
+                },
+                PersonValue {
+                    user_id: ayse,
+                    value: Decimal::from(2)
+                },
+            ]
+        );
+        assert!(summarize(&t, &[], day(25)).people.is_empty());
     }
 
     #[test]

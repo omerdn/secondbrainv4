@@ -74,6 +74,9 @@ pub struct Activity {
     /// `None` when the system made the change (V13).
     pub actor_id: Option<Uuid>,
     pub item_id: Uuid,
+    /// The item's kind and title, which the reader can see (A2), for a feed (AK4).
+    pub item_kind: String,
+    pub item_title: String,
     pub kind: ActivityKind,
     /// The other end of a link; always an item the reader can view.
     pub related_item_id: Option<Uuid>,
@@ -165,6 +168,8 @@ struct ActivityRow {
     id: Uuid,
     actor_id: Option<Uuid>,
     item_id: Uuid,
+    item_kind: String,
+    item_title: String,
     kind: String,
     related_item_id: Option<Uuid>,
     payload: Json<Payload>,
@@ -182,6 +187,8 @@ impl TryFrom<ActivityRow> for Activity {
             id: row.id,
             actor_id: row.actor_id,
             item_id: row.item_id,
+            item_kind: row.item_kind,
+            item_title: row.item_title,
             kind,
             related_item_id: row.related_item_id,
             member_user_id: row.payload.0.member_user_id,
@@ -290,8 +297,8 @@ impl ItemsService {
             .await
             .map_err(internal)?;
         let rows = sqlx::query_as::<_, ActivityRow>(
-            "SELECT a.id, a.actor_id, a.item_id, a.type AS kind, a.related_item_id, a.payload,
-                    a.created_at
+            "SELECT a.id, a.actor_id, a.item_id, i.kind AS item_kind, i.title AS item_title,
+                    a.type AS kind, a.related_item_id, a.payload, a.created_at
              FROM activity_events a JOIN items i ON i.id = a.item_id
              WHERE a.item_id = ANY($1)
                AND ($2::uuid IS NULL AND i.deleted_at IS NULL OR a.item_id = $2)
