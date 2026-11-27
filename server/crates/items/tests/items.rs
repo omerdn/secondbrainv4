@@ -330,7 +330,8 @@ async fn f1_f3_filter_by_person_accepts_only_friends() {
         filtered(&w, ali, people(vec![ayse])).await,
         HashSet::from([with_ayse.id])
     );
-    // F3: a non-friend is ignored, so nothing can be learned about them.
+    // F3: when a saved view runs, a non-friend is ignored, so nothing can be learned about them
+    // (asking for one is refused: `f3_choosing_someone_who_is_not_a_friend_is_refused`).
     assert!(filtered(&w, ali, people(vec![stranger])).await.is_empty());
     assert_eq!(
         filtered(&w, ali, people(vec![ayse, stranger])).await,
@@ -338,6 +339,72 @@ async fn f1_f3_filter_by_person_accepts_only_friends() {
     );
     w.sharing.unfriend(ali, ayse);
     assert!(filtered(&w, ali, people(vec![ayse])).await.is_empty());
+}
+
+#[tokio::test]
+async fn f3_choosing_someone_who_is_not_a_friend_is_refused() {
+    let w = World::new().await;
+    let (ali, ayse, stranger) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
+    w.sharing.befriend(ali, ayse);
+    let with_ayse = w.items.create(ali, World::task("A")).await.unwrap();
+    w.grant(RelationTuple::new(with_ayse.id, R::Watcher, ayse))
+        .await;
+    let people = |list: Vec<Uuid>| items::ItemFilter {
+        people: Some(list),
+        ..items::ItemFilter::default()
+    };
+    // Asked for now: a friend is fine; a stranger, oneself or a mix with a stranger is refused.
+    let page = w
+        .items
+        .filter_checked(ali, &people(vec![ayse]), &first_page())
+        .await
+        .unwrap();
+    assert_eq!(page.items.len(), 1);
+    for refused in [vec![stranger], vec![ali], vec![ayse, stranger]] {
+        assert!(matches!(
+            w.items
+                .filter_checked(ali, &people(refused), &first_page())
+                .await,
+            Err(AppError::Validation(_))
+        ));
+    }
+
+    // Saving a view checks the same; a saved one keeps working after an unfriending.
+    let saved = |filter| items::CreateSavedViewRequest {
+        name: "Ayşe ile".into(),
+        filter,
+        pinned: None,
+        position: None,
+    };
+    assert!(matches!(
+        w.items
+            .create_view(ali, saved(people(vec![stranger])))
+            .await,
+        Err(AppError::Validation(_))
+    ));
+    let view = w
+        .items
+        .create_view(ali, saved(people(vec![ayse])))
+        .await
+        .unwrap();
+    w.sharing.unfriend(ali, ayse);
+    let page = w
+        .items
+        .view_items(ali, view.id, &first_page())
+        .await
+        .unwrap();
+    assert!(
+        page.items.is_empty(),
+        "a former friend is ignored, not an error"
+    );
+    let change = items::UpdateSavedViewRequest {
+        filter: Some(people(vec![ayse])),
+        ..items::UpdateSavedViewRequest::default()
+    };
+    assert!(matches!(
+        w.items.update_view(ali, view.id, change).await,
+        Err(AppError::Validation(_))
+    ));
 }
 
 #[tokio::test]
