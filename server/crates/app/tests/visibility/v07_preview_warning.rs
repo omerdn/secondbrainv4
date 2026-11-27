@@ -2,7 +2,7 @@
 
 use access::{Perms, Relation as R};
 
-use crate::support::{World, id, pending, t};
+use crate::support::{World, id, t};
 
 /// Task T is shared with Ayşe and Mehmet. Previewing "link page P to T" lists exactly Ayşe and
 /// Mehmet, and changes nothing.
@@ -41,7 +41,36 @@ async fn linking_preview_lists_new_viewers() {
 
 /// Task T has two linked pages. Previewing "add Can to T" reports Can gaining T and both pages.
 #[tokio::test]
-#[ignore = "T3.2.2: inherited visibility end to end"]
 async fn adding_a_member_previews_linked_pages() {
-    pending()
+    let world = World::new().await;
+    let (ali, ayse, can) = (id(), id(), id());
+    let items = world.items();
+    let task = world.item(ali, "task", "T").await;
+    let first = world.item(ali, "page", "P1").await;
+    let second = world.item(ali, "page", "P2").await;
+    world.grant(&[t(task.id, R::Watcher, ayse)]).await;
+    items.link(ali, first.id, task.id).await.unwrap();
+    items.link(ali, second.id, task.id).await.unwrap();
+
+    let mut conn = world.pool().acquire().await.unwrap();
+    let preview = world
+        .permissions()
+        .preview(&mut conn, t(task.id, R::Watcher, can))
+        .await
+        .unwrap();
+    let mut gained: Vec<_> = preview.iter().map(|item| item.item_id).collect();
+    gained.sort();
+    let mut expected = vec![task.id, first.id, second.id];
+    expected.sort();
+    assert_eq!(gained, expected);
+    // Only Can gains anything: Ayşe already sees all three.
+    assert!(preview.iter().all(|item| item.new_viewers == [can]));
+    // A preview changes nothing.
+    assert!(
+        !world
+            .permissions()
+            .check(world.pool(), can, first.id, Perms::VIEW)
+            .await
+            .unwrap()
+    );
 }
