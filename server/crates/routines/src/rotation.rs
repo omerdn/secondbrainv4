@@ -176,6 +176,24 @@ impl RoutinesService {
         })
     }
 
+    /// Who is responsible for the occurrence on `day` (R6), swaps included; `None` without a
+    /// rotation or an occurrence that day.
+    pub(crate) async fn responsible_on(
+        &self,
+        row: &RoutineRow,
+        day: NaiveDate,
+    ) -> Result<Option<Uuid>, AppError> {
+        if row.rotation.is_none() {
+            return Ok(None);
+        }
+        let loaded = self.load_rotation(row).await?;
+        let assignments = loaded
+            .rotation
+            .assignments(&loaded.schedule, day, day)
+            .map_err(|err| rotation_error("date", err))?;
+        Ok(assignments.first().map(|a| a.assignee))
+    }
+
     fn rotation_view(
         loaded: &Loaded,
         from: NaiveDate,

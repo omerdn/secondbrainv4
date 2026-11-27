@@ -227,18 +227,19 @@ pub async fn routines_with_reminders(conn: impl PgExecutor<'_>) -> sqlx::Result<
 /// Database errors.
 pub async fn record_reminder(
     conn: &mut PgConnection,
-    routine: Uuid,
+    (routine, user): (Uuid, Uuid),
     day: NaiveDate,
     time: NaiveTime,
     now: DateTime<Utc>,
 ) -> sqlx::Result<bool> {
     let result = sqlx::query(
-        "INSERT INTO routine_reminders_sent (routine_id, local_date, reminder_time, sent_at)
-         VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        "INSERT INTO routine_reminders_sent_to (routine_id, local_date, reminder_time, user_id, sent_at)
+         VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
     )
     .bind(routine)
     .bind(day)
     .bind(time)
+    .bind(user)
     .bind(now)
     .execute(conn)
     .await?;

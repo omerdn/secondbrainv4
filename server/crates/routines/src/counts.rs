@@ -76,6 +76,33 @@ pub fn effective(
     }
 }
 
+/// Who still has something to do on a day (R5, R13, T3.3.4): in a shared pool everyone in
+/// `people` until the day is complete, in each-person mode those below `target`. `people` are
+/// the responsible ones.
+#[must_use]
+pub fn still_to_do(
+    mode: CompletionMode,
+    target: i32,
+    people: &[Uuid],
+    by_person: &HashMap<Uuid, i32>,
+) -> Vec<Uuid> {
+    match mode {
+        CompletionMode::Pool => {
+            let (done, target) = effective(mode, target, people, by_person);
+            if done >= target {
+                Vec::new()
+            } else {
+                people.to_vec()
+            }
+        }
+        CompletionMode::Individual => people
+            .iter()
+            .copied()
+            .filter(|person| by_person.get(person).copied().unwrap_or(0) < target.max(0))
+            .collect(),
+    }
+}
+
 /// What everyone did on each day, ready to be read under a mode.
 #[derive(Debug, Clone, Default)]
 pub struct DayCounts {
@@ -126,6 +153,14 @@ impl DayCounts {
         let by_person = self.by_day.get(&date).unwrap_or(&empty);
         effective(self.mode, target, &self.people, by_person)
     }
+
+    /// [`still_to_do`] for one day of these counts.
+    #[must_use]
+    pub fn still_to_do(&self, date: NaiveDate, target: i32, people: &[Uuid]) -> Vec<Uuid> {
+        let empty = HashMap::new();
+        let by_person = self.by_day.get(&date).unwrap_or(&empty);
+        still_to_do(self.mode, target, people, by_person)
+    }
 }
 
 #[cfg(test)]
@@ -152,6 +187,33 @@ mod tests {
         assert_eq!(
             effective(CompletionMode::Pool, 1, &[ali, ayse], &one),
             (1, 1)
+        );
+    }
+
+    #[test]
+    fn t3_3_4_reminders_go_to_whoever_still_has_to_do_it() {
+        let [ali, ayse] = [Uuid::from_u128(1), Uuid::from_u128(2)];
+        let both = [ali, ayse];
+        let none = HashMap::new();
+        assert_eq!(still_to_do(CompletionMode::Pool, 2, &both, &none), both);
+        let half = HashMap::from([(ali, 1)]);
+        assert_eq!(still_to_do(CompletionMode::Pool, 2, &both, &half), both);
+        let full = HashMap::from([(ali, 1), (ayse, 1)]);
+        assert!(still_to_do(CompletionMode::Pool, 2, &both, &full).is_empty());
+        // Each person: only those below the target, however much the others did.
+        let ali_done = HashMap::from([(ali, 5)]);
+        assert_eq!(
+            still_to_do(CompletionMode::Individual, 2, &both, &ali_done),
+            [ayse]
+        );
+        assert!(
+            still_to_do(
+                CompletionMode::Individual,
+                2,
+                &both,
+                &HashMap::from([(ali, 2), (ayse, 2)])
+            )
+            .is_empty()
         );
     }
 
