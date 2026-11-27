@@ -3,6 +3,7 @@ import { useApi, useIdempotentMutation } from "@secondbrain/api-client/react";
 import type { Task } from "@secondbrain/api-types";
 import { Button, Card, EmptyState, TagChip, Text } from "@secondbrain/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { type Href, useRouter } from "expo-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { View } from "react-native";
@@ -131,6 +132,7 @@ function TaskEditor({ task }: { task: Task }) {
 export function TaskDetailScreen({ id }: { id: string }) {
   const { t } = useTranslation();
   const api = useApi();
+  const router = useRouter();
   const task = useQuery({ queryKey: ["task", id], queryFn: () => api.tasks.get(id) });
   if (task.isPending) {
     return <Screen title={t("common.loading")}>{null}</Screen>;
@@ -161,6 +163,17 @@ export function TaskDetailScreen({ id }: { id: string }) {
   return (
     <Screen title={task.data.item.title}>
       <TaskEditor task={task.data} />
+      <View className="self-start">
+        <Button
+          title={t("trackers.itemDetails")}
+          variant="ghost"
+          size="sm"
+          onPress={() => {
+            const href = `/items/${encodeURIComponent(task.data.item.id)}` as Href;
+            router.push(href);
+          }}
+        />
+      </View>
     </Screen>
   );
 }

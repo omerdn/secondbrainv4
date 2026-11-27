@@ -62,6 +62,8 @@ import type {
   IncomingFriendRequest,
   OutgoingFriendRequest,
   Invitation,
+  InvitationRole,
+  ItemMembers,
   NotificationKind,
   NotificationList,
   Notification,
@@ -122,6 +124,20 @@ export function endpoints(api: ApiClient) {
     },
     items: {
       get: (id: string) => api.get<Item>(`/items/${encodeURIComponent(id)}`),
+      /** Members and their roles; pending invitations for the owner (PRD N2, V5). */
+      members: (id: string) => api.get<ItemMembers>(`/items/${encodeURIComponent(id)}/members`),
+      /** Invites a friend; preview it first (PRD G5, V1, V7). */
+      invite: (
+        id: string,
+        body: { to_user: string; role: InvitationRole },
+        options?: MutationOptions,
+      ) => api.post<Invitation>(`/items/${encodeURIComponent(id)}/invitations`, body, options),
+      /** The owner removes anyone; a member removes only themselves (PRD V5). */
+      removeMember: (id: string, userId: string, options?: MutationOptions) =>
+        api.delete(
+          `/items/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`,
+          options,
+        ),
       list: (state: ItemListState) => api.get<Item[]>("/items", { query: { state } }),
       /** Title and description; an empty description clears it. */
       update: (id: string, body: UpdateItemRequest, options?: MutationOptions) =>
