@@ -142,6 +142,18 @@ where
         identity.clone(),
     )
     .with_notes(std::sync::Arc::new(process_pages.clone()));
+    // The notification center turns invitations and the like into notifications (T2.8.1).
+    let notifications_service = notifications::Notifications::new(
+        pool.clone(),
+        clock.clone(),
+        realtime::Notifier::default(),
+    );
+    notifications::register(
+        &mut dispatcher,
+        notifications_service.clone(),
+        items.clone(),
+        identity.clone(),
+    );
     notebooks::process::register(
         &mut dispatcher,
         (&mut worker, &mut scheduler),
@@ -300,6 +312,12 @@ where
                     sessions: sessions_service.clone(),
                     identity: identity.clone(),
                 }))
+                .merge(notifications::http::router(
+                    notifications::http::NotificationsHttpState {
+                        notifications: notifications_service,
+                        identity: identity.clone(),
+                    },
+                ))
                 .merge(search::http::router(search::http::SearchHttpState {
                     search: search_service,
                     identity: identity.clone(),

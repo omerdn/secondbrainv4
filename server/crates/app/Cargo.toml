@@ -23,6 +23,7 @@ jobs = { path = "../jobs" }
 kernel = { path = "../kernel" }
 notebooks = { path = "../notebooks" }
 realtime = { path = "../realtime" }
+notifications = { path = "../notifications" }
 routines = { path = "../routines" }
 search = { path = "../search" }
 sessions = { path = "../sessions" }

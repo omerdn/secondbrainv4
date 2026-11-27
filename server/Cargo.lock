@@ -85,6 +85,7 @@ dependencies = [
  "jobs",
  "kernel",
  "notebooks",
+ "notifications",
  "realtime",
  "routines",
  "rust_decimal",
@@ -2209,6 +2210,22 @@ dependencies = [
 [[package]]
 name = "notifications"
 version = "0.0.0"
+dependencies = [
+ "access",
+ "axum",
+ "chrono",
+ "db",
+ "identity",
+ "items",
+ "kernel",
+ "realtime",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "ts-rs",
+ "uuid",
+]
 
 [[package]]
 name = "nu-ansi-term"
