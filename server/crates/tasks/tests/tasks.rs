@@ -316,15 +316,11 @@ async fn a1_the_task_is_completed_with_its_last_subtask() {
 }
 
 #[tokio::test]
-async fn assignment_is_self_only_and_repeatable() {
+async fn assignment_is_repeatable_and_one_can_leave_it() {
     let w = World::new().await;
     let task = w.task(&["a"]).await;
     let id = task.item.id;
     let sub = task.subtasks[0].id;
-
-    let someone = Uuid::now_v7();
-    let refused = w.tasks.assign(w.owner, id, sub, someone).await;
-    assert!(matches!(refused, Err(AppError::Forbidden)));
 
     w.tasks.assign(w.owner, id, sub, w.owner).await.unwrap();
     let again = w.tasks.assign(w.owner, id, sub, w.owner).await.unwrap();
@@ -334,6 +330,73 @@ async fn assignment_is_self_only_and_repeatable() {
     let removed = w.tasks.unassign(w.owner, id, sub, w.owner).await.unwrap();
     assert!(removed.assignee_ids.is_empty());
     assert!(w.tasks.unassign(w.owner, id, sub, w.owner).await.is_ok());
+}
+
+#[tokio::test]
+async fn g4_the_owner_assigns_several_members_and_one_of_them_completes() {
+    let w = World::new().await;
+    let task = w.task(&["a"]).await;
+    let id = task.item.id;
+    let sub = task.subtasks[0].id;
+    let (ayse, can) = (w.collaborator(id).await, w.collaborator(id).await);
+
+    w.tasks.assign(w.owner, id, sub, ayse).await.unwrap();
+    let both = w.tasks.assign(w.owner, id, sub, can).await.unwrap();
+    let mut assigned = both.assignee_ids.clone();
+    assigned.sort();
+    let mut expected = vec![ayse, can];
+    expected.sort();
+    assert_eq!(assigned, expected);
+
+    let done = w.tasks.complete_subtask(can, id, sub).await.unwrap();
+    assert_eq!(done.done_by, Some(can));
+    // The owner takes someone off; a member may only take themselves off.
+    assert!(matches!(
+        w.tasks.unassign(ayse, id, sub, can).await,
+        Err(AppError::Forbidden)
+    ));
+    let left = w.tasks.unassign(w.owner, id, sub, can).await.unwrap();
+    assert_eq!(left.assignee_ids, [ayse]);
+    let left = w.tasks.unassign(ayse, id, sub, ayse).await.unwrap();
+    assert!(left.assignee_ids.is_empty());
+}
+
+#[tokio::test]
+async fn only_members_who_work_on_the_task_are_assigned() {
+    let w = World::new().await;
+    let task = w.task(&["a"]).await;
+    let id = task.item.id;
+    let sub = task.subtasks[0].id;
+    let ayse = w.collaborator(id).await;
+
+    // A stranger, and a watcher who only looks on (N2): not assignable.
+    let stranger = Uuid::now_v7();
+    assert!(matches!(
+        w.tasks.assign(w.owner, id, sub, stranger).await,
+        Err(AppError::Validation(_))
+    ));
+    let watcher = Uuid::now_v7();
+    let mut conn = w.db.pool().acquire().await.unwrap();
+    w.access
+        .grant(
+            &mut conn,
+            RelationTuple::new(id, Relation::Watcher, watcher),
+        )
+        .await
+        .unwrap();
+    drop(conn);
+    assert!(matches!(
+        w.tasks.assign(w.owner, id, sub, watcher).await,
+        Err(AppError::Validation(_))
+    ));
+    // A member without MANAGE assigns only themselves.
+    assert!(matches!(
+        w.tasks.assign(ayse, id, sub, w.owner).await,
+        Err(AppError::Forbidden)
+    ));
+    w.tasks.assign(ayse, id, sub, ayse).await.unwrap();
+    let view = w.tasks.task(w.owner, id).await.unwrap();
+    assert_eq!(view.subtasks[0].assignee_ids, [ayse]);
 }
 
 #[tokio::test]

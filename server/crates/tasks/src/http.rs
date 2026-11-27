@@ -12,8 +12,8 @@
 //! | DELETE | `/tasks/{id}/subtasks/{subtask_id}` | 204; EDIT, 409 for the last one (G2) |
 //! | POST   | `/tasks/{id}/subtasks/{subtask_id}/complete` | 200 [`SubtaskView`]; G4 |
 //! | POST   | `/tasks/{id}/subtasks/{subtask_id}/reopen` | 200 [`SubtaskView`]; G4 |
-//! | PUT    | `/tasks/{id}/subtasks/{subtask_id}/assignees/{user_id}` | 200 [`SubtaskView`]; self |
-//! | DELETE | `/tasks/{id}/subtasks/{subtask_id}/assignees/{user_id}` | 200 [`SubtaskView`]; self |
+//! | PUT    | `/tasks/{id}/subtasks/{subtask_id}/assignees/{user_id}` | 200 [`SubtaskView`]; self, or MANAGE for a member with EDIT (G4) |
+//! | DELETE | `/tasks/{id}/subtasks/{subtask_id}/assignees/{user_id}` | 200 [`SubtaskView`]; self, or MANAGE |
 //! | GET    | `/board` | 200 [`Board`]; the caller's personal kanban (G6) |
 //! | POST   | `/board/columns` | 201 [`Board`] |
 //! | PATCH  | `/board/columns/{id}` | 200 [`Board`]; rename or reorder |
