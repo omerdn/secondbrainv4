@@ -75,6 +75,7 @@ impl World {
                     end_date: None,
                     reminder_times: None,
                     completion_mode: mode,
+                    rotation: None,
                 },
             )
             .await
@@ -208,6 +209,7 @@ async fn r5_a_personal_routine_counts_its_owner() {
                 end_date: None,
                 reminder_times: None,
                 completion_mode: Some(CompletionMode::Individual),
+                rotation: None,
             },
         )
         .await

@@ -363,6 +363,7 @@ impl World {
                     end_date: None,
                     reminder_times: Some(times.iter().map(|t| (*t).to_owned()).collect()),
                     completion_mode: None,
+                    rotation: None,
                 },
             )
             .await

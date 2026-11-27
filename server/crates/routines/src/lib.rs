@@ -11,6 +11,7 @@ mod model;
 mod progress;
 pub mod reminders;
 pub mod repo;
+pub mod rotation;
 mod service;
 mod streak;
 mod today;

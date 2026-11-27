@@ -50,6 +50,7 @@ const routine: Routine = {
   end_date: null,
   reminder_times: ["08:00", "20:30"],
   completion_mode: "pool",
+  rotation: null,
   versions: [
     {
       id: "v1",

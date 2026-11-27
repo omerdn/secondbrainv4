@@ -2,6 +2,7 @@
 import type { Item } from "./Item";
 import type { RoutineCompletionMode } from "./RoutineCompletionMode";
 import type { RoutinePlanVersion } from "./RoutinePlanVersion";
+import type { RoutineRotation } from "./RoutineRotation";
 
 /**
  * A routine as the API returns it.
@@ -15,6 +16,10 @@ daily_target: number, start_date: string, end_date: string | null,
  * `HH:MM` local times, in order.
  */
 reminder_times: Array<string>, completion_mode: RoutineCompletionMode, 
+/**
+ * `null` for fixed assignees (R6).
+ */
+rotation: RoutineRotation | null, 
 /**
  * Plan history, oldest first (R11).
  */

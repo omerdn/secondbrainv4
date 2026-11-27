@@ -72,6 +72,7 @@ async fn d5_a_routine_counts_only_inside_the_goal_and_tasks_weigh_in() {
                 end_date: None,
                 reminder_times: None,
                 completion_mode: None,
+                rotation: None,
             },
         )
         .await

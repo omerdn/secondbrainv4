@@ -16,6 +16,20 @@ use crate::model::{
 };
 use crate::repo::{self, RoutineRow};
 
+/// A rotation hands each occurrence to one person, so everyone reaching the target on every
+/// day (R5 "each person") cannot apply to it.
+fn check_modes(row: &RoutineRow) -> Result<(), AppError> {
+    if row.rotation.is_some()
+        && row.completion_mode == crate::counts::CompletionMode::Individual.as_str()
+    {
+        return Err(invalid(
+            "rotation",
+            "a rotation needs the shared pool completion mode",
+        ));
+    }
+    Ok(())
+}
+
 fn internal(err: impl std::error::Error + Send + Sync + 'static) -> AppError {
     AppError::Internal(Box::new(err))
 }
@@ -39,6 +53,10 @@ fn view(
             .collect(),
         completion_mode: crate::counts::CompletionMode::parse(&row.completion_mode)
             .unwrap_or_default(),
+        rotation: row
+            .rotation
+            .as_deref()
+            .and_then(crate::rotation::RoutineRotation::parse),
         versions,
     }
 }
@@ -123,7 +141,9 @@ impl RoutinesService {
                 .unwrap_or_default()
                 .as_str()
                 .to_owned(),
+            rotation: request.rotation.map(|r| r.as_str().to_owned()),
         };
+        check_modes(&row)?;
         repo::insert_routine(&mut tx, &row, now)
             .await
             .map_err(internal)?;
@@ -206,6 +226,8 @@ impl RoutinesService {
             && request.end_date.is_none()
             && request.reminder_times.is_none()
             && request.completion_mode.is_none()
+            && request.rotation.is_none()
+            && request.rotation_order.is_none()
         {
             return Err(invalid("timezone", "nothing to change"));
         }
@@ -219,6 +241,22 @@ impl RoutinesService {
             .as_deref()
             .map(parse_reminders)
             .transpose()?;
+        if let Some(order) = &request.rotation_order {
+            let members = self.people(id).await?;
+            if order.iter().any(|person| !members.contains(person)) {
+                return Err(invalid("rotation_order", "only members take turns"));
+            }
+            if order
+                .iter()
+                .enumerate()
+                .any(|(i, person)| order[..i].contains(person))
+            {
+                return Err(invalid(
+                    "rotation_order",
+                    "a person can be listed only once",
+                ));
+            }
+        }
         let now = self.clock.now();
         let mut tx = self.pool.begin().await.map_err(internal)?;
         let mut row = repo::lock_routine(&mut tx, id)
@@ -233,6 +271,20 @@ impl RoutinesService {
         }
         if let Some(mode) = request.completion_mode {
             mode.as_str().clone_into(&mut row.completion_mode);
+        }
+        if let Some(rotation) = request.rotation {
+            if rotation.is_none() {
+                repo::clear_rotation_overrides(&mut tx, id)
+                    .await
+                    .map_err(internal)?;
+            }
+            row.rotation = rotation.map(|r| r.as_str().to_owned());
+        }
+        check_modes(&row)?;
+        if let Some(order) = &request.rotation_order {
+            repo::set_rotation_order(&mut tx, id, order)
+                .await
+                .map_err(internal)?;
         }
         if let Some(end) = request.end_date {
             let today = local_date(now, parse_timezone(&row.timezone)?);
