@@ -115,6 +115,64 @@ impl World {
         self.items().with_sharing(Arc::new(self.friendships()))
     }
 
+    /// The notebooks service over [`Self::sharing_items`] (T3.4.1).
+    pub(crate) fn notebooks(&self) -> notebooks::NotebooksService {
+        notebooks::NotebooksService::new(
+            self.pool().clone(),
+            Arc::new(kernel::SystemClock),
+            self.engine.clone(),
+            self.sharing_items(),
+        )
+    }
+
+    /// `owner`'s notebook with one page; their ids. `member` joins it with `role` through a real
+    /// invitation, so `owner` and `member` must be friends (V1).
+    pub(crate) async fn shared_notebook(
+        &self,
+        owner: Uuid,
+        member: Uuid,
+        role: items::InvitationRole,
+    ) -> (Uuid, Uuid) {
+        let notebooks = self.notebooks();
+        let notebook = notebooks
+            .create(
+                owner,
+                notebooks::CreateNotebookRequest {
+                    title: "Defter".into(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap()
+            .item
+            .id;
+        let page = notebooks
+            .create_page(
+                owner,
+                notebook,
+                notebooks::CreatePageRequest { title: "P".into() },
+            )
+            .await
+            .unwrap()
+            .item
+            .id;
+        let items = self.sharing_items();
+        let invitation = items
+            .invite(
+                owner,
+                notebook,
+                items::CreateInvitationRequest {
+                    to_user: member,
+                    role,
+                },
+            )
+            .await
+            .unwrap()
+            .id;
+        items.accept_invitation(member, invitation).await.unwrap();
+        (notebook, page)
+    }
+
     /// `a` asks `b` (by `b_email`) and `b` accepts.
     pub(crate) async fn befriend(&self, a: Uuid, b: Uuid, b_email: &str) {
         let social = self.friendships();

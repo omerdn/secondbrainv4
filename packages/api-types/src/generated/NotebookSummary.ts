@@ -8,4 +8,8 @@ export type NotebookSummary = { item: Item,
 /**
  * The notebook every user gets once, automatically.
  */
-is_default: boolean, };
+is_default: boolean, 
+/**
+ * Someone besides the owner is a member: the UI shows an "ortak" badge (Y2).
+ */
+shared: boolean, };

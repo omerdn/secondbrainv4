@@ -226,3 +226,24 @@ async fn pages_need_a_live_notebook_and_a_title() {
     ));
     assert!(w.notebooks.notebooks(w.ali).await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn y2_a_notebook_with_members_is_marked_shared_for_everyone() {
+    let w = World::new().await;
+    let shared = w.notebook(w.ali, "Ortak").await;
+    let own = w.notebook(w.ali, "Kendi").await;
+    let flag = |list: &[notebooks::NotebookSummary], id| {
+        list.iter().find(|n| n.item.id == id).map(|n| n.shared)
+    };
+    let before = w.notebooks.notebooks(w.ali).await.unwrap();
+    assert_eq!(flag(&before, shared), Some(false));
+    w.grant(RelationTuple::new(shared, Relation::Viewer, w.ayse))
+        .await;
+    let after = w.notebooks.notebooks(w.ali).await.unwrap();
+    assert_eq!(flag(&after, shared), Some(true));
+    assert_eq!(flag(&after, own), Some(false));
+    // The member sees it shared too, and does not see Ali's other notebook.
+    let hers = w.notebooks.notebooks(w.ayse).await.unwrap();
+    assert_eq!(flag(&hers, shared), Some(true));
+    assert_eq!(flag(&hers, own), None);
+}

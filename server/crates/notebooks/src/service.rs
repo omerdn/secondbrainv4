@@ -140,17 +140,21 @@ impl NotebooksService {
             .map_err(internal)?;
         let ids: Vec<Uuid> = rows.iter().map(|row| row.item_id).collect();
         let items = self.items.visible_items(actor, &ids).await?;
-        Ok(rows
-            .into_iter()
-            .zip(ids)
-            .filter_map(|(row, id)| {
-                let item = items.iter().find(|item| item.id == id)?.clone();
-                (item.deleted_at.is_none()).then_some(NotebookSummary {
-                    item,
-                    is_default: row.default_for.is_some(),
-                })
-            })
-            .collect())
+        let mut summaries = Vec::with_capacity(rows.len());
+        for (row, id) in rows.into_iter().zip(ids) {
+            let Some(item) = items.iter().find(|item| item.id == id) else {
+                continue;
+            };
+            if item.deleted_at.is_some() {
+                continue;
+            }
+            summaries.push(NotebookSummary {
+                item: item.clone(),
+                is_default: row.default_for.is_some(),
+                shared: self.items.has_members(id).await?,
+            });
+        }
+        Ok(summaries)
     }
 
     /// A notebook with the pages the caller can see (VIEW).

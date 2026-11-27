@@ -1,9 +1,9 @@
 //! `V2` Page viewers = notebook members ∪ viewers of *every* item the page is linked to.
 
-use access::Relation as R;
+use access::{Perms, Relation as R};
 use kernel::AppError;
 
-use crate::support::{World, id, pending, t};
+use crate::support::{World, id, t};
 
 /// Page P is in Ali's notebook and linked to tasks T1 (shared with Ayşe) and T2 (shared with Can).
 /// Ali, Ayşe and Can can all view P; Deniz, who sees neither task, cannot.
@@ -38,11 +38,103 @@ async fn viewers_of_each_linked_item_see_the_page() {
     ));
 }
 
-/// Ali adds Ayşe to his notebook as a viewer. She sees every page in it, linked or not.
+/// Ali adds Ayşe to his notebook as a viewer. She sees every page in it, linked or not, but cannot
+/// write in it; Can joins as an editor and can (Y2). Deniz, not a member, sees none of it.
 #[tokio::test]
-#[ignore = "T3.4.1: notebook membership API"]
 async fn notebook_members_see_its_pages() {
-    pending()
+    let world = World::new().await;
+    let (ali, _) = world.person("Ali").await;
+    let (ayse, ayse_email) = world.person("Ayşe").await;
+    let (can, can_email) = world.person("Can").await;
+    let deniz = id();
+    world.befriend(ali, ayse, &ayse_email).await;
+    world.befriend(ali, can, &can_email).await;
+    let (notebook, page) = world
+        .shared_notebook(ali, ayse, items::InvitationRole::Viewer)
+        .await;
+    let notebooks = world.notebooks();
+    let later = notebooks
+        .create_page(
+            ali,
+            notebook,
+            notebooks::CreatePageRequest { title: "Q".into() },
+        )
+        .await
+        .unwrap()
+        .item
+        .id;
+    let items = world.items();
+    let perms = world.permissions();
+    for p in [page, later] {
+        assert_eq!(items.get(ayse, p).await.unwrap().id, p);
+        assert!(
+            !perms
+                .check(world.pool(), ayse, p, Perms::EDIT)
+                .await
+                .unwrap()
+        );
+        assert!(matches!(items.get(deniz, p).await, Err(AppError::NotFound)));
+    }
+    assert!(matches!(
+        notebooks
+            .create_page(
+                ayse,
+                notebook,
+                notebooks::CreatePageRequest { title: "x".into() }
+            )
+            .await,
+        Err(AppError::Forbidden)
+    ));
+
+    let invitation = world
+        .sharing_items()
+        .invite(
+            ali,
+            notebook,
+            items::CreateInvitationRequest {
+                to_user: can,
+                role: items::InvitationRole::Editor,
+            },
+        )
+        .await
+        .unwrap()
+        .id;
+    world
+        .sharing_items()
+        .accept_invitation(can, invitation)
+        .await
+        .unwrap();
+    assert!(
+        perms
+            .check(world.pool(), can, page, Perms::EDIT)
+            .await
+            .unwrap()
+    );
+    let his = notebooks
+        .create_page(
+            can,
+            notebook,
+            notebooks::CreatePageRequest { title: "C".into() },
+        )
+        .await
+        .unwrap();
+    // Y5: a page belongs to the notebook's owner, whoever writes it.
+    assert_eq!(his.item.owner, items::Owner::User { user_id: ali });
+    // A notebook takes editors and viewers only.
+    assert!(matches!(
+        world
+            .sharing_items()
+            .invite(
+                ali,
+                notebook,
+                items::CreateInvitationRequest {
+                    to_user: can,
+                    role: items::InvitationRole::Assignee,
+                },
+            )
+            .await,
+        Err(AppError::Validation(_))
+    ));
 }
 
 /// Inheritance works the same for every kind a page links to: a viewer of a routine, a tracker or

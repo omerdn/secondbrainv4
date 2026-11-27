@@ -71,6 +71,22 @@ pub struct ItemMembers {
 }
 
 impl ItemsService {
+    /// Whether anyone besides the owner is a member of the item: a shared notebook shows an
+    /// "ortak" badge (Y2, T3.4.1). Call it only for items the caller can view.
+    ///
+    /// # Errors
+    /// [`AppError::Internal`] on database errors.
+    pub async fn has_members(&self, item: Uuid) -> Result<bool, AppError> {
+        let tuples = self
+            .access
+            .item_members(&self.pool, item)
+            .await
+            .map_err(internal)?;
+        Ok(tuples
+            .iter()
+            .any(|t| t.relation() != Relation::Owner && MemberRole::of(t.relation()).is_some()))
+    }
+
     /// The item's owner (a person) and assignees, with no caller: for background reads that act
     /// for the item's members (a shared routine's day). Never answer a request with this.
     ///
