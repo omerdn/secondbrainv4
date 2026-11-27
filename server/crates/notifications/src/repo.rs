@@ -137,3 +137,78 @@ pub(crate) async fn set_preference(
     .await?;
     Ok(())
 }
+
+// --- push_subscriptions (T4.2.4) ---
+
+#[derive(Debug, FromRow)]
+pub(crate) struct PushRow {
+    pub endpoint: String,
+    pub p256dh: String,
+    pub auth: String,
+}
+
+/// Stores a browser's subscription for `user`; the same endpoint moves to them.
+pub(crate) async fn upsert_push(
+    conn: impl PgExecutor<'_>,
+    (id, user): (Uuid, Uuid),
+    (endpoint, p256dh, auth): (&str, &str, &str),
+    now: DateTime<Utc>,
+) -> sqlx::Result<()> {
+    sqlx::query(
+        "INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $6)
+         ON CONFLICT (endpoint) DO UPDATE
+         SET user_id = $2, p256dh = $4, auth = $5, updated_at = $6",
+    )
+    .bind(id)
+    .bind(user)
+    .bind(endpoint)
+    .bind(p256dh)
+    .bind(auth)
+    .bind(now)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// Removes the user's subscription with this endpoint; whether there was one.
+pub(crate) async fn delete_push(
+    conn: impl PgExecutor<'_>,
+    user: Uuid,
+    endpoint: &str,
+) -> sqlx::Result<bool> {
+    Ok(
+        sqlx::query("DELETE FROM push_subscriptions WHERE user_id = $1 AND endpoint = $2")
+            .bind(user)
+            .bind(endpoint)
+            .execute(conn)
+            .await?
+            .rows_affected()
+            > 0,
+    )
+}
+
+pub(crate) async fn delete_push_by_id(conn: impl PgExecutor<'_>, id: Uuid) -> sqlx::Result<()> {
+    sqlx::query("DELETE FROM push_subscriptions WHERE id = $1")
+        .bind(id)
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
+pub(crate) async fn push_ids(conn: impl PgExecutor<'_>, user: Uuid) -> sqlx::Result<Vec<Uuid>> {
+    sqlx::query_scalar("SELECT id FROM push_subscriptions WHERE user_id = $1 ORDER BY id")
+        .bind(user)
+        .fetch_all(conn)
+        .await
+}
+
+pub(crate) async fn push_by_id(
+    conn: impl PgExecutor<'_>,
+    id: Uuid,
+) -> sqlx::Result<Option<PushRow>> {
+    sqlx::query_as("SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE id = $1")
+        .bind(id)
+        .fetch_optional(conn)
+        .await
+}

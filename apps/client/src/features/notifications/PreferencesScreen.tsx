@@ -12,6 +12,7 @@ import { Pressable, View } from "react-native";
 import { Screen } from "@/features/shell";
 
 import { NOTIFICATIONS_KEY } from "./useUnreadCount";
+import { WebPushCard } from "./WebPushCard";
 
 const CHANNELS: readonly NotificationChannel[] = ["in_app", "push", "email"];
 
@@ -49,6 +50,7 @@ export function PreferencesScreen() {
   return (
     <Screen title={t("notifications.preferencesTitle")} width="form">
       <Text tone="muted">{t("notifications.preferencesHint")}</Text>
+      <WebPushCard />
       {prefs.isPending ? (
         <Text tone="muted">{t("common.loading")}</Text>
       ) : prefs.isError ? (

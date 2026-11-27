@@ -147,11 +147,23 @@ where
     )
     .with_notes(std::sync::Arc::new(process_pages.clone()));
     // The notification center turns invitations and the like into notifications (T2.8.1).
-    let notifications_service = notifications::Notifications::new(
+    let mut notifications_service = notifications::Notifications::new(
         pool.clone(),
         clock.clone(),
         realtime::Notifier::default(),
     );
+    // T4.2.4: Web Push when `VAPID_PRIVATE_KEY` is set; `Config` already checked the key.
+    if let Some(web_push) = &config.web_push {
+        let key = web_push
+            .key()
+            .map_err(|err| RunError::WebPush(err.to_string()))?;
+        notifications_service = notifications_service.with_push_key(key.public_key());
+        notifications::push::register_push(
+            &mut worker,
+            notifications_service.clone(),
+            std::sync::Arc::new(notifications::push::WebPushSender::new(key)),
+        );
+    }
     notifications::register(
         &mut dispatcher,
         notifications_service.clone(),
@@ -433,6 +445,8 @@ pub enum RunError {
     Realtime(db::DbError),
     /// A built-in recurring job has an invalid schedule.
     Schedule(jobs::ScheduleError),
+    /// Web Push could not be set up (e.g. an invalid VAPID key).
+    WebPush(String),
     /// The HTTP server failed or could not drain within the shutdown timeout.
     Serve(io::Error),
 }
@@ -446,6 +460,7 @@ impl fmt::Display for RunError {
             Self::Apple(err) => write!(f, "sign in with apple setup failed: {err}"),
             Self::Realtime(err) => write!(f, "realtime bridge failed to start: {err}"),
             Self::Schedule(err) => write!(f, "invalid job schedule: {err}"),
+            Self::WebPush(err) => write!(f, "web push setup failed: {err}"),
             Self::Serve(err) => write!(f, "server error: {err}"),
         }
     }
@@ -456,7 +471,7 @@ impl std::error::Error for RunError {
         match self {
             Self::Database(err) => Some(err),
             Self::Migrate(err) => Some(err),
-            Self::Google(_) | Self::Apple(_) => None,
+            Self::Google(_) | Self::Apple(_) | Self::WebPush(_) => None,
             Self::Realtime(err) => Some(err),
             Self::Schedule(err) => Some(err),
             Self::Serve(err) => Some(err),

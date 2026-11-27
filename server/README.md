@@ -134,6 +134,13 @@ Her mutasyon istemcide üretilen bir `Idempotency-Key` başlığı taşır (ARCH
 - Testlerde `kernel::email::RecordingEmailSender` gönderilen mesajları toplar.
 - E-posta metinlerine ad gibi kişisel veri koymayın; `EmailMessage`'ın `Debug` çıktısı alıcıyı ve gövdeyi gizler.
 
+## Web Push (`notifications::push`, T4.2.4)
+- `VAPID_PRIVATE_KEY` (sır, base64url P-256) boşsa push kapalıdır: `GET /notifications/push/key` `null` döner ve iş kuyruğa girmez. Anahtar `cargo run -p notifications --example generate_vapid_key` ile üretilir. Anahtar değişirse tüm tarayıcı abonelikleri geçersiz olur.
+- `VAPID_SUBJECT`: push servislerinin ulaşacağı `mailto:` veya `https://` adresi; boşsa `PUBLIC_WEB_URL`.
+- Bildirim türünün kanallarında `push` varsa `Notifications::deliver`, aynı transaction'da her abonelik için bir `notifications.send_push` işi kuyruğa koyar (olay ve abonelik başına bir kez). 404/410 dönen abonelik silinir.
+- Sunucu, istemcinin verdiği adrese istek attığı için sadece bilinen push servislerinin `https` adresleri kabul edilir (`PUSH_SERVICE_HOSTS`, SSRF). Endpoint bir yetki URL'sidir: endpoint, anahtarlar ve metinler loglanmaz.
+- Testlerde `push::RecordingPushSender` kullanılır.
+
 ## Loglama ve hata takibi
 - Loglar stdout'a satır başına bir JSON nesnesi olarak yazılır (`LOG_FORMAT=json`, varsayılan). Yerelde `LOG_FORMAT=pretty` daha okunaklıdır. Seviye `RUST_LOG` ile ayarlanır (varsayılan `info,sqlx=warn`).
 - Her isteğin bir kimliği vardır (`x-request-id`). İstemci geçerli bir kimlik gönderirse (`[A-Za-z0-9._-]`, en fazla 64 karakter) o kullanılır, yoksa UUIDv7 üretilir. Yanıtta döner ve o isteğin tüm log satırlarına eklenir.

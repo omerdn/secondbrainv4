@@ -75,6 +75,9 @@ import type {
   NotificationList,
   Notification,
   NotificationPreference,
+  PushPublicKey,
+  PushSubscriptionRequest,
+  RemovePushSubscriptionRequest,
   UpdateRoutineRequest,
   UpdateNotificationPreferenceRequest,
   HomePreferences,
@@ -325,6 +328,14 @@ export function endpoints(api: ApiClient) {
           body,
           options,
         ),
+      /** The VAPID public key for Web Push; `null` when push is off on the server (T4.2.4). */
+      pushKey: () => api.get<PushPublicKey>("/notifications/push/key"),
+      /** Stores this browser's push subscription for the caller. */
+      subscribePush: (body: PushSubscriptionRequest, options?: MutationOptions) =>
+        api.put<void>("/notifications/push/subscriptions", body, options),
+      /** Forgets this browser's push subscription. */
+      unsubscribePush: (body: RemovePushSubscriptionRequest, options?: MutationOptions) =>
+        api.post<void>("/notifications/push/subscriptions/remove", body, options),
     },
     invitations: {
       accept: (id: string, options?: MutationOptions) =>

@@ -480,6 +480,16 @@ export const tr = {
     preferencesHint:
       "Her bildirim türünün nereye geleceğini seç. Hiçbirini seçmezsen o tür kapanır.",
     saveFailed: "Kaydedilemedi. Tekrar dene.",
+    webPush: {
+      title: "Bu tarayıcıda anlık bildirimler",
+      on: "Açık. Seçtiğin türler bu tarayıcıya anlık bildirim olarak da gelir.",
+      off: "Kapalı. Açarsan tarayıcı izin isteyecek.",
+      denied:
+        "Tarayıcı bildirim iznini engellemiş. Açmak için tarayıcının site ayarlarından izin ver.",
+      enable: "Aç",
+      disable: "Kapat",
+      failed: "Değiştirilemedi. Tekrar dene.",
+    },
     channelOf: "{{kind}}: {{channel}}",
     channels: { in_app: "Uygulama içi", push: "Anlık bildirim", email: "E-posta" },
     kinds: {

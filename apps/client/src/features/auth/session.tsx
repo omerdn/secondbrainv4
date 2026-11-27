@@ -14,6 +14,7 @@ import {
 import { Platform } from "react-native";
 
 import { credentials } from "@/lib/api";
+import { unsubscribe as unsubscribePush } from "@/lib/web-push";
 import { isTauri, sessionTransport, type Transport } from "@/lib/platform";
 
 import { tokenStore as defaultTokenStore } from "./token-store";
@@ -132,6 +133,11 @@ export function SessionProvider({
   }, [clearLocal]);
 
   const signOut = useCallback(async () => {
+    // A shared browser must not keep pushing this user's notifications (T4.2.4).
+    const endpoint = await unsubscribePush().catch(() => null);
+    if (endpoint) {
+      await api.notifications.unsubscribePush({ endpoint }).catch(() => undefined);
+    }
     await api.auth.logout().catch(() => undefined);
     await forget();
   }, [api, forget]);

@@ -12,6 +12,8 @@
 	@hashed path /_expo/static/*
 	header @hashed Cache-Control "public, max-age=31536000, immutable"
 	header /index.html Cache-Control "no-cache"
+	# The Web Push service worker (T4.2.4): browsers must see a new version at once.
+	header /sw.js Cache-Control "no-cache"
 	header -Server
 	try_files {path} /index.html
 	file_server
