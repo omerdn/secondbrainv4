@@ -459,6 +459,26 @@ impl ItemsService {
             .grant(&mut *conn, RelationTuple::new(item, relation, user))
             .await
             .map_err(internal)?;
+        if added {
+            // A1: joining is recorded like an accepted invitation.
+            let now = self.clock.now();
+            let role = role_of(relation);
+            let event = NewActivity {
+                member: Some((user, role)),
+                ..NewActivity::new(Some(actor), item, ActivityKind::for_role(role))
+            };
+            activity::record(&mut *conn, now, event)
+                .await
+                .map_err(internal)?;
+            crate::touch::apply(
+                &mut *conn,
+                item,
+                crate::touch::TouchAction::MemberJoined,
+                now,
+            )
+            .await
+            .map_err(internal)?;
+        }
         if added && user != actor {
             let event = TeamMemberAdded {
                 item_id: item,

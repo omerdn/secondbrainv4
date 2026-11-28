@@ -17,7 +17,7 @@ use crate::service::ItemsService;
 use crate::touch::{self, TouchAction};
 
 /// What happened.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum ActivityKind {
@@ -68,6 +68,74 @@ impl ActivityKind {
             }
         }
     }
+}
+
+/// Most values in one list of an [`ActivityFilter`].
+pub const ACTIVITY_FILTER_MAX_VALUES: usize = 50;
+
+/// Narrows the activity feed (A2, T5.2.7): the `filter` of `GET /activity`, as JSON. Rows
+/// narrow each other; values in a row are alternatives. It only ever narrows what the reader
+/// can see.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export)]
+pub struct ActivityFilter {
+    /// Events on items owned by these teams (TK6).
+    #[serde(default)]
+    #[ts(optional)]
+    pub team_ids: Option<Vec<Uuid>>,
+    /// Events made by these people.
+    #[serde(default)]
+    #[ts(optional)]
+    pub people: Option<Vec<Uuid>>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub kinds: Option<Vec<ActivityKind>>,
+    /// From this moment on (included).
+    #[serde(default)]
+    #[ts(optional)]
+    pub since: Option<DateTime<Utc>>,
+    /// Before this moment.
+    #[serde(default)]
+    #[ts(optional)]
+    pub until: Option<DateTime<Utc>>,
+}
+
+impl ActivityFilter {
+    /// # Errors
+    /// [`AppError::Validation`] for a list longer than [`ACTIVITY_FILTER_MAX_VALUES`] or a range
+    /// that ends before it starts.
+    pub fn validate(&self) -> Result<(), AppError> {
+        let mut errors = kernel::ValidationErrors::new();
+        for (field, len) in [
+            ("team_ids", self.team_ids.as_ref().map_or(0, Vec::len)),
+            ("people", self.people.as_ref().map_or(0, Vec::len)),
+            ("kinds", self.kinds.as_ref().map_or(0, Vec::len)),
+        ] {
+            if len > ACTIVITY_FILTER_MAX_VALUES {
+                errors.push(kernel::FieldError::new(
+                    field,
+                    kernel::FieldErrorCode::Invalid,
+                    "too many values",
+                ));
+            }
+        }
+        if let (Some(since), Some(until)) = (self.since, self.until)
+            && until < since
+        {
+            errors.push(kernel::FieldError::new(
+                "until",
+                kernel::FieldErrorCode::Invalid,
+                "must not be before since",
+            ));
+        }
+        errors.into_result()
+    }
+}
+
+/// An empty list filters nothing, like an absent one.
+fn non_empty<T: Clone>(values: Option<&Vec<T>>) -> Option<Vec<T>> {
+    values.filter(|values| !values.is_empty()).cloned()
 }
 
 /// An activity event as the API returns it.
@@ -285,7 +353,8 @@ impl ItemsService {
         page: &PageRequest,
     ) -> Result<Page<Activity>, AppError> {
         self.require(actor, item, Perms::VIEW).await?;
-        self.activity_page(actor, Some(item), page).await
+        self.activity_page(actor, Some(item), &ActivityFilter::default(), page)
+            .await
     }
 
     /// Activity across every item `actor` can view, newest first; the trash is left out (A2).
@@ -297,13 +366,29 @@ impl ItemsService {
         actor: Uuid,
         page: &PageRequest,
     ) -> Result<Page<Activity>, AppError> {
-        self.activity_page(actor, None, page).await
+        self.activity_page(actor, None, &ActivityFilter::default(), page)
+            .await
+    }
+
+    /// [`Self::activity_feed`] narrowed by `filter` (A2, TK6, T5.2.7).
+    ///
+    /// # Errors
+    /// [`AppError::Validation`] for a bad filter or cursor, or [`AppError::Internal`].
+    pub async fn filtered_activity(
+        &self,
+        actor: Uuid,
+        filter: &ActivityFilter,
+        page: &PageRequest,
+    ) -> Result<Page<Activity>, AppError> {
+        filter.validate()?;
+        self.activity_page(actor, None, filter, page).await
     }
 
     async fn activity_page(
         &self,
         actor: Uuid,
         item: Option<Uuid>,
+        filter: &ActivityFilter,
         page: &PageRequest,
     ) -> Result<Page<Activity>, AppError> {
         let after: Option<(DateTime<Utc>, Uuid)> = page
@@ -325,6 +410,11 @@ impl ItemsService {
                AND ($2::uuid IS NULL AND i.deleted_at IS NULL OR a.item_id = $2)
                AND (a.related_item_id IS NULL OR a.related_item_id = ANY($1))
                AND ($3::timestamptz IS NULL OR (a.created_at, a.id) < ($3, $4))
+               AND ($6::uuid[] IS NULL OR i.owner_team_id = ANY($6))
+               AND ($7::uuid[] IS NULL OR a.actor_id = ANY($7))
+               AND ($8::text[] IS NULL OR a.type = ANY($8))
+               AND ($9::timestamptz IS NULL OR a.created_at >= $9)
+               AND ($10::timestamptz IS NULL OR a.created_at < $10)
              ORDER BY a.created_at DESC, a.id DESC
              LIMIT $5",
         )
@@ -333,6 +423,16 @@ impl ItemsService {
         .bind(after.map(|(at, _)| at))
         .bind(after.map(|(_, id)| id))
         .bind(page.fetch_limit())
+        .bind(non_empty(filter.team_ids.as_ref()))
+        .bind(non_empty(filter.people.as_ref()))
+        .bind(non_empty(filter.kinds.as_ref()).map(|kinds| {
+            kinds
+                .into_iter()
+                .map(|kind| kind.as_str().to_owned())
+                .collect::<Vec<_>>()
+        }))
+        .bind(filter.since)
+        .bind(filter.until)
         .fetch_all(&self.pool)
         .await
         .map_err(internal)?;

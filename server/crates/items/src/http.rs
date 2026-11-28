@@ -34,7 +34,7 @@
 //! | GET    | `/invitations` | 200 `Invitation[]`: the caller's pending invitations |
 //! | POST   | `/invitations/{id}/accept`, `/invitations/{id}/decline` | 200 [`Invitation`] |
 //! | GET    | `/items/{id}/activity?limit=&cursor=` | 200 `Page<Activity>`; VIEW (A2) |
-//! | GET    | `/activity?limit=&cursor=` | 200 `Page<Activity>` across visible items (A2) |
+//! | GET    | `/activity?filter=<json>&limit=&cursor=` | 200 `Page<Activity>` across visible items (A2); [`ActivityFilter`]: teams, people, kinds, time range (T5.2.7) |
 //! | PUT    | `/activity/{id}/reaction` | 200 `ActivityReaction[]`; a friend's completion (AK4) |
 //! | DELETE | `/activity/{id}/reaction` | 200 `ActivityReaction[]`; takes the caller's back |
 //! | GET    | `/items/filter?filter=<json>&limit=&cursor=` | 200 `Page<Item>` (F1) |
@@ -55,7 +55,7 @@ use kernel::{AppError, FieldError, FieldErrorCode, Page, PageParams, PageRequest
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::activity::Activity;
+use crate::activity::{Activity, ActivityFilter};
 use crate::filters::ItemFilter;
 use crate::invitations::{CreateInvitationRequest, Invitation};
 use crate::links::ItemLink;
@@ -65,7 +65,7 @@ use crate::tags::{CreateTagRequest, Tag, UpdateTagRequest};
 use crate::team_items::{AddTeamMemberRequest, CreateTeamItemRequest, SetTeamVisibilityRequest};
 use crate::views::{CreateSavedViewRequest, SavedView, UpdateSavedViewRequest};
 
-/// `GET /items/filter` query. The filter is JSON because it holds lists.
+/// `GET /items/filter` and `GET /activity` query. The filter is JSON because it holds lists.
 #[derive(Debug, Default, Deserialize)]
 struct FilterQuery {
     filter: Option<String>,
@@ -257,12 +257,25 @@ async fn unreact(
 async fn activity_feed(
     State(state): State<ItemsHttpState>,
     Authenticated(auth): Authenticated,
-    Query(params): Query<PageParams>,
+    Query(query): Query<FilterQuery>,
 ) -> Result<Json<Page<Activity>>, AppError> {
-    let page = PageRequest::from_params(params)?;
+    let filter: ActivityFilter = match query.filter.as_deref() {
+        None | Some("") => ActivityFilter::default(),
+        Some(raw) => serde_json::from_str(raw).map_err(|_| {
+            AppError::from(ValidationErrors::from(FieldError::new(
+                "filter",
+                FieldErrorCode::Invalid,
+                "invalid filter",
+            )))
+        })?,
+    };
+    let page = PageRequest::from_params(PageParams {
+        limit: query.limit,
+        cursor: query.cursor,
+    })?;
     state
         .items
-        .activity_feed(auth.user_id.as_uuid(), &page)
+        .filtered_activity(auth.user_id.as_uuid(), &filter, &page)
         .await
         .map(Json)
 }

@@ -20,7 +20,7 @@ mod touch;
 mod touched;
 mod views;
 
-pub use activity::{Activity, ActivityKind};
+pub use activity::{ACTIVITY_FILTER_MAX_VALUES, Activity, ActivityFilter, ActivityKind};
 pub use context::ItemsAccessContext;
 pub use deletion::{OwnedSharedItem, OwnershipTransferred, TransferOwnershipRequest};
 pub use filters::{

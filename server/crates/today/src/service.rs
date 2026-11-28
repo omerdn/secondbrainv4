@@ -36,7 +36,7 @@ fn internal(err: impl std::error::Error + Send + Sync + 'static) -> AppError {
 #[derive(Clone)]
 pub struct TodayService {
     pool: PgPool,
-    clock: SharedClock,
+    pub(crate) clock: SharedClock,
     items: ItemsService,
     pub(crate) tasks: TasksService,
     pub(crate) routines: RoutinesService,

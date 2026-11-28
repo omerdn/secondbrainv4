@@ -5,6 +5,8 @@
  */
 
 import type {
+  TeamDashboard,
+  ActivityFilter,
   CreateTeamNotebookRequest,
   UpdateTagRequest,
   SetRoleRequest,
@@ -380,6 +382,11 @@ export function endpoints(api: ApiClient) {
       /** Activity across the items the caller can view, newest first (PRD A2). */
       feed: (query: { limit?: number; cursor?: string } = {}) =>
         api.get<Page<Activity>>("/activity", { query }),
+      /** The feed narrowed by teams, people, kinds and time (PRD A2, TK6, T5.2.7). */
+      filtered: (filter: ActivityFilter, query: { limit?: number; cursor?: string } = {}) =>
+        api.get<Page<Activity>>("/activity", {
+          query: { ...query, filter: JSON.stringify(filter) },
+        }),
       /** Reacts to a friend's completion; replaces an earlier reaction (PRD AK4). */
       react: (id: string, emoji: string, options?: MutationOptions) =>
         api.put<ActivityReaction[]>(
@@ -460,6 +467,11 @@ export function endpoints(api: ApiClient) {
     today: {
       /** The Today screen on the caller's local day (PRD H1-H6). */
       get: (today?: string) => api.get<Today>("/today", { query: { today } }),
+      /** A team's visible goals, routine adherence and overdue tasks (PRD TK6, T5.2.7). */
+      teamDashboard: (teamId: string, today?: string) =>
+        api.get<TeamDashboard>(`/teams/${encodeURIComponent(teamId)}/dashboard`, {
+          query: { today },
+        }),
       preferences: () => api.get<HomePreferences>("/today/preferences"),
       /** The forgotten threshold in days, 1 to 365 (PRD H4). */
       setPreferences: (body: UpdateHomePreferences, options?: MutationOptions) =>
