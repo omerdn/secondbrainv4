@@ -44,6 +44,8 @@ export function FilterBar({ filter, tags, onChange, showKinds = true }: FilterBa
   const api = useApi();
   // F3: only friends can be chosen. Shares its cache with the friends screen.
   const friends = useQuery({ queryKey: ["friends", "list"], queryFn: () => api.friends.list() });
+  // F1, T5.1.7: only the user's own teams; shares its cache with tag colors.
+  const teams = useQuery({ queryKey: ["teams"], queryFn: api.teams.list });
   const colorOf = useTagColors(tags);
   const state = filter.state ?? "active";
   const date = filter.date;
@@ -125,6 +127,21 @@ export function FilterBar({ filter, tags, onChange, showKinds = true }: FilterBa
               selected={filter.tag_ids?.includes(tag.id) ?? false}
               onPress={() => {
                 onChange({ ...filter, tag_ids: toggled(filter.tag_ids, tag.id) });
+              }}
+            />
+          ))}
+        </Row>
+      ) : null}
+      {teams.data !== undefined && teams.data.length > 0 ? (
+        <Row label={t("views.filter.team")}>
+          {teams.data.map((team) => (
+            <TagChip
+              key={team.id}
+              label={team.name}
+              teamColor={team.color}
+              selected={filter.team_ids?.includes(team.id) ?? false}
+              onPress={() => {
+                onChange({ ...filter, team_ids: toggled(filter.team_ids, team.id) });
               }}
             />
           ))}
