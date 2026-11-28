@@ -270,3 +270,92 @@ describe("team settings (TK5)", () => {
     expect(created?.body).toEqual({ title: "Planlar", visibility: "assignees" });
   });
 });
+
+describe("team dashboard (TK6)", () => {
+  const task = (id: string, title: string) => ({ ...notebook.item, id, kind: "task", title });
+  const board = {
+    today: "2026-11-28",
+    goals: [
+      {
+        item: { ...task("g1", "Çeyrek"), kind: "goal" },
+        start_date: "2026-11-01",
+        end_date: "2026-12-31",
+        actual: 0.4,
+        expected: 0.5,
+        pace: 0.8,
+      },
+    ],
+    routines: [{ item: { ...task("r1", "Stand-up"), kind: "routine" }, scheduled: 7, complete: 5 }],
+    adherence_days: 7,
+    overdue: [{ item: task("k1", "Rapor"), due_date: "2026-11-24", done: 1, total: 3 }],
+  };
+  const event = {
+    id: "e1",
+    actor_id: "u2",
+    item_id: "k1",
+    item_kind: "task",
+    item_title: "Rapor",
+    kind: "completed",
+    related_item_id: null,
+    member_user_id: null,
+    member_role: null,
+    created_at: at,
+    reactions: [],
+  };
+
+  it("opens from the list for every member", async () => {
+    const s = server("member", {
+      "GET /teams/t1/dashboard": () => json(200, board),
+      "GET /activity": () => json(200, { items: [], next_cursor: null }),
+    });
+    await open(s, "/teams");
+    await fireEvent.press(await screen.findByRole("button", { name: "Ekip panosu" }));
+    expect(await screen.findByText("Aktif hedefler")).toBeTruthy();
+  });
+
+  it("shows goals, routine adherence, overdue tasks and the team's activity", async () => {
+    const s = server("member", {
+      "GET /teams/t1/dashboard": () => json(200, board),
+      "GET /activity": () => json(200, { items: [event], next_cursor: null }),
+    });
+    await open(s, "/teams/t1/dashboard");
+    expect(await screen.findByText("Gerçekleşen %40 · tempo %80")).toBeTruthy();
+    expect(screen.getByText("Rutin uyumu (son 7 gün)")).toBeTruthy();
+    expect(screen.getByText("5/7 gün tamamlandı")).toBeTruthy();
+    expect(screen.getByText("Son tarih 2026-11-24 · 1/3 alt görev")).toBeTruthy();
+    expect(await screen.findByText("Ayşe, Rapor nesnesini tamamladı")).toBeTruthy();
+    const feed = s.calls.find((call) => call.path.startsWith("/activity"));
+    const filter = new URL(`http://x${feed?.path ?? ""}`).searchParams.get("filter");
+    expect(JSON.parse(filter ?? "null")).toEqual({ team_ids: ["t1"] });
+    await fireEvent.press(screen.getByRole("link", { name: "Rapor" }));
+    await waitFor(() => {
+      expect(s.calls.some((call) => call.path === "/tasks/k1")).toBe(true);
+    });
+  });
+
+  it("says when there is nothing, and shows nothing outside the team", async () => {
+    const empty = { ...board, goals: [], routines: [], overdue: [] };
+    await open(
+      server("member", {
+        "GET /teams/t1/dashboard": () => json(200, empty),
+        "GET /activity": () => json(200, { items: [], next_cursor: null }),
+      }),
+      "/teams/t1/dashboard",
+    );
+    expect(await screen.findByText("Takımın aktif hedefi yok.")).toBeTruthy();
+    expect(screen.getByText("Geciken görev yok.")).toBeTruthy();
+  });
+
+  it("is not shown to someone outside the team", async () => {
+    await open(
+      server("member", {
+        "GET /teams/t1": () => apiError(404, "not_found"),
+        "GET /teams/t1/dashboard": () => json(200, board),
+        "GET /activity": () => json(200, { items: [event], next_cursor: null }),
+      }),
+      "/teams/t1/dashboard",
+    );
+    expect(await screen.findByText("Bu panoyu yalnız takımın üyeleri görür.")).toBeTruthy();
+    expect(screen.queryByText("Rapor")).toBeNull();
+  });
+});
