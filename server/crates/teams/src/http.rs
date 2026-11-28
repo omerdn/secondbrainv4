@@ -6,6 +6,7 @@
 //! | GET  | `/teams` | 200 [`Team`]`[]`: the caller's teams |
 //! | GET  | `/teams/{id}` | 200 [`TeamDetail`]; members only, else 404 |
 //! | POST | `/teams/{id}/invitations` | 204; body [`InviteToTeamRequest`]; admin or manager (TK2) |
+//! | POST | `/teams/{id}/invitations/by-email` | 204; body [`InviteToTeamByEmailRequest`]; the same answer whether the address has an account (T5.2.6) |
 //! | GET  | `/team-invitations` | 200 [`TeamInvitation`]`[]`: waiting for the caller |
 //! | POST | `/teams/{id}/join` | 200 [`Team`]: accepts the caller's invitation |
 //! | POST | `/teams/{id}/decline` | 204: declines it |
@@ -26,7 +27,8 @@ use uuid::Uuid;
 
 use crate::matrix::TeamMatrix;
 use crate::model::{
-    CreateTeamRequest, InviteToTeamRequest, SetRoleRequest, Team, TeamDetail, TeamInvitation,
+    CreateTeamRequest, InviteToTeamByEmailRequest, InviteToTeamRequest, SetRoleRequest, Team,
+    TeamDetail, TeamInvitation,
 };
 use crate::service::TeamsService;
 
@@ -47,6 +49,7 @@ pub fn router(state: TeamsHttpState) -> Router {
         .route("/teams", post(create).get(list))
         .route("/teams/{id}", get(detail))
         .route("/teams/{id}/invitations", post(invite))
+        .route("/teams/{id}/invitations/by-email", post(invite_by_email))
         .route("/teams/{id}/join", post(join))
         .route("/teams/{id}/decline", post(decline))
         .route("/team-invitations", get(invitations))
@@ -181,6 +184,19 @@ async fn remove_member(
     state
         .teams
         .remove_member(auth.user_id.as_uuid(), id, user_id)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn invite_by_email(
+    State(state): State<TeamsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+    Json(request): Json<InviteToTeamByEmailRequest>,
+) -> Result<StatusCode, AppError> {
+    state
+        .teams
+        .invite_by_email(auth.user_id.as_uuid(), id, request)
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }

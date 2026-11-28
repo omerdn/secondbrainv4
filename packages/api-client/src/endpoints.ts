@@ -8,6 +8,7 @@ import type {
   SetRoleRequest,
   TeamMatrix,
   CreateTeamRequest,
+  InviteToTeamByEmailRequest,
   InviteToTeamRequest,
   Team,
   TeamDetail,
@@ -153,6 +154,9 @@ export function endpoints(api: ApiClient) {
         api.post<Team>("/teams", body, options),
       invite: (id: string, body: InviteToTeamRequest, options?: MutationOptions) =>
         api.post<void>(`/teams/${encodeURIComponent(id)}/invitations`, body, options),
+      /** By address; the same answer whether it has an account (TK2, T5.2.6). */
+      inviteByEmail: (id: string, body: InviteToTeamByEmailRequest, options?: MutationOptions) =>
+        api.post<void>(`/teams/${encodeURIComponent(id)}/invitations/by-email`, body, options),
       /** Team invitations waiting for the caller (TK2). */
       invitations: () => api.get<TeamInvitation[]>("/team-invitations"),
       join: (id: string, options?: MutationOptions) =>

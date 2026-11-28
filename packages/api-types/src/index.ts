@@ -72,6 +72,7 @@ export type * from "./generated/Invitation";
 export type * from "./generated/InvitationRole";
 export type * from "./generated/InvitationStatus";
 export type * from "./generated/InviteToSessionRequest";
+export type * from "./generated/InviteToTeamByEmailRequest";
 export type * from "./generated/InviteToTeamRequest";
 export type * from "./generated/Item";
 export type * from "./generated/ItemFilter";

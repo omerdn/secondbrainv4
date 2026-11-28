@@ -19,7 +19,7 @@ mod service;
 
 pub use matrix::{ItemPermission, RoleRights, TeamMatrix, TeamPermission};
 pub use model::{
-    CreateTeamRequest, InviteToTeamRequest, NAME_MAX_CHARS, SetRoleRequest, Team, TeamDetail,
-    TeamInvitation, TeamInvitationCreated, TeamMember, TeamRole,
+    CreateTeamRequest, InviteToTeamByEmailRequest, InviteToTeamRequest, NAME_MAX_CHARS,
+    SetRoleRequest, Team, TeamDetail, TeamInvitation, TeamInvitationCreated, TeamMember, TeamRole,
 };
 pub use service::TeamsService;

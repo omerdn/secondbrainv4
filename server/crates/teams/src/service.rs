@@ -15,8 +15,8 @@ use crate::matrix::{
     RoleRights, TeamMatrix, TeamPermission, item_permissions, policy_of, team_rights,
 };
 use crate::model::{
-    CreateTeamRequest, InviteToTeamRequest, Team, TeamDetail, TeamInvitation,
-    TeamInvitationCreated, TeamMember, TeamRole,
+    CreateTeamRequest, InviteToTeamByEmailRequest, InviteToTeamRequest, Team, TeamDetail,
+    TeamInvitation, TeamInvitationCreated, TeamMember, TeamRole,
 };
 
 fn internal(err: impl std::error::Error + Send + Sync + 'static) -> AppError {
@@ -271,6 +271,54 @@ impl TeamsService {
         .await
         .map_err(internal)?;
         tx.commit().await.map_err(internal)
+    }
+
+    /// Invites the owner of `request.email` (T5.2.6). The rights are checked first, and the
+    /// answer is then the same whether the address has an account, is already in the team or
+    /// was invited before: only a real new invitation reaches anyone (TK2, V9).
+    ///
+    /// # Errors
+    /// As [`Self::invite`] before the address is looked up: [`AppError::NotFound`],
+    /// [`AppError::Forbidden`], [`AppError::Validation`] for a bad address, one's own, or an admin
+    /// invited by a non-admin; or [`AppError::Internal`].
+    pub async fn invite_by_email(
+        &self,
+        actor: Uuid,
+        team: Uuid,
+        request: InviteToTeamByEmailRequest,
+    ) -> Result<(), AppError> {
+        let role = self.role_of(actor, team).await?.ok_or(AppError::NotFound)?;
+        if !self
+            .allows(role, team, TeamPermission::InviteMembers)
+            .await?
+        {
+            return Err(AppError::Forbidden);
+        }
+        if request.role == TeamRole::Admin && role != TeamRole::Admin {
+            return Err(invalid("role", "only an admin invites admins"));
+        }
+        let email = request.email.trim().to_lowercase();
+        identity::model::check_email("email", &email).map_err(ValidationErrors::from)?;
+        let Some(user_id) = self.identity.user_id_by_email(&email).await? else {
+            return Ok(());
+        };
+        if user_id == actor {
+            return Err(invalid("email", "you are already in the team"));
+        }
+        let invited = self
+            .invite(
+                actor,
+                team,
+                InviteToTeamRequest {
+                    user_id,
+                    role: request.role,
+                },
+            )
+            .await;
+        match invited {
+            Ok(()) | Err(AppError::Conflict(_)) => Ok(()),
+            Err(err) => Err(err),
+        }
     }
 
     /// The caller's team invitations, newest first.

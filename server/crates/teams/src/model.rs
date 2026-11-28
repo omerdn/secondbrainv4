@@ -173,6 +173,16 @@ pub struct InviteToTeamRequest {
     pub role: TeamRole,
 }
 
+/// `POST /teams/{id}/invitations/by-email` body (T5.2.6): someone who is not a friend, by
+/// address. The answer is the same whether the address has an account (TK2, V9).
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export)]
+pub struct InviteToTeamByEmailRequest {
+    pub email: String,
+    pub role: TeamRole,
+}
+
 /// `PUT /teams/{id}/members/{user_id}/role` body.
 #[derive(Debug, Clone, Copy, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
