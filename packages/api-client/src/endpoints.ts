@@ -5,6 +5,8 @@
  */
 
 import type {
+  CreateTeamNotebookRequest,
+  UpdateTagRequest,
   SetRoleRequest,
   TeamMatrix,
   CreateTeamRequest,
@@ -167,6 +169,15 @@ export function endpoints(api: ApiClient) {
       matrix: (id: string) => api.get<TeamMatrix>(`/teams/${encodeURIComponent(id)}/matrix`),
       setMatrix: (id: string, body: TeamMatrix, options?: MutationOptions) =>
         api.put<TeamMatrix>(`/teams/${encodeURIComponent(id)}/matrix`, body, options),
+      /** The caller leaves; the last admin cannot (TK7, T5.1.6). */
+      leave: (id: string, options?: MutationOptions) =>
+        api.post<void>(`/teams/${encodeURIComponent(id)}/leave`, undefined, options),
+      /** "invite members"; only admins remove admins and managers (TK5, TK7). */
+      removeMember: (id: string, userId: string, options?: MutationOptions) =>
+        api.delete(
+          `/teams/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`,
+          options,
+        ),
       setRole: (id: string, userId: string, body: SetRoleRequest, options?: MutationOptions) =>
         api.put<void>(
           `/teams/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}/role`,
@@ -281,6 +292,10 @@ export function endpoints(api: ApiClient) {
       list: () => api.get<Tag[]>("/tags"),
       create: (body: CreateTagRequest, options?: MutationOptions) =>
         api.post<Tag>("/tags", body, options),
+      update: (id: string, body: UpdateTagRequest, options?: MutationOptions) =>
+        api.patch<Tag>(`/tags/${encodeURIComponent(id)}`, body, options),
+      remove: (id: string, options?: MutationOptions) =>
+        api.delete(`/tags/${encodeURIComponent(id)}`, options),
       /** A team tag; the caller's role needs "manage tags" (E3, TK3, T5.1.4). */
       createForTeam: (teamId: string, body: CreateTagRequest, options?: MutationOptions) =>
         api.post<Tag>(`/teams/${encodeURIComponent(teamId)}/tags`, body, options),
@@ -348,6 +363,9 @@ export function endpoints(api: ApiClient) {
       list: () => api.get<NotebookSummary[]>("/notebooks"),
       create: (body: CreateNotebookRequest, options?: MutationOptions) =>
         api.post<Notebook>("/notebooks", body, options),
+      /** For the whole team or the chosen people (PRD Y2, T5.1.5). */
+      createForTeam: (teamId: string, body: CreateTeamNotebookRequest, options?: MutationOptions) =>
+        api.post<Notebook>(`/teams/${encodeURIComponent(teamId)}/notebooks`, body, options),
       /** The notebook with the pages the caller can see (PRD V2). */
       get: (id: string) => api.get<Notebook>(`/notebooks/${encodeURIComponent(id)}`),
       /** The page belongs to the notebook's owner (PRD Y5). */
