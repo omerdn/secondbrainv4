@@ -7,7 +7,8 @@ import AppLayout from "../../app/(app)/_layout";
 import Archive from "../../app/(app)/archive";
 import Calendar from "../../app/(app)/calendar";
 import Friends from "../../app/(app)/friends";
-import TeamDetailRoute from "../../app/(app)/teams/[id]";
+import TeamDashboardRoute from "../../app/(app)/teams/[id]/dashboard";
+import TeamDetailRoute from "../../app/(app)/teams/[id]/index";
 import Teams from "../../app/(app)/teams/index";
 import Goals from "../../app/(app)/goals";
 import Today from "../../app/(app)/index";
@@ -67,7 +68,8 @@ export function renderApp(
       "(app)/routines": Routines,
       "(app)/friends": Friends,
       "(app)/teams/index": Teams,
-      "(app)/teams/[id]": TeamDetailRoute,
+      "(app)/teams/[id]/index": TeamDetailRoute,
+      "(app)/teams/[id]/dashboard": TeamDashboardRoute,
       "(app)/goals": Goals,
       "(app)/goals/[id]": GoalDetail,
       "(app)/routines/[id]": RoutineDetail,

@@ -55,6 +55,14 @@ function TeamRow({ team, onLeft }: { team: Team; onLeft: () => Promise<void> }) 
         </View>
       ) : (
         <View className="flex-row flex-wrap gap-2">
+          <Button
+            title={t("teams.dashboard.open")}
+            size="sm"
+            accessibilityLabel={t("teams.dashboard.openOf", { name: team.name })}
+            onPress={() => {
+              router.push(`/teams/${encodeURIComponent(team.id)}/dashboard` as Href);
+            }}
+          />
           {canManage(team.role) ? (
             <Button
               title={t("teams.settings")}
