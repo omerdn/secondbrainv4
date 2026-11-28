@@ -258,7 +258,7 @@ impl ProcessPages {
         }
         let Owner::User { user_id: owner } = item.owner else {
             return Err(AppError::Conflict(
-                "team notebooks are not available yet".into(),
+                "team items have no process page yet".into(),
             ));
         };
         let locale = self

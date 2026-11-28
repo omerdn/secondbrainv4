@@ -632,6 +632,7 @@ impl TeamDirectory for TeamsService {
             TeamAction::CreateItems => TeamPermission::CreateItems,
             TeamAction::Assign => TeamPermission::Assign,
             TeamAction::ManageTags => TeamPermission::ManageTags,
+            TeamAction::CreateNotebooks => TeamPermission::CreateNotebooks,
         };
         Box::pin(Self::may(self, actor, team, permission))
     }

@@ -74,6 +74,8 @@ pub enum TeamAction {
     CreateItems,
     /// Make someone else an assignee or watcher.
     Assign,
+    /// Create a team notebook (Y2, T5.1.5).
+    CreateNotebooks,
     /// Create, rename, recolor and delete the team's tags (E3, T5.1.4).
     ManageTags,
 }
@@ -132,13 +134,37 @@ pub struct CreateTeamItemRequest {
     pub watchers: Option<Vec<Uuid>>,
 }
 
-/// A validated new team item: no person twice (an assignee is not also a watcher).
+/// A validated new team item: no person twice (an assignee is not also a watcher). Notebooks
+/// have editors and viewers instead (Y2, T5.1.5); other kinds leave those empty.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewTeamItem {
     pub item: NewItem,
     pub visibility: TeamVisibilityMode,
     pub assignees: Vec<Uuid>,
     pub watchers: Vec<Uuid>,
+    pub editors: Vec<Uuid>,
+    pub viewers: Vec<Uuid>,
+}
+
+impl NewTeamItem {
+    /// The people chosen for the item, each with their relation.
+    fn people(&self) -> impl Iterator<Item = (Uuid, Relation)> + '_ {
+        [
+            (&self.assignees, Relation::Assignee),
+            (&self.watchers, Relation::Watcher),
+            (&self.editors, Relation::Editor),
+            (&self.viewers, Relation::Viewer),
+        ]
+        .into_iter()
+        .flat_map(|(people, relation)| people.iter().map(move |&p| (p, relation)))
+    }
+}
+
+/// `people` without duplicates and without anyone in `skip`, in order: an earlier list wins
+/// (assignees over watchers, editors over viewers).
+#[must_use]
+pub fn unique_people(people: Option<Vec<Uuid>>, skip: &[Uuid]) -> Vec<Uuid> {
+    unique(people, skip)
 }
 
 /// `PUT /items/{id}/visibility` body.
@@ -146,6 +172,16 @@ pub struct NewTeamItem {
 #[ts(export)]
 pub struct SetTeamVisibilityRequest {
     pub visibility: TeamVisibilityMode,
+}
+
+/// The request field that names people of `relation`.
+const fn field_of(relation: Relation) -> &'static str {
+    match relation {
+        Relation::Watcher => "watchers",
+        Relation::Editor => "editors",
+        Relation::Viewer => "viewers",
+        _ => "assignees",
+    }
 }
 
 fn unique(people: Option<Vec<Uuid>>, skip: &[Uuid]) -> Vec<Uuid> {
@@ -201,6 +237,8 @@ impl CreateTeamItemRequest {
             visibility: self.visibility.unwrap_or_default(),
             assignees,
             watchers,
+            editors: Vec::new(),
+            viewers: Vec::new(),
         })
     }
 }
@@ -240,7 +278,15 @@ impl ItemsService {
         if !self.teams.is_member(team, actor).await? {
             return Err(AppError::NotFound);
         }
-        if !self.teams.may(actor, team, TeamAction::CreateItems).await? {
+        if new.item.kind == "page" {
+            return Err(invalid("kind", "team pages are created in a team notebook"));
+        }
+        let action = if new.item.kind == "notebook" {
+            TeamAction::CreateNotebooks
+        } else {
+            TeamAction::CreateItems
+        };
+        if !self.teams.may(actor, team, action).await? {
             return Err(AppError::Forbidden);
         }
         let assigns_others = new
@@ -251,13 +297,49 @@ impl ItemsService {
         if assigns_others && !self.teams.may(actor, team, TeamAction::Assign).await? {
             return Err(AppError::Forbidden);
         }
-        for (field, people) in [("assignees", &new.assignees), ("watchers", &new.watchers)] {
-            for &person in people {
-                if !self.teams.is_member(team, person).await? {
-                    return Err(invalid(field, "not a member of this team"));
-                }
+        for (person, relation) in new.people() {
+            if !self.teams.is_member(team, person).await? {
+                return Err(invalid(field_of(relation), "not a member of this team"));
             }
         }
+        let item = self
+            .insert_team_item(&mut *conn, actor, team, &new.item, new.visibility)
+            .await?;
+        for (person, relation) in new.people() {
+            self.access
+                .grant(&mut *conn, RelationTuple::new(item.id, relation, person))
+                .await
+                .map_err(internal)?;
+        }
+        Ok(item)
+    }
+
+    /// A page in a team notebook, owned by the team (Y5). The caller has checked EDIT on the
+    /// notebook and links the page to it; its readers come from the notebook. On the page itself
+    /// only managers and above hold their role (see `ItemsAccessContext`), so a role allowed to
+    /// link or delete team pages does so here (V4, V6, T5.1.5).
+    ///
+    /// # Errors
+    /// [`AppError::Internal`].
+    pub async fn create_team_page_in(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        actor: Uuid,
+        team: Uuid,
+        new: NewItem,
+    ) -> Result<Item, AppError> {
+        self.insert_team_item(conn, actor, team, &new, TeamVisibilityMode::Assignees)
+            .await
+    }
+
+    async fn insert_team_item(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        actor: Uuid,
+        team: Uuid,
+        new: &NewItem,
+        visibility: TeamVisibilityMode,
+    ) -> Result<Item, AppError> {
         let now = self.clock.now();
         let id = kernel::Id::<()>::new_at(now).as_uuid();
         let row = sqlx::query_as::<_, ItemRow>(sqlx::AssertSqlSafe(format!(
@@ -267,33 +349,20 @@ impl ItemsService {
              RETURNING {COLUMNS}"
         )))
         .bind(id)
-        .bind(&new.item.kind)
-        .bind(&new.item.title)
-        .bind(&new.item.description)
+        .bind(&new.kind)
+        .bind(&new.title)
+        .bind(&new.description)
         .bind(team)
-        .bind(new.visibility.as_str())
+        .bind(visibility.as_str())
         .bind(actor)
         .bind(now)
         .fetch_one(&mut *conn)
         .await
         .map_err(internal)?;
-        let tuples = std::iter::once(RelationTuple::new(id, Relation::OwnedBy, team))
-            .chain(
-                new.assignees
-                    .iter()
-                    .map(|&p| RelationTuple::new(id, Relation::Assignee, p)),
-            )
-            .chain(
-                new.watchers
-                    .iter()
-                    .map(|&p| RelationTuple::new(id, Relation::Watcher, p)),
-            );
-        for tuple in tuples {
-            self.access
-                .grant(&mut *conn, tuple)
-                .await
-                .map_err(internal)?;
-        }
+        self.access
+            .grant(&mut *conn, RelationTuple::new(id, Relation::OwnedBy, team))
+            .await
+            .map_err(internal)?;
         let event = NewActivity::new(Some(actor), id, ActivityKind::Created);
         activity::record(conn, now, event).await.map_err(internal)?;
         Ok(row.into())

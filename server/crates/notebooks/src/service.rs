@@ -13,8 +13,8 @@ use base64::Engine;
 
 use crate::collab::Collab;
 use crate::model::{
-    CreateNotebookRequest, CreatePageRequest, Notebook, NotebookSummary, Page, PageVersion,
-    PageVersionContent, preview,
+    CreateNotebookRequest, CreatePageRequest, CreateTeamNotebookRequest, Notebook, NotebookSummary,
+    Page, PageVersion, PageVersionContent, TEAM_NOTEBOOK_MAX_PEOPLE, preview,
 };
 use crate::repo::{self, NotebookRow, PageRow, VersionRow};
 use crate::snapshots;
@@ -125,6 +125,60 @@ impl NotebooksService {
         self.notebook(actor, item.id).await
     }
 
+    /// Creates a notebook owned by `team` (Y2): for the whole team, or for the chosen editors and
+    /// viewers and managers and above. The caller's role needs "create notebooks" (TK3); the
+    /// chosen people join directly, as in-team assignments do (TK2).
+    ///
+    /// # Errors
+    /// [`AppError::NotFound`] for a team the caller is not an active member of,
+    /// [`AppError::Forbidden`] without the right, [`AppError::Validation`] for a bad title, too
+    /// many people or someone outside the team, or [`AppError::Internal`].
+    pub async fn create_for_team(
+        &self,
+        actor: Uuid,
+        team: Uuid,
+        request: CreateTeamNotebookRequest,
+    ) -> Result<Notebook, AppError> {
+        let item = CreateItemRequest {
+            kind: "notebook".into(),
+            title: request.title,
+            description: request.description,
+        }
+        .validate()?;
+        let editors = items::unique_people(request.editors, &[]);
+        let viewers = items::unique_people(request.viewers, &editors);
+        if editors.len() + viewers.len() > TEAM_NOTEBOOK_MAX_PEOPLE {
+            return Err(kernel::ValidationErrors::from(kernel::FieldError::new(
+                "editors",
+                kernel::FieldErrorCode::Invalid,
+                "too many people",
+            ))
+            .into());
+        }
+        let new = items::NewTeamItem {
+            item,
+            visibility: request.visibility.unwrap_or_default(),
+            assignees: Vec::new(),
+            watchers: Vec::new(),
+            editors,
+            viewers,
+        };
+        let mut tx = self.pool.begin().await.map_err(internal)?;
+        let item = self
+            .items
+            .create_team_item_in(&mut tx, actor, team, new)
+            .await?;
+        let row = NotebookRow {
+            item_id: item.id,
+            default_for: None,
+        };
+        repo::insert_notebook(&mut tx, row, self.clock.now())
+            .await
+            .map_err(internal)?;
+        tx.commit().await.map_err(internal)?;
+        self.notebook(actor, item.id).await
+    }
+
     /// Notebooks the caller can see and that are not in the trash; the default one first.
     ///
     /// # Errors
@@ -213,11 +267,6 @@ impl NotebooksService {
                 "the item is in the trash; restore it first".into(),
             ));
         }
-        let Owner::User { user_id: owner } = notebook_item.owner else {
-            return Err(AppError::Conflict(
-                "team notebooks are not available yet".into(),
-            ));
-        };
         let new = CreateItemRequest {
             kind: "page".into(),
             title: request.title,
@@ -225,10 +274,19 @@ impl NotebooksService {
         }
         .validate()?;
         let mut tx = self.pool.begin().await.map_err(internal)?;
-        let item = self
-            .items
-            .create_owned_in(&mut tx, actor, owner, new)
-            .await?;
+        // Y5: the page belongs to the notebook's owner, a person or a team.
+        let item = match notebook_item.owner {
+            Owner::User { user_id: owner } => {
+                self.items
+                    .create_owned_in(&mut tx, actor, owner, new)
+                    .await?
+            }
+            Owner::Team { team_id } => {
+                self.items
+                    .create_team_page_in(&mut tx, actor, team_id, new)
+                    .await?
+            }
+        };
         let row = PageRow {
             item_id: item.id,
             notebook_id: notebook,

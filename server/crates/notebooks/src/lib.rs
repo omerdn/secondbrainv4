@@ -1,6 +1,6 @@
 //! `notebooks`: Notebooks, pages and the collaborative editing server (ADR-0005, ADR-0011).
 //!
-//! - Notebooks and pages (T2.5.1, PRD Y1, Y2, Y5): detail rows of `notebook` and `page` items;
+//! - Notebooks and pages (T2.5.1, PRD Y1, Y2, Y5); team notebooks and their pages (T5.1.5): detail rows of `notebook` and `page` items;
 //!   items are only reached through [`items::ItemsService`] (ADR-0007).
 //! - [`collab`]: `GET /collab/{page_id}`, y-sync over WebSocket on [`yrs`] (T2.5.2).
 //! - [`embeds`]: allowed embeds and SSRF-guarded link previews (T2.5.8, PRD Y4, ADR-0013).
@@ -18,7 +18,7 @@ mod service;
 pub mod snapshots;
 
 pub use model::{
-    CreateNotebookRequest, CreatePageRequest, Notebook, NotebookSummary, Page, PageVersion,
-    PageVersionContent, VersionsQuery, default_title,
+    CreateNotebookRequest, CreatePageRequest, CreateTeamNotebookRequest, Notebook, NotebookSummary,
+    Page, PageVersion, PageVersionContent, TEAM_NOTEBOOK_MAX_PEOPLE, VersionsQuery, default_title,
 };
 pub use service::NotebooksService;
