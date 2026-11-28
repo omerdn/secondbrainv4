@@ -1,6 +1,6 @@
 //! Teams and membership (TK1, TK2, V1, T5.1.1).
 
-use access::{AccessEngine, RelationTuple};
+use access::{AccessEngine, Relation, RelationTuple};
 use chrono::{DateTime, Utc};
 use identity::IdentityService;
 use items::{
@@ -566,6 +566,117 @@ impl TeamsService {
             .revoke(&mut tx, RelationTuple::new(team, old.relation(), member))
             .await
             .map_err(internal)?;
+        tx.commit().await.map_err(internal)
+    }
+
+    /// Leaves a team (TK7): the team's items stay in the team, and every way the person reached
+    /// them through it drops at once, open sessions included (V8, V10). The last admin cannot
+    /// leave.
+    ///
+    /// # Errors
+    /// [`AppError::NotFound`] for a team the caller is not an active member of,
+    /// [`AppError::Validation`] for the last admin, or [`AppError::Internal`].
+    pub async fn leave(&self, actor: Uuid, team: Uuid) -> Result<(), AppError> {
+        self.role_of(actor, team).await?.ok_or(AppError::NotFound)?;
+        self.drop_member(team, actor).await
+    }
+
+    /// Removes someone from a team (TK5, TK7), with the same effect as leaving. Needs "invite
+    /// members" (TK3); only admins remove admins and managers. Oneself leaves with
+    /// [`Self::leave`].
+    ///
+    /// # Errors
+    /// [`AppError::NotFound`] for a team the caller is not in or someone not active in it,
+    /// [`AppError::Forbidden`] without the right, [`AppError::Validation`] for oneself or the
+    /// last admin, or [`AppError::Internal`].
+    pub async fn remove_member(
+        &self,
+        actor: Uuid,
+        team: Uuid,
+        member: Uuid,
+    ) -> Result<(), AppError> {
+        let mine = self.role_of(actor, team).await?.ok_or(AppError::NotFound)?;
+        if !self
+            .allows(mine, team, TeamPermission::InviteMembers)
+            .await?
+        {
+            return Err(AppError::Forbidden);
+        }
+        if member == actor {
+            return Err(invalid("user_id", "leave the team instead"));
+        }
+        let theirs = self
+            .role_of(member, team)
+            .await?
+            .ok_or(AppError::NotFound)?;
+        if matches!(theirs, TeamRole::Admin | TeamRole::Manager) && mine != TeamRole::Admin {
+            return Err(AppError::Forbidden);
+        }
+        self.drop_member(team, member).await
+    }
+
+    /// Ends `member`'s active membership: their role relation and their direct relations to the
+    /// team's items (assignee, watcher, notebook editor or viewer) go in one transaction, so
+    /// access is recomputed and revoked at once.
+    async fn drop_member(&self, team: Uuid, member: Uuid) -> Result<(), AppError> {
+        let mut tx = self.pool.begin().await.map_err(internal)?;
+        // Serialises membership changes of one team (the last-admin check).
+        sqlx::query("SELECT id FROM teams WHERE id = $1 FOR UPDATE")
+            .bind(team)
+            .execute(&mut *tx)
+            .await
+            .map_err(internal)?;
+        let role: Option<String> = sqlx::query_scalar(
+            "DELETE FROM team_members WHERE team_id = $1 AND user_id = $2 AND status = 'active'
+             RETURNING role",
+        )
+        .bind(team)
+        .bind(member)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(internal)?;
+        let role = role
+            .as_deref()
+            .and_then(TeamRole::parse)
+            .ok_or(AppError::NotFound)?;
+        if role == TeamRole::Admin {
+            let admins: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM team_members
+                 WHERE team_id = $1 AND role = 'admin' AND status = 'active'",
+            )
+            .bind(team)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(internal)?;
+            if admins == 0 {
+                return Err(invalid("user_id", "a team keeps at least one admin"));
+            }
+        }
+        self.access
+            .revoke(&mut tx, RelationTuple::new(team, role.relation(), member))
+            .await
+            .map_err(internal)?;
+        let owned: std::collections::HashSet<Uuid> = self
+            .access
+            .items_of_team(&mut *tx, team)
+            .await
+            .map_err(internal)?
+            .into_iter()
+            .collect();
+        let direct = self
+            .access
+            .relations_of_user(&mut *tx, member)
+            .await
+            .map_err(internal)?;
+        for tuple in direct {
+            let personal = matches!(
+                tuple.relation(),
+                Relation::Assignee | Relation::Watcher | Relation::Editor | Relation::Viewer
+            );
+            if personal && owned.contains(&tuple.object_id()) {
+                self.access.revoke(&mut tx, tuple).await.map_err(internal)?;
+            }
+        }
         tx.commit().await.map_err(internal)
     }
 

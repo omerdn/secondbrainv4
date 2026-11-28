@@ -350,3 +350,65 @@ async fn team_directory_counts_only_active_members() {
             .unwrap()
     );
 }
+
+/// TK5, TK7 (T5.1.6): members leave; "invite members" removes members and guests, only admins
+/// remove admins and managers; nobody removes themselves that way, and a team keeps an admin.
+#[tokio::test]
+async fn tk7_leaving_and_removing_members() {
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    let bob = w.user("bob@example.com", "Bob").await;
+    let cem = w.user("cem@example.com", "Cem").await;
+    let dan = w.user("dan@example.com", "Dan").await;
+    let eve = w.user("eve@example.com", "Eve").await;
+    let team = w.team(ada).await;
+    for (who, role) in [
+        (bob, TeamRole::Manager),
+        (cem, TeamRole::Member),
+        (dan, TeamRole::Member),
+        (eve, TeamRole::Manager),
+    ] {
+        w.invite(ada, team, who, role).await.unwrap();
+        w.teams.accept(who, team).await.unwrap();
+    }
+
+    // The only admin cannot leave; outsiders and invitees are not members.
+    assert!(matches!(
+        w.teams.leave(ada, team).await,
+        Err(AppError::Validation(_))
+    ));
+    assert!(matches!(
+        w.teams.leave(Uuid::now_v7(), team).await,
+        Err(AppError::NotFound)
+    ));
+
+    // A member cannot remove anyone; a manager removes a member but not another manager.
+    assert!(matches!(
+        w.teams.remove_member(cem, team, dan).await,
+        Err(AppError::Forbidden)
+    ));
+    assert!(matches!(
+        w.teams.remove_member(bob, team, eve).await,
+        Err(AppError::Forbidden)
+    ));
+    assert!(matches!(
+        w.teams.remove_member(bob, team, bob).await,
+        Err(AppError::Validation(_))
+    ));
+    w.teams.remove_member(bob, team, dan).await.unwrap();
+    assert_eq!(w.relation(team, dan).await, None);
+    assert!(matches!(
+        w.teams.remove_member(bob, team, dan).await,
+        Err(AppError::NotFound)
+    ));
+    // The admin removes a manager; a member leaves.
+    w.teams.remove_member(ada, team, eve).await.unwrap();
+    w.teams.leave(cem, team).await.unwrap();
+    assert!(w.teams.teams(cem).await.unwrap().is_empty());
+    assert!(matches!(
+        w.teams.team(cem, team).await,
+        Err(AppError::NotFound)
+    ));
+    let left = w.teams.team(ada, team).await.unwrap();
+    assert_eq!(left.members.len(), 2, "Ada and Bob remain");
+}
