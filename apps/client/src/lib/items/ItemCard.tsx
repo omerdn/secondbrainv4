@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { View } from "react-native";
 
 import { kindLabel } from "./labels";
+import { useTagColors } from "../tags";
 import { useStatusLine } from "./statusLines";
 import { StatusLineText } from "./StatusLineText";
 
@@ -20,6 +21,7 @@ export interface ItemCardProps {
 export function ItemCard({ item, tags = [], onPress }: ItemCardProps) {
   const { t } = useTranslation();
   const line = useStatusLine(item.id);
+  const colorOf = useTagColors(tags);
   const kind = t(`items.kinds.${kindLabel(item.kind)}`);
   const state =
     item.deleted_at !== null
@@ -52,7 +54,7 @@ export function ItemCard({ item, tags = [], onPress }: ItemCardProps) {
         {tags.length > 0 ? (
           <View className="flex-row flex-wrap gap-1">
             {tags.map((tag) => (
-              <TagChip key={tag.id} label={tag.name} />
+              <TagChip key={tag.id} label={tag.name} teamColor={colorOf(tag)} />
             ))}
           </View>
         ) : null}

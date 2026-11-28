@@ -3,7 +3,11 @@
 /**
  * A tag as the API returns it.
  */
-export type Tag = { id: string, name: string, 
+export type Tag = { id: string, 
+/**
+ * The owning team for a team tag, shown in the team's color (E3); `null` for a personal tag.
+ */
+team_id: string | null, name: string, 
 /**
  * `#rrggbb`, lowercase.
  */

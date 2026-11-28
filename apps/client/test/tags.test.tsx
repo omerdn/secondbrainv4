@@ -19,6 +19,7 @@ const at = "2026-05-01T12:00:00Z";
 const tag = (id: string, name: string): Tag => ({
   id,
   name,
+  team_id: null,
   color: null,
   created_at: at,
   updated_at: at,
@@ -49,6 +50,43 @@ beforeEach(async () => {
   resetCredentials();
   await act(async () => {
     await i18n.changeLanguage("tr");
+  });
+});
+
+describe("team tags (E3, T5.1.4)", () => {
+  it("draws team tags in the team's style in the same list, fetching teams only then", async () => {
+    const team = { ...tag("t", "Sprint"), team_id: "team-1" };
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /tags": () => json(200, [tag("a", "İş"), team]),
+      "GET /teams": () =>
+        json(200, [
+          {
+            id: "team-1",
+            name: "Ekip",
+            color: "#22c55e",
+            logo_url: null,
+            role: "member",
+            created_at: at,
+          },
+        ]),
+    });
+    await open(server, "/tags");
+    expect(await screen.findByText("# Sprint")).toBeTruthy();
+    expect(screen.getByText("İş")).toBeTruthy();
+    await waitFor(() => {
+      expect(server.calls.some((call) => call.path === "/teams")).toBe(true);
+    });
+  });
+
+  it("does not ask for teams when every tag is personal", async () => {
+    const server = fakeServer({
+      "GET /me": () => json(200, user),
+      "GET /tags": () => json(200, [tag("a", "İş")]),
+    });
+    await open(server, "/tags");
+    expect(await screen.findByText("İş")).toBeTruthy();
+    expect(server.calls.some((call) => call.path === "/teams")).toBe(false);
   });
 });
 

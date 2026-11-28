@@ -7,6 +7,8 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { View } from "react-native";
 
+import { useTagColors } from "@/lib/tags";
+
 export interface TagPickerProps {
   itemId: string;
   visible: boolean;
@@ -30,6 +32,7 @@ export function TagPicker({ itemId, visible, onClose }: TagPickerProps) {
     queryFn: () => api.items.tags(itemId),
     enabled: visible,
   });
+  const colorOf = useTagColors(all.data);
   const attachedIds = new Set(attached.data?.map((tag) => tag.id));
 
   const refresh = async (tagId: string) => {
@@ -99,6 +102,7 @@ export function TagPicker({ itemId, visible, onClose }: TagPickerProps) {
                 <TagChip
                   key={tag.id}
                   label={tag.name}
+                  teamColor={colorOf(tag)}
                   selected={selected}
                   onPress={
                     busy

@@ -313,3 +313,40 @@ async fn tk3_v8_admins_change_roles_but_a_team_keeps_an_admin() {
         Err(AppError::NotFound)
     ));
 }
+
+/// What `items` asks about teams (T5.1.3, T5.1.4): invited people are not members yet, and the
+/// matrix decides who manages team tags.
+#[tokio::test]
+async fn team_directory_counts_only_active_members() {
+    use items::{TeamAction, TeamDirectory};
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    let bob = w.user("bob@example.com", "Bob").await;
+    let team = w.team(ada).await;
+    w.invite(ada, team, bob, TeamRole::Member).await.unwrap();
+    let directory: &dyn TeamDirectory = &w.teams;
+    assert_eq!(directory.teams_of(ada).await.unwrap(), vec![team]);
+    assert!(directory.teams_of(bob).await.unwrap().is_empty());
+    assert!(!directory.is_member(team, bob).await.unwrap());
+
+    w.teams.accept(bob, team).await.unwrap();
+    assert_eq!(directory.teams_of(bob).await.unwrap(), vec![team]);
+    assert!(
+        directory
+            .may(ada, team, TeamAction::ManageTags)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !directory
+            .may(bob, team, TeamAction::ManageTags)
+            .await
+            .unwrap()
+    );
+    assert!(
+        directory
+            .may(bob, team, TeamAction::CreateItems)
+            .await
+            .unwrap()
+    );
+}

@@ -254,6 +254,9 @@ impl ItemsService {
             .date
             .map_or(DateField::Created, |date| date.field)
             .column();
+        // Only tags the caller can see filter (E2, E3).
+        let teams = self.tag_teams(actor).await?;
+        let visible_tag = crate::tags::visible_tag_sql("$6", "$12");
         let rows = sqlx::query_as::<_, ItemRow>(sqlx::AssertSqlSafe(format!(
             "SELECT {COLUMNS} FROM items
              WHERE id = ANY($1) AND {state_sql}
@@ -262,7 +265,7 @@ impl ItemsService {
                AND ($4::uuid[] IS NULL OR owner_team_id = ANY($4))
                AND ($5::uuid[] IS NULL OR id IN (
                      SELECT it.item_id FROM item_tags it JOIN tags t ON t.id = it.tag_id
-                     WHERE it.tag_id = ANY($5) AND t.owner_user_id = $6))
+                     WHERE it.tag_id = ANY($5) AND {visible_tag}))
                AND ($7::timestamptz IS NULL OR {date_column} >= $7)
                AND ($8::timestamptz IS NULL OR {date_column} < $8)
                AND ($9::timestamptz IS NULL OR (created_at, id) < ($9, $10))
@@ -280,6 +283,7 @@ impl ItemsService {
         .bind(after.map(|(at, _)| at))
         .bind(after.map(|(_, id)| id))
         .bind(page.fetch_limit())
+        .bind(&teams)
         .fetch_all(&self.pool)
         .await
         .map_err(internal)?;

@@ -33,7 +33,14 @@ const setWidth = (width: number) => {
 
 const at = "2026-05-01T12:00:00Z";
 
-const tag: Tag = { id: "t1", name: "İş", color: null, created_at: at, updated_at: at };
+const tag: Tag = {
+  id: "t1",
+  team_id: null,
+  name: "İş",
+  color: null,
+  created_at: at,
+  updated_at: at,
+};
 
 const friend: Friend = { user_id: "f1", display_name: "Ayşe", since: at };
 

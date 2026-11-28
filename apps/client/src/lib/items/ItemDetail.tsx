@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { View } from "react-native";
 
 import { ItemCard } from "./ItemCard";
+import { useTagColors } from "../tags";
 import { useStatusLine } from "./statusLines";
 import { StatusLineText } from "./StatusLineText";
 import { kindLabel, type RoleLabel } from "./labels";
@@ -80,6 +81,7 @@ export function ItemDetail({
 }: ItemDetailProps) {
   const { t } = useTranslation();
   const line = useStatusLine(item.id);
+  const colorOf = useTagColors(tags.status === "ready" ? tags.value : undefined);
   const owner =
     item.owner.type === "team"
       ? t("items.owner.team")
@@ -131,7 +133,7 @@ export function ItemDetail({
           {(value) => (
             <View className="flex-row flex-wrap gap-1">
               {value.map((tag) => (
-                <TagChip key={tag.id} label={tag.name} />
+                <TagChip key={tag.id} label={tag.name} teamColor={colorOf(tag)} />
               ))}
             </View>
           )}

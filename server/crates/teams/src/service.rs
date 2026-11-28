@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use identity::IdentityService;
 use items::{
     ItemsAccessContext, SharingFuture, SharingPolicy, TeamAction, TeamDirectory, TeamFuture,
+    TeamsFuture,
 };
 use kernel::{AppError, FieldError, FieldErrorCode, SharedClock, ValidationErrors};
 use sqlx::PgPool;
@@ -568,6 +569,20 @@ impl TeamsService {
         tx.commit().await.map_err(internal)
     }
 
+    /// The teams `user` is an active member of.
+    ///
+    /// # Errors
+    /// [`AppError::Internal`].
+    pub async fn teams_of(&self, user: Uuid) -> Result<Vec<Uuid>, AppError> {
+        sqlx::query_scalar(
+            "SELECT team_id FROM team_members WHERE user_id = $1 AND status = 'active'",
+        )
+        .bind(user)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(internal)
+    }
+
     /// Whether `user` is an active member of `team`.
     ///
     /// # Errors
@@ -602,8 +617,12 @@ impl SharingPolicy for TeamsService {
     }
 }
 
-/// Team items (T5.1.3): who belongs to a team and what their role may do with its items.
+/// Team items and tags (T5.1.3, T5.1.4): who belongs to a team and what their role may do.
 impl TeamDirectory for TeamsService {
+    fn teams_of(&self, user: Uuid) -> TeamsFuture<'_> {
+        Box::pin(Self::teams_of(self, user))
+    }
+
     fn is_member(&self, team: Uuid, user: Uuid) -> TeamFuture<'_> {
         Box::pin(Self::is_member(self, team, user))
     }
@@ -612,6 +631,7 @@ impl TeamDirectory for TeamsService {
         let permission = match action {
             TeamAction::CreateItems => TeamPermission::CreateItems,
             TeamAction::Assign => TeamPermission::Assign,
+            TeamAction::ManageTags => TeamPermission::ManageTags,
         };
         Box::pin(Self::may(self, actor, team, permission))
     }
