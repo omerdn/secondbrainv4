@@ -32,6 +32,11 @@ pub struct CreateTrackerRequest {
     pub period: Period,
     pub aggregation: Aggregation,
     pub direction: Direction,
+    /// The team that owns it, with its visibility and people (V12, TK4, T5.1.8); personal
+    /// when absent.
+    #[serde(default)]
+    #[ts(optional)]
+    pub team: Option<items::TeamPlacementRequest>,
 }
 
 /// `PATCH /trackers/{id}` body: only the fields present change. The title and description belong
@@ -187,7 +192,10 @@ impl TrackerEntries {
         .validate()?;
         let now = self.clock.now();
         let mut tx = self.pool.begin().await.map_err(internal)?;
-        let item = self.items.create_in(&mut tx, actor, new_item).await?;
+        let item = self
+            .items
+            .create_placed_in(&mut tx, actor, new_item, request.team)
+            .await?;
         let definition = NewTracker {
             item_id: item.id,
             unit: request.unit.trim().to_owned(),
@@ -258,6 +266,7 @@ mod tests {
 
     fn request() -> CreateTrackerRequest {
         CreateTrackerRequest {
+            team: None,
             title: "Reading".into(),
             description: None,
             unit: "sayfa".into(),
@@ -276,6 +285,7 @@ mod tests {
     fn valid_definition() {
         assert!(request().check().is_ok());
         let ranged = CreateTrackerRequest {
+            team: None,
             period: Period::Range {
                 start: day(1),
                 end: day(1),
@@ -290,30 +300,37 @@ mod tests {
     fn invalid_definitions() {
         let bad = [
             CreateTrackerRequest {
+                team: None,
                 unit: "  ".into(),
                 ..request()
             },
             CreateTrackerRequest {
+                team: None,
                 unit: "x".repeat(UNIT_MAX_CHARS + 1),
                 ..request()
             },
             CreateTrackerRequest {
+                team: None,
                 target_value: Decimal::ZERO,
                 ..request()
             },
             CreateTrackerRequest {
+                team: None,
                 target_value: Decimal::from(-1),
                 ..request()
             },
             CreateTrackerRequest {
+                team: None,
                 target_value: VALUE_LIMIT,
                 ..request()
             },
             CreateTrackerRequest {
+                team: None,
                 target_value: Decimal::new(12_345, 5),
                 ..request()
             },
             CreateTrackerRequest {
+                team: None,
                 period: Period::Range {
                     start: day(2),
                     end: day(1),

@@ -302,6 +302,7 @@ async fn w4_the_log_is_in_order_and_w5_nothing_is_completed() {
         .create(
             ada,
             tasks::CreateTaskRequest {
+                team: None,
                 title: "Rapor".into(),
                 description: None,
                 start_date: None,

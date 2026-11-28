@@ -29,6 +29,7 @@
 //! | GET    | `/items/{id}/members` | 200 [`ItemMembers`]; VIEW; pending invitations for SHARE (N2) |
 //! | PUT    | `/items/{id}/owner` | 204; body [`TransferOwnershipRequest`]; the owner hands a personal item to a member (HS2.1); 404 if not the owner, 422 for a page or a non-member |
 //! | GET    | `/account/shared-items` | 200 [`OwnedSharedItem`]`[]`: shared items the caller owns and who would inherit each (HS2) |
+//! | PUT    | `/items/{id}/members/{user_id}` | 204; body [`AddTeamMemberRequest`]; a team item's teammate joins directly (TK2); SHARE, or EDIT for oneself; 422 for a personal item |
 //! | DELETE | `/items/{id}/members/{user_id}` | 204; SHARE, or oneself (V5) |
 //! | GET    | `/invitations` | 200 `Invitation[]`: the caller's pending invitations |
 //! | POST   | `/invitations/{id}/accept`, `/invitations/{id}/decline` | 200 [`Invitation`] |
@@ -61,7 +62,7 @@ use crate::links::ItemLink;
 use crate::model::{CreateItemRequest, Item, ListQuery, UpdateItemRequest};
 use crate::service::ItemsService;
 use crate::tags::{CreateTagRequest, Tag, UpdateTagRequest};
-use crate::team_items::{CreateTeamItemRequest, SetTeamVisibilityRequest};
+use crate::team_items::{AddTeamMemberRequest, CreateTeamItemRequest, SetTeamVisibilityRequest};
 use crate::views::{CreateSavedViewRequest, SavedView, UpdateSavedViewRequest};
 
 /// `GET /items/filter` query. The filter is JSON because it holds lists.
@@ -115,7 +116,7 @@ pub fn router(state: ItemsHttpState) -> Router {
         .route("/account/shared-items", get(owned_shared))
         .route(
             "/items/{id}/members/{user_id}",
-            axum::routing::delete(remove_member),
+            axum::routing::delete(remove_member).put(add_team_member),
         )
         .route("/invitations", get(pending_invitations))
         .route("/invitations/{id}/accept", post(accept_invitation))
@@ -329,6 +330,19 @@ async fn remove_member(
     state
         .items
         .remove_member(auth.user_id.as_uuid(), id, user_id)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn add_team_member(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path((id, user_id)): Path<(Uuid, Uuid)>,
+    Json(request): Json<AddTeamMemberRequest>,
+) -> Result<StatusCode, AppError> {
+    state
+        .items
+        .add_team_member(auth.user_id.as_uuid(), id, user_id, request.role)
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }

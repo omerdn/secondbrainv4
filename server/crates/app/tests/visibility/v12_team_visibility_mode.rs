@@ -155,3 +155,188 @@ async fn creating_team_items_follows_the_matrix() {
         Err(AppError::Validation(_))
     ));
 }
+
+/// T5.1.8: tasks, routines, goals and trackers are created for a team through their own
+/// endpoints; "assignees only" works the same for each kind.
+#[tokio::test]
+async fn every_kind_can_belong_to_a_team() {
+    use std::sync::Arc;
+    let world = World::new().await;
+    let (team, [admin, _, assignee, other, _, _]) = team_of_six(&world).await;
+    let clock: kernel::SharedClock = Arc::new(kernel::SystemClock);
+    let placement = || {
+        Some(items::TeamPlacementRequest {
+            team_id: team,
+            visibility: Some(TeamVisibilityMode::Assignees),
+            assignees: Some(vec![assignee]),
+            watchers: None,
+        })
+    };
+    let (pool, permissions, items) = (world.pool().clone(), world.permissions(), world.items());
+    let task = tasks::TasksService::new(
+        pool.clone(),
+        clock.clone(),
+        permissions.clone(),
+        items.clone(),
+    )
+    .create(
+        admin,
+        tasks::CreateTaskRequest {
+            team: placement(),
+            title: "Rapor".into(),
+            description: None,
+            start_date: None,
+            due_date: None,
+            subtasks: None,
+        },
+    )
+    .await
+    .unwrap()
+    .item;
+    let routine = routines::RoutinesService::new(
+        pool.clone(),
+        clock.clone(),
+        permissions.clone(),
+        items.clone(),
+    )
+    .create(
+        admin,
+        routines::CreateRoutineRequest {
+            team: placement(),
+            title: "Toplantı".into(),
+            description: None,
+            timezone: "UTC".into(),
+            rrule: "FREQ=WEEKLY".into(),
+            daily_target: None,
+            start_date: None,
+            end_date: None,
+            reminder_times: None,
+            completion_mode: None,
+            rotation: None,
+        },
+    )
+    .await
+    .unwrap()
+    .item;
+    let today = chrono::Utc::now().date_naive();
+    let goal = goals::GoalsService::new(
+        pool.clone(),
+        clock.clone(),
+        permissions.clone(),
+        items.clone(),
+    )
+    .create(
+        admin,
+        goals::CreateGoalRequest {
+            team: placement(),
+            title: "Çeyrek".into(),
+            description: None,
+            start_date: Some(today),
+            end_date: Some(today + chrono::Duration::days(30)),
+        },
+    )
+    .await
+    .unwrap()
+    .item;
+    let tracker = tracking::TrackerEntries::new(
+        pool.clone(),
+        clock.clone(),
+        permissions.clone(),
+        items.clone(),
+        world.identity_service(),
+    )
+    .create_tracker(
+        admin,
+        tracking::CreateTrackerRequest {
+            team: placement(),
+            title: "Satış".into(),
+            description: None,
+            unit: "adet".into(),
+            target_value: rust_decimal::Decimal::from(10),
+            period: tracking::Period::Week,
+            aggregation: tracking::Aggregation::Sum,
+            direction: tracking::Direction::Increase,
+        },
+    )
+    .await
+    .unwrap()
+    .item;
+    for item in [task, routine, goal, tracker] {
+        assert_eq!(
+            item.owner,
+            items::Owner::Team { team_id: team },
+            "{}",
+            item.kind
+        );
+        assert!(sees(&world, assignee, item.id).await, "{}", item.kind);
+        assert!(!sees(&world, other, item.id).await, "{}", item.kind);
+    }
+}
+
+/// TK2 (T5.1.8): teammates join a team item directly, without an invitation. Choosing someone
+/// else needs SHARE (the role matrix); choosing oneself needs EDIT; only teammates can be chosen,
+/// and personal items keep inviting.
+#[tokio::test]
+async fn teammates_are_added_directly() {
+    let world = World::new().await;
+    let (team, [admin, manager, member, other, _, guest]) = team_of_six(&world).await;
+    let (outsider, _) = world.person("Dışarıdan").await;
+    let item = world
+        .team_task(team, admin, TeamVisibilityMode::Assignees)
+        .await;
+    let items = world.items();
+    use items::InvitationRole::{Assignee, Editor, Watcher};
+
+    // `other` does not see it: for him it does not exist.
+    assert!(matches!(
+        items.add_team_member(other, item, other, Assignee).await,
+        Err(AppError::NotFound)
+    ));
+    // The manager (SHARE) assigns a member; she sees it at once.
+    items
+        .add_team_member(manager, item, member, Assignee)
+        .await
+        .unwrap();
+    assert!(sees(&world, member, item).await);
+    // Again is a no-op; a member cannot choose others, but may watch herself.
+    items
+        .add_team_member(manager, item, member, Assignee)
+        .await
+        .unwrap();
+    assert!(matches!(
+        items.add_team_member(member, item, other, Watcher).await,
+        Err(AppError::Forbidden)
+    ));
+    items
+        .add_team_member(member, item, member, Watcher)
+        .await
+        .unwrap();
+    for (who, role) in [(outsider, Assignee), (guest, Editor)] {
+        assert!(matches!(
+            items.add_team_member(admin, item, who, role).await,
+            Err(AppError::Validation(_))
+        ));
+    }
+    let personal = world.item(admin, "task", "Kişisel").await;
+    assert!(matches!(
+        items
+            .add_team_member(admin, personal.id, member, Assignee)
+            .await,
+        Err(AppError::Validation(_))
+    ));
+    let members = items
+        .members(admin, item, |ids| async move {
+            Ok(ids.into_iter().map(|id| (id, String::new())).collect())
+        })
+        .await
+        .unwrap();
+    let theirs = members
+        .members
+        .iter()
+        .find(|m| m.user_id == member)
+        .unwrap();
+    assert_eq!(
+        theirs.roles,
+        vec![items::MemberRole::Assignee, items::MemberRole::Watcher]
+    );
+}

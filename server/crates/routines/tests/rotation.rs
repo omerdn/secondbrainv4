@@ -85,6 +85,7 @@ impl World {
             .create(
                 self.ali,
                 CreateRoutineRequest {
+                    team: None,
                     title: "Çöp".into(),
                     description: None,
                     timezone: "Europe/Istanbul".into(),

@@ -29,6 +29,7 @@ fn day(d: u32) -> NaiveDate {
 
 fn request(start: Option<NaiveDate>, end: Option<NaiveDate>) -> CreateGoalRequest {
     CreateGoalRequest {
+        team: None,
         title: "Kitap".into(),
         description: None,
         start_date: start,

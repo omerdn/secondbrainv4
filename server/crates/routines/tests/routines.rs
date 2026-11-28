@@ -30,6 +30,7 @@ fn day(d: u32) -> NaiveDate {
 
 fn request(rrule: &str) -> CreateRoutineRequest {
     CreateRoutineRequest {
+        team: None,
         title: "Read".into(),
         description: None,
         timezone: "Europe/Istanbul".into(),
@@ -132,6 +133,7 @@ async fn r2_a_routine_has_its_own_time_zone_and_dates() {
         .create(
             w.owner,
             CreateRoutineRequest {
+                team: None,
                 start_date: None,
                 end_date: Some(day(30)),
                 ..request("FREQ=DAILY")
@@ -153,6 +155,7 @@ async fn r3_and_r13_target_and_reminders_are_saved() {
         .create(
             w.owner,
             CreateRoutineRequest {
+                team: None,
                 daily_target: Some(8),
                 reminder_times: Some(vec!["20:30".into(), "08:00".into()]),
                 ..request("FREQ=DAILY")
@@ -173,6 +176,7 @@ async fn r11_a_plan_change_keeps_past_occurrences_and_targets() {
         .create(
             w.owner,
             CreateRoutineRequest {
+                team: None,
                 daily_target: Some(2),
                 ..request("FREQ=DAILY")
             },
@@ -216,6 +220,7 @@ async fn r11_the_target_is_kept_when_only_the_rule_changes() {
         .create(
             w.owner,
             CreateRoutineRequest {
+                team: None,
                 daily_target: Some(4),
                 ..request("FREQ=DAILY")
             },
@@ -256,6 +261,7 @@ async fn a_change_on_the_first_day_replaces_the_version() {
         .create(
             w.owner,
             CreateRoutineRequest {
+                team: None,
                 start_date: Some(day(23)),
                 ..request("FREQ=DAILY")
             },
@@ -279,6 +285,7 @@ async fn a_future_routine_changes_from_its_first_day() {
         .create(
             w.owner,
             CreateRoutineRequest {
+                team: None,
                 start_date: Some(day(28)),
                 ..request("FREQ=DAILY")
             },
@@ -302,6 +309,7 @@ async fn r11_reopening_an_ended_routine_does_not_fill_the_gap() {
         .create(
             w.owner,
             CreateRoutineRequest {
+                team: None,
                 end_date: Some(day(25)),
                 ..request("FREQ=DAILY")
             },
@@ -396,24 +404,29 @@ async fn invalid_requests_are_refused() {
     let w = World::new().await;
     let bad = [
         CreateRoutineRequest {
+            team: None,
             timezone: "Mars/Base".into(),
             ..request("FREQ=DAILY")
         },
         request("FREQ=DAILY;COUNT=2"),
         CreateRoutineRequest {
+            team: None,
             daily_target: Some(0),
             ..request("FREQ=DAILY")
         },
         CreateRoutineRequest {
+            team: None,
             start_date: Some(day(9)),
             end_date: Some(day(1)),
             ..request("FREQ=DAILY")
         },
         CreateRoutineRequest {
+            team: None,
             reminder_times: Some(vec!["25:00".into()]),
             ..request("FREQ=DAILY")
         },
         CreateRoutineRequest {
+            team: None,
             title: "  ".into(),
             ..request("FREQ=DAILY")
         },
@@ -511,6 +524,7 @@ async fn with_target(w: &World, target: i32) -> Uuid {
         .create(
             w.owner,
             CreateRoutineRequest {
+                team: None,
                 daily_target: Some(target),
                 ..request("FREQ=DAILY")
             },
