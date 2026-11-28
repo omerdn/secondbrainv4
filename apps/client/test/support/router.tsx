@@ -7,6 +7,8 @@ import AppLayout from "../../app/(app)/_layout";
 import Archive from "../../app/(app)/archive";
 import Calendar from "../../app/(app)/calendar";
 import Friends from "../../app/(app)/friends";
+import TeamDetailRoute from "../../app/(app)/teams/[id]";
+import Teams from "../../app/(app)/teams/index";
 import Goals from "../../app/(app)/goals";
 import Today from "../../app/(app)/index";
 import ItemDetail from "../../app/(app)/items/[id]";
@@ -64,6 +66,8 @@ export function renderApp(
       "(app)/tasks/[id]": TaskDetail,
       "(app)/routines": Routines,
       "(app)/friends": Friends,
+      "(app)/teams/index": Teams,
+      "(app)/teams/[id]": TeamDetailRoute,
       "(app)/goals": Goals,
       "(app)/goals/[id]": GoalDetail,
       "(app)/routines/[id]": RoutineDetail,
