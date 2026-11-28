@@ -2636,3 +2636,184 @@ async fn e3_team_tag_endpoints() {
     assert_eq!(hidden.status(), StatusCode::NOT_FOUND);
     assert_eq!(json_body(hidden).await, json_body(absent).await);
 }
+
+// --- activity filters (T5.2.7, A2, TK6) ----------------------------------------------------------
+
+#[tokio::test]
+async fn a2_activity_filters_only_narrow_what_the_reader_sees() {
+    use items::{ActivityFilter, ActivityKind as K};
+    let w = World::new().await;
+    let (ali, ayse, can) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
+    let team = Uuid::now_v7();
+    for (user, relation) in [(ali, R::TeamAdmin), (ayse, R::TeamMember)] {
+        w.teams.join(team, user, true, true);
+        w.grant(RelationTuple::new(team, relation, user)).await;
+    }
+    let new = |title: &str, mode| {
+        items::CreateTeamItemRequest {
+            kind: "task".into(),
+            title: title.into(),
+            description: None,
+            visibility: Some(mode),
+            assignees: None,
+            watchers: None,
+        }
+        .validate()
+        .unwrap()
+    };
+    let open = w
+        .items
+        .create_team_item(ali, team, new("Açık", items::TeamVisibilityMode::All))
+        .await
+        .unwrap();
+    // Only managers and above (and the creator) see this one.
+    w.clock.set(start() + Duration::minutes(1));
+    let closed = w
+        .items
+        .create_team_item(
+            ali,
+            team,
+            new("Kapalı", items::TeamVisibilityMode::Assignees),
+        )
+        .await
+        .unwrap();
+    w.clock.set(start() + Duration::minutes(2));
+    let personal = w.items.create(ayse, World::task("Kişisel")).await.unwrap();
+    w.clock.set(start() + Duration::minutes(3));
+    w.items
+        .add_team_member(ali, open.id, ayse, items::InvitationRole::Watcher)
+        .await
+        .unwrap();
+
+    let feed = |actor, filter: ActivityFilter| {
+        let w = &w;
+        async move {
+            w.items
+                .filtered_activity(actor, &filter, &first_page())
+                .await
+                .unwrap()
+                .items
+                .into_iter()
+                .map(|e| (e.item_id, e.kind))
+                .collect::<Vec<_>>()
+        }
+    };
+    let by_team = ActivityFilter {
+        team_ids: Some(vec![team]),
+        ..ActivityFilter::default()
+    };
+    // Ayşe: the team's events she can see; not the closed item, not her personal one.
+    assert_eq!(
+        feed(ayse, by_team.clone()).await,
+        vec![(open.id, K::Shared), (open.id, K::Created)]
+    );
+    assert_eq!(
+        feed(ali, by_team.clone()).await.len(),
+        3,
+        "Ali sees the closed one too"
+    );
+    assert!(feed(can, by_team).await.is_empty(), "outsiders see nothing");
+    // People, kinds and time narrow further.
+    assert_eq!(
+        feed(
+            ayse,
+            ActivityFilter {
+                people: Some(vec![ayse]),
+                ..ActivityFilter::default()
+            }
+        )
+        .await,
+        vec![(personal.id, K::Created)]
+    );
+    assert_eq!(
+        feed(
+            ali,
+            ActivityFilter {
+                kinds: Some(vec![K::Created]),
+                since: Some(start() + Duration::minutes(1)),
+                until: Some(start() + Duration::minutes(2)),
+                ..ActivityFilter::default()
+            }
+        )
+        .await,
+        vec![(closed.id, K::Created)]
+    );
+    // Empty lists filter nothing; bad filters are refused.
+    assert_eq!(
+        feed(
+            ayse,
+            ActivityFilter {
+                kinds: Some(vec![]),
+                ..ActivityFilter::default()
+            }
+        )
+        .await
+        .len(),
+        3
+    );
+    for bad in [
+        ActivityFilter {
+            people: Some(
+                (0..=items::ACTIVITY_FILTER_MAX_VALUES)
+                    .map(|_| Uuid::now_v7())
+                    .collect(),
+            ),
+            ..ActivityFilter::default()
+        },
+        ActivityFilter {
+            since: Some(start()),
+            until: Some(start() - Duration::minutes(1)),
+            ..ActivityFilter::default()
+        },
+    ] {
+        assert!(matches!(
+            w.items.filtered_activity(ali, &bad, &first_page()).await,
+            Err(AppError::Validation(_))
+        ));
+    }
+}
+
+#[tokio::test]
+async fn a2_activity_filter_over_http() {
+    let w = World::new().await;
+    let (ali, token) = w.user("ali@example.com").await;
+    let team = Uuid::now_v7();
+    w.teams.join(team, ali, true, true);
+    w.grant(RelationTuple::new(team, R::TeamAdmin, ali)).await;
+    let new = items::CreateTeamItemRequest {
+        kind: "task".into(),
+        title: "Takım".into(),
+        description: None,
+        visibility: None,
+        assignees: None,
+        watchers: None,
+    }
+    .validate()
+    .unwrap();
+    let item = w.items.create_team_item(ali, team, new).await.unwrap();
+    w.items.create(ali, World::task("Kişisel")).await.unwrap();
+    let filter = serde_json::json!({ "team_ids": [team], "kinds": ["created"] }).to_string();
+    let uri = format!("/activity?filter={}", urlencode(&filter));
+    let response = w.call(Method::GET, &uri, &token, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    let events = body["items"].as_array().unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["item_id"], json!(item.id));
+    for bad in ["{\"nope\":1}", "{\"kinds\":[\"exploded\"]}", "not json"] {
+        let uri = format!("/activity?filter={}", urlencode(bad));
+        let response = w.call(Method::GET, &uri, &token, None).await;
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY, "{bad}");
+    }
+}
+
+fn urlencode(raw: &str) -> String {
+    raw.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}

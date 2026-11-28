@@ -42,8 +42,35 @@ fn today() -> NaiveDate {
     day(26)
 }
 
+/// Stand-in for the teams module: who is in which team; members may do anything (T5.2.7).
+#[derive(Clone, Default)]
+struct FakeTeams(Arc<std::sync::Mutex<Vec<(Uuid, Uuid)>>>);
+
+impl items::TeamDirectory for FakeTeams {
+    fn teams_of(&self, user: Uuid) -> items::TeamsFuture<'_> {
+        let teams = self
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, u)| *u == user)
+            .map(|(t, _)| *t)
+            .collect();
+        Box::pin(async move { Ok(teams) })
+    }
+    fn is_member(&self, team: Uuid, user: Uuid) -> items::TeamFuture<'_> {
+        let member = self.0.lock().unwrap().contains(&(team, user));
+        Box::pin(async move { Ok(member) })
+    }
+    fn may(&self, actor: Uuid, team: Uuid, _action: items::TeamAction) -> items::TeamFuture<'_> {
+        self.is_member(team, actor)
+    }
+}
+
 struct World {
     db: TestDb,
+    access: AccessEngine<ItemsAccessContext>,
+    teams: FakeTeams,
     clock: Arc<FixedClock>,
     identity: IdentityService,
     items: ItemsService,
@@ -70,7 +97,9 @@ impl World {
             },
         );
         let access = AccessEngine::new(ItemsAccessContext, AccessConfig::default());
-        let items = ItemsService::new(pool.clone(), clock.clone(), access.clone());
+        let teams = FakeTeams::default();
+        let items = ItemsService::new(pool.clone(), clock.clone(), access.clone())
+            .with_teams(Arc::new(teams.clone()));
         let notebooks =
             NotebooksService::new(pool.clone(), clock.clone(), access.clone(), items.clone());
         let collab = Collab::new(pool.clone(), clock.clone());
@@ -126,6 +155,8 @@ impl World {
         );
         Self {
             db,
+            access,
+            teams,
             clock,
             identity,
             items,
@@ -648,4 +679,172 @@ async fn c1_calendar_range_is_checked() {
             .await
             .is_ok()
     );
+}
+
+// --- team dashboard (T5.2.7, TK6, V9) ------------------------------------------------------------
+
+impl World {
+    /// A task due on the 24th, placed in a team.
+    async fn team_task(
+        &self,
+        owner: Uuid,
+        title: &str,
+        team: Option<items::TeamPlacementRequest>,
+    ) -> Uuid {
+        self.tasks
+            .create(
+                owner,
+                CreateTaskRequest {
+                    team,
+                    title: title.into(),
+                    description: None,
+                    start_date: None,
+                    due_date: Some(day(24)),
+                    subtasks: None,
+                },
+            )
+            .await
+            .unwrap()
+            .item
+            .id
+    }
+
+    /// `members` join a new team: the fake directory and the access relations (T5.1.1).
+    async fn team(&self, members: &[(Uuid, access::Relation)]) -> Uuid {
+        let team = Uuid::now_v7();
+        let mut tx = self.db.pool().begin().await.unwrap();
+        for &(user, role) in members {
+            self.teams.0.lock().unwrap().push((team, user));
+            self.access
+                .grant(&mut tx, access::RelationTuple::new(team, role, user))
+                .await
+                .unwrap();
+        }
+        tx.commit().await.unwrap();
+        team
+    }
+}
+
+fn placed(
+    team: Uuid,
+    mode: items::TeamVisibilityMode,
+    assignees: &[Uuid],
+) -> Option<items::TeamPlacementRequest> {
+    Some(items::TeamPlacementRequest {
+        team_id: team,
+        visibility: Some(mode),
+        assignees: Some(assignees.to_vec()),
+        watchers: None,
+    })
+}
+
+#[tokio::test]
+async fn tk6_team_dashboard_shows_only_the_teams_visible_items() {
+    use items::TeamVisibilityMode::{All, Assignees};
+    let w = World::new().await;
+    let ada = w.user("ada@example.com").await;
+    let bob = w.user("bob@example.com").await;
+    let cem = w.user("cem@example.com").await;
+    let team = w
+        .team(&[
+            (ada, access::Relation::TeamAdmin),
+            (bob, access::Relation::TeamMember),
+        ])
+        .await;
+    let late = w.team_task(ada, "Geç kalan", placed(team, All, &[])).await;
+    let hidden = w
+        .team_task(ada, "Gizli", placed(team, Assignees, &[ada]))
+        .await;
+    let personal = w.task(ada, "Kişisel", Some(day(24))).await;
+    let goal = w
+        .goals
+        .create(
+            ada,
+            CreateGoalRequest {
+                team: placed(team, All, &[]),
+                title: "Çeyrek".into(),
+                description: None,
+                start_date: Some(day(20)),
+                end_date: Some(day(30)),
+            },
+        )
+        .await
+        .unwrap()
+        .item
+        .id;
+    let routine = w
+        .routines
+        .create(
+            ada,
+            CreateRoutineRequest {
+                team: placed(team, All, &[]),
+                title: "Stand-up".into(),
+                description: None,
+                timezone: "UTC".into(),
+                rrule: "FREQ=DAILY".into(),
+                daily_target: None,
+                start_date: Some(day(1)),
+                end_date: None,
+                reminder_times: None,
+                completion_mode: None,
+                rotation: None,
+            },
+        )
+        .await
+        .unwrap()
+        .item
+        .id;
+    for date in [day(24), day(25), day(26)] {
+        w.routines
+            .complete(
+                ada,
+                routine,
+                routines::CompleteRoutineRequest {
+                    date: Some(date),
+                    count: None,
+                },
+            )
+            .await
+            .unwrap();
+    }
+
+    let board = w
+        .today
+        .team_dashboard(bob, team, Some(today()))
+        .await
+        .unwrap();
+    assert_eq!(board.today, today());
+    assert_eq!(
+        board.overdue.iter().map(|t| t.item.id).collect::<Vec<_>>(),
+        vec![late],
+        "not the hidden task nor anyone's personal one"
+    );
+    assert_eq!(board.goals.len(), 1);
+    assert_eq!(board.goals[0].item.id, goal);
+    assert_eq!(board.adherence_days, 7);
+    assert_eq!(board.routines.len(), 1);
+    assert_eq!(board.routines[0].item.id, routine);
+    assert_eq!(
+        (board.routines[0].scheduled, board.routines[0].complete),
+        (7, 3)
+    );
+
+    // Ada sees the task assigned to her too; her personal task is never the team's.
+    let mine = w
+        .today
+        .team_dashboard(ada, team, Some(today()))
+        .await
+        .unwrap();
+    let ids: Vec<Uuid> = mine.overdue.iter().map(|t| t.item.id).collect();
+    assert!(ids.contains(&hidden) && ids.contains(&late) && !ids.contains(&personal));
+
+    // Outsiders and unknown teams look the same: empty.
+    for (who, which) in [(cem, team), (bob, Uuid::now_v7())] {
+        let empty = w
+            .today
+            .team_dashboard(who, which, Some(today()))
+            .await
+            .unwrap();
+        assert!(empty.goals.is_empty() && empty.routines.is_empty() && empty.overdue.is_empty());
+    }
 }

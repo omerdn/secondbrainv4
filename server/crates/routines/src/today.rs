@@ -175,3 +175,86 @@ impl RoutinesService {
         Ok(found)
     }
 }
+
+/// How well a team kept a routine lately (PRD TK6, T5.2.7): scheduled days of the window and
+/// how many of them were complete.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
+pub struct RoutineAdherence {
+    pub item: Item,
+    /// Days of the window with an occurrence.
+    pub scheduled: i32,
+    /// Of those, days whose target was reached.
+    pub complete: i32,
+}
+
+impl RoutinesService {
+    /// Active routines owned by `team` that `actor` can view, with their adherence over the
+    /// `days` days ending on `today`, by title (TK6, V9). Routines `actor` cannot see are left out
+    /// without a trace.
+    ///
+    /// # Errors
+    /// [`AppError::Validation`] for a bad window, or [`AppError::Internal`].
+    pub async fn team_adherence(
+        &self,
+        actor: Uuid,
+        team: Uuid,
+        today: chrono::NaiveDate,
+        days: u32,
+    ) -> Result<Vec<RoutineAdherence>, AppError> {
+        let visible = self
+            .permissions
+            .list_accessible(&self.pool, actor, Perms::VIEW)
+            .await
+            .map_err(internal)?;
+        if visible.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = repo::list_routines(&self.pool, &visible)
+            .await
+            .map_err(internal)?;
+        let ids: Vec<Uuid> = rows.iter().map(|row| row.item_id).collect();
+        let mut items: Vec<Item> = self
+            .items
+            .visible_items(actor, &ids)
+            .await?
+            .into_iter()
+            .filter(|item| {
+                item.archived_at.is_none()
+                    && item.deleted_at.is_none()
+                    && item.owner == items::Owner::Team { team_id: team }
+            })
+            .collect();
+        items.sort_by(|a, b| {
+            a.title
+                .to_lowercase()
+                .cmp(&b.title.to_lowercase())
+                .then(a.id.cmp(&b.id))
+        });
+        let from = today - chrono::Days::new(u64::from(days.saturating_sub(1)));
+        let mut out = Vec::with_capacity(items.len());
+        for item in items {
+            let window = self
+                .days(
+                    actor,
+                    item.id,
+                    crate::completions::RoutineDaysQuery {
+                        from: Some(from),
+                        to: Some(today),
+                    },
+                )
+                .await?;
+            let scheduled = window.iter().filter(|day| day.scheduled).count();
+            let complete = window
+                .iter()
+                .filter(|day| day.scheduled && day.complete)
+                .count();
+            out.push(RoutineAdherence {
+                item,
+                scheduled: i32::try_from(scheduled).unwrap_or(i32::MAX),
+                complete: i32::try_from(complete).unwrap_or(i32::MAX),
+            });
+        }
+        Ok(out)
+    }
+}

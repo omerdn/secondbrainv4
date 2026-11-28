@@ -7,12 +7,14 @@
 //! what the caller can view. The only table here is `home_preferences` (the forgotten threshold).
 
 pub mod calendar;
+mod dashboard;
 pub mod http;
 mod model;
 mod repo;
 mod service;
 
 pub use calendar::{CALENDAR_LIMIT, Calendar, CalendarQuery, MAX_CALENDAR_DAYS};
+pub use dashboard::{ADHERENCE_DAYS, TeamDashboard};
 pub use model::{
     DEFAULT_FORGOTTEN_DAYS, ForgottenDays, HomePreferences, ResumeItem, SessionGlance, Today,
     TodayQuery, UpdateHomePreferences,
