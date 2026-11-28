@@ -170,3 +170,101 @@ async fn visibility_mode_change_recomputes() {
         Err(AppError::Validation(_))
     ));
 }
+
+/// TK7: Zeynep leaves the team. Every team item she reached through it, as a member, an assignee
+/// or a chosen notebook editor, is gone for her at once; the items stay in the team. Joining
+/// again brings back only what her role gives (T5.1.6).
+#[tokio::test]
+async fn leaving_a_team_drops_access() {
+    let world = World::new().await;
+    let (admin, _) = world.person("Admin").await;
+    let (zeynep, _) = world.person("Zeynep").await;
+    let team = world
+        .team(admin, &[(zeynep, teams::TeamRole::Member)])
+        .await;
+    let open = world
+        .team_task(team, admin, items::TeamVisibilityMode::All)
+        .await;
+    let assigned = world
+        .team_task_with(
+            team,
+            admin,
+            items::TeamVisibilityMode::Assignees,
+            &[zeynep],
+            &[],
+        )
+        .await;
+    let notebooks = world.notebooks();
+    let notebook = notebooks
+        .create_for_team(
+            admin,
+            team,
+            notebooks::CreateTeamNotebookRequest {
+                title: "Seçili".into(),
+                description: None,
+                visibility: Some(items::TeamVisibilityMode::Assignees),
+                editors: Some(vec![zeynep]),
+                viewers: None,
+            },
+        )
+        .await
+        .unwrap()
+        .item
+        .id;
+    let page = notebooks
+        .create_page(
+            zeynep,
+            notebook,
+            notebooks::CreatePageRequest {
+                title: "Benim".into(),
+            },
+        )
+        .await
+        .unwrap()
+        .item
+        .id;
+    let items = world.items();
+    for item in [open, assigned, notebook, page] {
+        assert_eq!(items.get(zeynep, item).await.unwrap().id, item);
+    }
+
+    world.teams().leave(zeynep, team).await.unwrap();
+
+    for item in [open, assigned, notebook, page] {
+        assert!(
+            matches!(items.get(zeynep, item).await, Err(AppError::NotFound)),
+            "{item} is gone for her"
+        );
+        let kept = items.get(admin, item).await.unwrap();
+        assert_eq!(kept.owner, items::Owner::Team { team_id: team });
+    }
+    assert!(
+        items
+            .list(zeynep, items::ListState::Active)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    // Back in the team: the open item returns through her role, the chosen ones do not.
+    let teams = world.teams();
+    teams
+        .invite(
+            admin,
+            team,
+            teams::InviteToTeamRequest {
+                user_id: zeynep,
+                role: teams::TeamRole::Member,
+            },
+        )
+        .await
+        .unwrap();
+    teams.accept(zeynep, team).await.unwrap();
+    assert_eq!(items.get(zeynep, open).await.unwrap().id, open);
+    for item in [assigned, notebook, page] {
+        assert!(matches!(
+            items.get(zeynep, item).await,
+            Err(AppError::NotFound)
+        ));
+    }
+}

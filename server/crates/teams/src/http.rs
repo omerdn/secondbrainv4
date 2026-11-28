@@ -12,10 +12,12 @@
 //! | GET  | `/teams/{id}/matrix` | 200 [`TeamMatrix`]; members only (TK3) |
 //! | PUT  | `/teams/{id}/matrix` | 200 [`TeamMatrix`]; admins; access recomputed (V8) |
 //! | PUT  | `/teams/{id}/members/{user_id}/role` | 204; body [`SetRoleRequest`]; admins (TK3, V8) |
+//! | POST | `/teams/{id}/leave` | 204; the caller leaves; access to team items drops at once (TK7, V10); 422 for the last admin |
+//! | DELETE | `/teams/{id}/members/{user_id}` | 204; "invite members", admins for admins and managers (TK5, TK7) |
 
 use axum::extract::{FromRef, Path, State};
 use axum::http::StatusCode;
-use axum::routing::{get, post, put};
+use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use identity::IdentityService;
 use identity::http::Authenticated;
@@ -50,6 +52,8 @@ pub fn router(state: TeamsHttpState) -> Router {
         .route("/team-invitations", get(invitations))
         .route("/teams/{id}/matrix", get(matrix).put(set_matrix))
         .route("/teams/{id}/members/{user_id}/role", put(set_role))
+        .route("/teams/{id}/leave", post(leave))
+        .route("/teams/{id}/members/{user_id}", delete(remove_member))
         .with_state(state)
 }
 
@@ -156,6 +160,27 @@ async fn set_role(
     state
         .teams
         .set_role(auth.user_id.as_uuid(), id, user_id, request.role)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn leave(
+    State(state): State<TeamsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    state.teams.leave(auth.user_id.as_uuid(), id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn remove_member(
+    State(state): State<TeamsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path((id, user_id)): Path<(Uuid, Uuid)>,
+) -> Result<StatusCode, AppError> {
+    state
+        .teams
+        .remove_member(auth.user_id.as_uuid(), id, user_id)
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }

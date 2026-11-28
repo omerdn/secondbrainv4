@@ -294,6 +294,25 @@ impl<C: AccessContext> AccessEngine<C> {
         repo::relations_of_subject(conn, SubjectType::User, user, None).await
     }
 
+    /// The items owned by `team` (`owned_by` relations to it), e.g. to drop someone's direct
+    /// relations to them when they leave the team (TK7).
+    ///
+    /// # Errors
+    /// Database errors.
+    pub async fn items_of_team(
+        &self,
+        conn: impl sqlx::PgExecutor<'_>,
+        team: Uuid,
+    ) -> sqlx::Result<Vec<Uuid>> {
+        Ok(
+            repo::relations_of_subject(conn, SubjectType::Team, team, Some(Relation::OwnedBy))
+                .await?
+                .into_iter()
+                .map(|tuple| tuple.object_id())
+                .collect(),
+        )
+    }
+
     /// The pages of a notebook (`in_notebook` relations to it).
     ///
     /// # Errors

@@ -106,3 +106,45 @@ async fn removing_a_notebook_member_disconnects_them_from_its_pages() {
     );
     bridge.stop().await;
 }
+
+/// Deniz has a team task open; he leaves the team and his subscription ends at once (TK7,
+/// T5.1.6).
+#[tokio::test]
+async fn leaving_a_team_disconnects() {
+    let world = World::new().await;
+    let (admin, _) = world.person("Admin").await;
+    let (deniz, _) = world.person("Deniz").await;
+    let team = world.team(admin, &[(deniz, teams::TeamRole::Member)]).await;
+    let item = world
+        .team_task(team, admin, items::TeamVisibilityMode::All)
+        .await;
+
+    let hub = Hub::new();
+    let bridge = Bridge::start(world.pool(), world.schema(), hub.clone())
+        .await
+        .unwrap();
+    let mut dispatcher = Dispatcher::new(DispatchConfig::default());
+    realtime::access::register(
+        &mut dispatcher,
+        world.pool().clone(),
+        Notifier::new(world.schema()),
+    );
+    let mut connection = hub.connect(UserId::from_uuid(deniz), SessionId::new());
+    hub.subscribe(connection.id, Channel::Item(item));
+
+    world.teams().leave(deniz, team).await.unwrap();
+    dispatcher.dispatch_batch(world.pool()).await.unwrap();
+
+    let message = tokio::time::timeout(std::time::Duration::from_secs(5), connection.outbox.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        message,
+        ServerMessage::Unsubscribed {
+            channel: Channel::Item(item).to_string(),
+            reason: Some(UnsubscribeReason::AccessRevoked),
+        }
+    );
+    bridge.stop().await;
+}
