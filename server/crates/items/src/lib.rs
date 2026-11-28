@@ -43,7 +43,7 @@ pub use tags::{
 };
 pub use team_items::{
     CreateTeamItemRequest, NewTeamItem, NoTeams, SetTeamVisibilityRequest, TEAM_ITEM_MAX_PEOPLE,
-    TeamAction, TeamDirectory, TeamFuture, TeamVisibilityMode,
+    TeamAction, TeamDirectory, TeamFuture, TeamVisibilityMode, TeamsFuture,
 };
 pub use touch::{TouchAction, touched_at};
 pub use touched::Touched;

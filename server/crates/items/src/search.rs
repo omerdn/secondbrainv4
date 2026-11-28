@@ -79,21 +79,24 @@ impl ItemsService {
             })
             .collect();
 
-        // The caller's own tags only (E2); a team's tags are not searched yet.
-        let tagged: Vec<(Uuid, String)> = sqlx::query_as(
+        // The caller's own tags and their teams' (E2, E3); other people's personal tags never.
+        let teams = self.tag_teams(actor).await?;
+        let visible_tag = crate::tags::visible_tag_sql("$1", "$5");
+        let tagged: Vec<(Uuid, String)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "SELECT DISTINCT ON (it.item_id) it.item_id, t.name
              FROM tags t JOIN item_tags it ON it.tag_id = t.id
              JOIN items i ON i.id = it.item_id
-             WHERE t.owner_user_id = $1 AND it.item_id = ANY($2) AND i.deleted_at IS NULL
+             WHERE {visible_tag} AND it.item_id = ANY($2) AND i.deleted_at IS NULL
                AND (search_unaccent(lower(t.name)) LIKE '%' || search_unaccent(lower($3)) || '%'
                     OR search_unaccent(lower(t.name)) % search_unaccent(lower($3)))
              ORDER BY it.item_id, t.name
-             LIMIT $4",
-        )
+             LIMIT $4"
+        )))
         .bind(actor)
         .bind(&visible)
         .bind(query)
         .bind(limit)
+        .bind(&teams)
         .fetch_all(&self.pool)
         .await
         .map_err(internal)?;

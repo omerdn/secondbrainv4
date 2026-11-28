@@ -235,7 +235,7 @@ export function endpoints(api: ApiClient) {
         api.get<Page<Item>>("/items/filter", {
           query: { filter: JSON.stringify(filter), limit: page.limit, cursor: page.cursor },
         }),
-      /** The caller's own tags on the item (PRD E2). */
+      /** The caller's own and team tags on the item (PRD E2, E3). */
       tags: (id: string) => api.get<Tag[]>(`/items/${encodeURIComponent(id)}/tags`),
       /** Links whose other end the caller can see (PRD V9). */
       links: (id: string) => api.get<ItemLink[]>(`/items/${encodeURIComponent(id)}/links`),
@@ -261,10 +261,13 @@ export function endpoints(api: ApiClient) {
         api.delete(`/items/${encodeURIComponent(id)}/tags/${encodeURIComponent(tagId)}`, options),
     },
     tags: {
-      /** The tags the caller can see (PRD E4). */
+      /** The caller's own tags and their teams' tags, in one list (PRD E3, E4). */
       list: () => api.get<Tag[]>("/tags"),
       create: (body: CreateTagRequest, options?: MutationOptions) =>
         api.post<Tag>("/tags", body, options),
+      /** A team tag; the caller's role needs "manage tags" (E3, TK3, T5.1.4). */
+      createForTeam: (teamId: string, body: CreateTagRequest, options?: MutationOptions) =>
+        api.post<Tag>(`/teams/${encodeURIComponent(teamId)}/tags`, body, options),
       /** Accessible items carrying the tag. */
       items: (id: string) => api.get<Item[]>(`/tags/${encodeURIComponent(id)}/items`),
     },

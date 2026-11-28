@@ -39,6 +39,7 @@ const item = (over: Partial<Item> = {}): Item => ({
 const tag = (name: string): Tag => ({
   id: `t-${name}`,
   name,
+  team_id: null,
   color: null,
   created_at: at,
   updated_at: at,

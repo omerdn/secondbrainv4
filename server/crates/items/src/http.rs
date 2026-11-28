@@ -13,13 +13,14 @@
 //! | POST   | `/items/{id}/archive`, `/items/{id}/unarchive` | 200 [`Item`]; MANAGE |
 //! | DELETE | `/items/{id}` | 200 [`Item`] moved to the trash; owner only (V6) |
 //! | POST   | `/items/{id}/restore` | 200 [`Item`]; owner only |
-//! | GET    | `/items/{id}/tags` | 200 `Tag[]`: the caller's own tags on the item (E2) |
-//! | PUT    | `/items/{id}/tags/{tag_id}` | 204; attach the caller's tag; VIEW |
-//! | DELETE | `/items/{id}/tags/{tag_id}` | 204; detach the caller's tag; VIEW |
+//! | GET    | `/items/{id}/tags` | 200 `Tag[]`: the caller's own and team tags on the item (E2, E3) |
+//! | PUT    | `/items/{id}/tags/{tag_id}` | 204; attach a visible tag; VIEW, EDIT for a team tag |
+//! | DELETE | `/items/{id}/tags/{tag_id}` | 204; detach a visible tag; as PUT |
 //! | POST   | `/tags` | 201 [`Tag`]; body [`CreateTagRequest`]; 409 for a taken name |
-//! | GET    | `/tags` | 200 `Tag[]`: the tags the caller can see (E4) |
-//! | PATCH  | `/tags/{id}` | 200 [`Tag`]; body [`UpdateTagRequest`]; 404 if not theirs |
-//! | DELETE | `/tags/{id}` | 204; 404 if not theirs |
+//! | POST   | `/teams/{team_id}/tags` | 201 [`Tag`]; body [`CreateTagRequest`]; 404 outside the team, 403 without "manage tags" (E3) |
+//! | GET    | `/tags` | 200 `Tag[]`: own and team tags the caller can see (E4) |
+//! | PATCH  | `/tags/{id}` | 200 [`Tag`]; body [`UpdateTagRequest`]; 404 if not visible, 403 for a team tag without "manage tags" |
+//! | DELETE | `/tags/{id}` | 204; as PATCH |
 //! | GET    | `/tags/{id}/items?state=…` | 200 `Item[]`: accessible items with the tag (E4) |
 //! | GET    | `/items/{id}/links` | 200 `ItemLink[]`; hidden ends are left out (V9) |
 //! | PUT    | `/items/{id}/links/{target_id}` | 200 [`ItemLink`]; LINK + target VIEW (V4) |
@@ -100,6 +101,7 @@ pub fn router(state: ItemsHttpState) -> Router {
             put(attach_tag).delete(detach_tag),
         )
         .route("/tags", post(create_tag).get(list_tags))
+        .route("/teams/{team_id}/tags", post(create_team_tag))
         .route("/tags/{id}", patch(update_tag).delete(delete_tag))
         .route("/tags/{id}/items", get(items_by_tag))
         .route("/items/{id}/links", get(item_links))
@@ -445,6 +447,20 @@ async fn create_tag(
 ) -> Result<(StatusCode, Json<Tag>), AppError> {
     let new = request.validate()?;
     let tag = state.items.create_tag(auth.user_id.as_uuid(), new).await?;
+    Ok((StatusCode::CREATED, Json(tag)))
+}
+
+async fn create_team_tag(
+    State(state): State<ItemsHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(team): Path<Uuid>,
+    Json(request): Json<CreateTagRequest>,
+) -> Result<(StatusCode, Json<Tag>), AppError> {
+    let new = request.validate()?;
+    let tag = state
+        .items
+        .create_team_tag(auth.user_id.as_uuid(), team, new)
+        .await?;
     Ok((StatusCode::CREATED, Json(tag)))
 }
 

@@ -7,6 +7,7 @@ import { View } from "react-native";
 
 import { Screen } from "@/features/shell";
 import { ItemCard } from "@/lib/items";
+import { useTagColors } from "@/lib/tags";
 
 function TagItems({ tagId }: { tagId: string }) {
   const { t } = useTranslation();
@@ -60,6 +61,7 @@ export function TagsScreen() {
   const router = useRouter();
   const { tag: selectedParam } = useLocalSearchParams<{ tag?: string }>();
   const tags = useQuery({ queryKey: ["tags"], queryFn: api.tags.list });
+  const colorOf = useTagColors(tags.data);
   const selected = tags.data?.find((tag) => tag.id === selectedParam);
 
   return (
@@ -85,6 +87,7 @@ export function TagsScreen() {
               <TagChip
                 key={tag.id}
                 label={tag.name}
+                teamColor={colorOf(tag)}
                 selected={tag.id === selected?.id}
                 onPress={() => {
                   router.setParams({ tag: tag.id === selected?.id ? "" : tag.id });

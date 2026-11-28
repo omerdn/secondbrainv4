@@ -74,13 +74,20 @@ pub enum TeamAction {
     CreateItems,
     /// Make someone else an assignee or watcher.
     Assign,
+    /// Create, rename, recolor and delete the team's tags (E3, T5.1.4).
+    ManageTags,
 }
 
 /// Result of a [`TeamDirectory`] check.
 pub type TeamFuture<'a> = Pin<Box<dyn Future<Output = Result<bool, AppError>> + Send + 'a>>;
 
+/// Result of [`TeamDirectory::teams_of`].
+pub type TeamsFuture<'a> = Pin<Box<dyn Future<Output = Result<Vec<Uuid>, AppError>> + Send + 'a>>;
+
 /// What `items` needs to know about teams; implemented by the `teams` module.
 pub trait TeamDirectory: Send + Sync {
+    /// The teams `user` is an active member of.
+    fn teams_of(&self, user: Uuid) -> TeamsFuture<'_>;
     /// Whether `user` is an active member of `team`.
     fn is_member(&self, team: Uuid, user: Uuid) -> TeamFuture<'_>;
     /// Whether `actor` is an active member whose role allows `action` in `team`.
@@ -92,6 +99,9 @@ pub trait TeamDirectory: Send + Sync {
 pub struct NoTeams;
 
 impl TeamDirectory for NoTeams {
+    fn teams_of(&self, _user: Uuid) -> TeamsFuture<'_> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
     fn is_member(&self, _team: Uuid, _user: Uuid) -> TeamFuture<'_> {
         Box::pin(async { Ok(false) })
     }

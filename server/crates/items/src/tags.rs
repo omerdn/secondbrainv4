@@ -1,6 +1,14 @@
-//! Personal tags (PRD E1, E2, E4, T1.2.2). A tag is visible to its owner only, even on a shared
-//! item, so every query is scoped to the owner. Access to the item itself goes through
-//! `access::PermissionService`. Team tags arrive with F5.
+//! Personal and team tags (PRD E1–E4, T1.2.2, T5.1.4).
+//!
+//! - A personal tag is visible to its owner only, even on a shared item (E2).
+//! - A team tag is visible to the team's active members (E3); its role must have "manage tags"
+//!   to create, rename, recolor or delete it (TK3). Clients show it in the team's color; the tag
+//!   carries `team_id` and the team list carries the color, so `items` never reads `teams`.
+//! - Attaching a personal tag changes nothing for others, so VIEW on the item is enough. A team
+//!   tag is seen by every teammate who sees the item, so attaching or detaching it needs EDIT.
+//!
+//! Every query is scoped to the tags the caller can see; access to items goes through
+//! `access::PermissionService`.
 
 use access::Perms;
 use chrono::{DateTime, Utc};
@@ -13,19 +21,27 @@ use uuid::Uuid;
 
 use crate::model::{Item, ListState};
 use crate::service::ItemsService;
+use crate::team_items::TeamAction;
 
 pub const TAG_NAME_MAX_CHARS: usize = 50;
 
 /// Most tags one list returns.
 pub const TAG_LIST_LIMIT: i64 = 500;
 
-const TAG_COLUMNS: &str = "id, name, color, created_at, updated_at";
+const TAG_COLUMNS: &str = "id, owner_team_id AS team_id, name, color, created_at, updated_at";
+
+/// The condition "tag `t` is visible to `$user` whose teams are `$teams`" (E2, E3).
+pub(crate) fn visible_tag_sql(user: &str, teams: &str) -> String {
+    format!("(t.owner_user_id = {user} OR t.owner_team_id = ANY({teams}))")
+}
 
 /// A tag as the API returns it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, FromRow, TS)]
 #[ts(export)]
 pub struct Tag {
     pub id: Uuid,
+    /// The owning team for a team tag, shown in the team's color (E3); `null` for a personal tag.
+    pub team_id: Option<Uuid>,
     pub name: String,
     /// `#rrggbb`, lowercase.
     pub color: Option<String>,
@@ -149,22 +165,60 @@ fn name_conflict(err: sqlx::Error) -> AppError {
     }
 }
 
+/// Who owns a tag, as far as the caller may know.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TagOwner {
+    Personal,
+    Team(Uuid),
+}
+
 impl ItemsService {
+    /// The teams `actor` is an active member of; their tags are visible to them (E3).
+    pub(crate) async fn tag_teams(&self, actor: Uuid) -> Result<Vec<Uuid>, AppError> {
+        self.teams.teams_of(actor).await
+    }
+
     /// Creates a personal tag owned by `actor`.
     ///
     /// # Errors
     /// [`AppError::Conflict`] if `actor` already has a tag with this name, or
     /// [`AppError::Internal`].
     pub async fn create_tag(&self, actor: Uuid, new: NewTag) -> Result<Tag, AppError> {
+        self.insert_tag(Some(actor), None, new).await
+    }
+
+    /// Creates a tag owned by `team` (E1, E3); the actor's role needs "manage tags" (TK3).
+    ///
+    /// # Errors
+    /// [`AppError::NotFound`] for a team the actor is not an active member of,
+    /// [`AppError::Forbidden`] without the right, [`AppError::Conflict`] if the team already
+    /// has a tag with this name, or [`AppError::Internal`].
+    pub async fn create_team_tag(
+        &self,
+        actor: Uuid,
+        team: Uuid,
+        new: NewTag,
+    ) -> Result<Tag, AppError> {
+        self.require_team_tag_rights(actor, team).await?;
+        self.insert_tag(None, Some(team), new).await
+    }
+
+    async fn insert_tag(
+        &self,
+        user: Option<Uuid>,
+        team: Option<Uuid>,
+        new: NewTag,
+    ) -> Result<Tag, AppError> {
         let now = self.clock.now();
         let id = kernel::Id::<()>::new_at(now).as_uuid();
         sqlx::query_as::<_, Tag>(sqlx::AssertSqlSafe(format!(
-            "INSERT INTO tags (id, owner_user_id, name, color, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $5)
+            "INSERT INTO tags (id, owner_user_id, owner_team_id, name, color, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $6)
              RETURNING {TAG_COLUMNS}"
         )))
         .bind(id)
-        .bind(actor)
+        .bind(user)
+        .bind(team)
         .bind(&new.name)
         .bind(&new.color)
         .bind(now)
@@ -173,46 +227,51 @@ impl ItemsService {
         .map_err(name_conflict)
     }
 
-    /// The tags `actor` can see, by name (E4).
+    /// The tags `actor` can see: their own and their teams' (E4), by name. One list; clients
+    /// tell team tags apart by style, not by a separate list (E3).
     ///
     /// # Errors
     /// [`AppError::Internal`] on database errors.
     pub async fn list_tags(&self, actor: Uuid) -> Result<Vec<Tag>, AppError> {
+        let teams = self.tag_teams(actor).await?;
+        let visible = visible_tag_sql("$1", "$3");
         sqlx::query_as::<_, Tag>(sqlx::AssertSqlSafe(format!(
-            "SELECT {TAG_COLUMNS} FROM tags WHERE owner_user_id = $1
+            "SELECT {TAG_COLUMNS} FROM tags t WHERE {visible}
              ORDER BY lower(name), id LIMIT $2"
         )))
         .bind(actor)
         .bind(TAG_LIST_LIMIT)
+        .bind(&teams)
         .fetch_all(&self.pool)
         .await
         .map_err(internal)
     }
 
-    /// Renames or recolors one of `actor`'s tags.
+    /// Renames or recolors a tag: one of `actor`'s own, or a team tag their role manages.
     ///
     /// # Errors
-    /// [`AppError::NotFound`] if it is not theirs (E2), [`AppError::Conflict`] for a taken name,
-    /// or [`AppError::Internal`].
+    /// [`AppError::NotFound`] for a tag they cannot see (E2, E3), [`AppError::Forbidden`] for a
+    /// team tag without "manage tags", [`AppError::Conflict`] for a taken name, or
+    /// [`AppError::Internal`].
     pub async fn update_tag(
         &self,
         actor: Uuid,
         id: Uuid,
         changes: TagChanges,
     ) -> Result<Tag, AppError> {
+        self.require_tag_management(actor, id).await?;
         let (set_color, color) = match changes.color {
             Some(c) => (true, c),
             None => (false, None),
         };
         sqlx::query_as::<_, Tag>(sqlx::AssertSqlSafe(format!(
-            "UPDATE tags SET name = COALESCE($3, name),
-                             color = CASE WHEN $4 THEN $5 ELSE color END,
-                             updated_at = $6
-             WHERE id = $1 AND owner_user_id = $2
+            "UPDATE tags SET name = COALESCE($2, name),
+                             color = CASE WHEN $3 THEN $4 ELSE color END,
+                             updated_at = $5
+             WHERE id = $1
              RETURNING {TAG_COLUMNS}"
         )))
         .bind(id)
-        .bind(actor)
         .bind(&changes.name)
         .bind(set_color)
         .bind(&color)
@@ -223,14 +282,15 @@ impl ItemsService {
         .ok_or(AppError::NotFound)
     }
 
-    /// Deletes one of `actor`'s tags and detaches it from every item.
+    /// Deletes a tag (as [`Self::update_tag`] allows) and detaches it from every item.
     ///
     /// # Errors
-    /// [`AppError::NotFound`] if it is not theirs (E2), or [`AppError::Internal`].
+    /// [`AppError::NotFound`], [`AppError::Forbidden`] as for [`Self::update_tag`], or
+    /// [`AppError::Internal`].
     pub async fn delete_tag(&self, actor: Uuid, id: Uuid) -> Result<(), AppError> {
-        let deleted = sqlx::query("DELETE FROM tags WHERE id = $1 AND owner_user_id = $2")
+        self.require_tag_management(actor, id).await?;
+        let deleted = sqlx::query("DELETE FROM tags WHERE id = $1")
             .bind(id)
-            .bind(actor)
             .execute(&self.pool)
             .await
             .map_err(internal)?
@@ -241,39 +301,43 @@ impl ItemsService {
         Ok(())
     }
 
-    /// `actor`'s own tags on an item they can view; other members' tags never appear (E2).
+    /// The tags `actor` can see on an item they can view: their own and their teams'. Other
+    /// members' personal tags never appear (E2).
     ///
     /// # Errors
     /// [`AppError::NotFound`] if the item is not visible (V9), or [`AppError::Internal`].
     pub async fn item_tags(&self, actor: Uuid, item_id: Uuid) -> Result<Vec<Tag>, AppError> {
         self.require(actor, item_id, Perms::VIEW).await?;
-        sqlx::query_as::<_, Tag>(
-            "SELECT t.id, t.name, t.color, t.created_at, t.updated_at
+        let teams = self.tag_teams(actor).await?;
+        let visible = visible_tag_sql("$2", "$3");
+        sqlx::query_as::<_, Tag>(sqlx::AssertSqlSafe(format!(
+            "SELECT t.id, t.owner_team_id AS team_id, t.name, t.color, t.created_at, t.updated_at
              FROM item_tags it JOIN tags t ON t.id = it.tag_id
-             WHERE it.item_id = $1 AND t.owner_user_id = $2
-             ORDER BY lower(t.name), t.id",
-        )
+             WHERE it.item_id = $1 AND {visible}
+             ORDER BY lower(t.name), t.id"
+        )))
         .bind(item_id)
         .bind(actor)
+        .bind(&teams)
         .fetch_all(&self.pool)
         .await
         .map_err(internal)
     }
 
-    /// Attaches one of `actor`'s tags to an item they can view. A personal tag does not change
-    /// the item for anyone else, so VIEW is enough. Attaching twice is a no-op.
+    /// Attaches a tag `actor` can see to an item: VIEW for a personal tag, EDIT for a team tag.
+    /// Attaching twice is a no-op.
     ///
     /// # Errors
-    /// [`AppError::NotFound`] for a tag or item that is not visible, [`AppError::Conflict`] for
-    /// an item in the trash, or [`AppError::Internal`].
+    /// [`AppError::NotFound`] for a tag or item that is not visible, [`AppError::Forbidden`]
+    /// for a team tag without EDIT, [`AppError::Conflict`] for an item in the trash, or
+    /// [`AppError::Internal`].
     pub async fn attach_tag(
         &self,
         actor: Uuid,
         item_id: Uuid,
         tag_id: Uuid,
     ) -> Result<(), AppError> {
-        self.require_own_tag(actor, tag_id).await?;
-        self.require(actor, item_id, Perms::VIEW).await?;
+        self.require_tag_on_item(actor, item_id, tag_id).await?;
         let item = self.load(item_id).await?.ok_or(AppError::NotFound)?;
         if item.deleted_at.is_some() {
             return Err(AppError::Conflict(
@@ -295,18 +359,17 @@ impl ItemsService {
         Ok(())
     }
 
-    /// Detaches one of `actor`'s tags from an item. Detaching an absent tag is a no-op.
+    /// Detaches a tag as [`Self::attach_tag`] allows. Detaching an absent tag is a no-op.
     ///
     /// # Errors
-    /// [`AppError::NotFound`] for a tag or item that is not visible, or [`AppError::Internal`].
+    /// As for [`Self::attach_tag`], without the trash check.
     pub async fn detach_tag(
         &self,
         actor: Uuid,
         item_id: Uuid,
         tag_id: Uuid,
     ) -> Result<(), AppError> {
-        self.require_own_tag(actor, tag_id).await?;
-        self.require(actor, item_id, Perms::VIEW).await?;
+        self.require_tag_on_item(actor, item_id, tag_id).await?;
         sqlx::query("DELETE FROM item_tags WHERE item_id = $1 AND tag_id = $2")
             .bind(item_id)
             .bind(tag_id)
@@ -316,30 +379,66 @@ impl ItemsService {
         Ok(())
     }
 
-    /// Items carrying one of `actor`'s tags, limited to those `actor` can still access (E4).
+    /// Items carrying a tag `actor` can see, limited to those `actor` can still access (E4).
     ///
     /// # Errors
-    /// [`AppError::NotFound`] if the tag is not theirs (E2), or [`AppError::Internal`].
+    /// [`AppError::NotFound`] if the tag is not visible (E2, E3), or [`AppError::Internal`].
     pub async fn items_by_tag(
         &self,
         actor: Uuid,
         tag_id: Uuid,
         state: ListState,
     ) -> Result<Vec<Item>, AppError> {
-        self.require_own_tag(actor, tag_id).await?;
+        self.visible_tag(actor, tag_id).await?;
         self.list_where(actor, state, Some(tag_id)).await
     }
 
-    async fn require_own_tag(&self, actor: Uuid, tag_id: Uuid) -> Result<(), AppError> {
-        let own: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM tags WHERE id = $1 AND owner_user_id = $2)",
-        )
-        .bind(tag_id)
-        .bind(actor)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(internal)?;
-        if own { Ok(()) } else { Err(AppError::NotFound) }
+    /// Who owns `tag_id`, if `actor` can see it; otherwise [`AppError::NotFound`].
+    async fn visible_tag(&self, actor: Uuid, tag_id: Uuid) -> Result<TagOwner, AppError> {
+        let owner: Option<(Option<Uuid>, Option<Uuid>)> =
+            sqlx::query_as("SELECT owner_user_id, owner_team_id FROM tags WHERE id = $1")
+                .bind(tag_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(internal)?;
+        match owner {
+            Some((Some(user), _)) if user == actor => Ok(TagOwner::Personal),
+            Some((None, Some(team))) if self.teams.is_member(team, actor).await? => {
+                Ok(TagOwner::Team(team))
+            }
+            _ => Err(AppError::NotFound),
+        }
+    }
+
+    async fn require_team_tag_rights(&self, actor: Uuid, team: Uuid) -> Result<(), AppError> {
+        if !self.teams.is_member(team, actor).await? {
+            return Err(AppError::NotFound);
+        }
+        if !self.teams.may(actor, team, TeamAction::ManageTags).await? {
+            return Err(AppError::Forbidden);
+        }
+        Ok(())
+    }
+
+    async fn require_tag_management(&self, actor: Uuid, tag_id: Uuid) -> Result<(), AppError> {
+        match self.visible_tag(actor, tag_id).await? {
+            TagOwner::Personal => Ok(()),
+            TagOwner::Team(team) => self.require_team_tag_rights(actor, team).await,
+        }
+    }
+
+    async fn require_tag_on_item(
+        &self,
+        actor: Uuid,
+        item_id: Uuid,
+        tag_id: Uuid,
+    ) -> Result<(), AppError> {
+        let owner = self.visible_tag(actor, tag_id).await?;
+        self.require(actor, item_id, Perms::VIEW).await?;
+        if matches!(owner, TagOwner::Team(_)) {
+            self.require(actor, item_id, Perms::EDIT).await?;
+        }
+        Ok(())
     }
 }
 

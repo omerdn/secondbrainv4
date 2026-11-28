@@ -10,6 +10,7 @@ import { View } from "react-native";
 
 import { Screen } from "@/features/shell";
 import { TagPicker } from "@/features/tags";
+import { useTagColors } from "@/lib/tags";
 
 import {
   datesPatch,
@@ -36,6 +37,7 @@ function TaskEditor({ task }: { task: Task }) {
     queryFn: () => api.items.tags(id),
     initialData: task.tags,
   });
+  const colorOf = useTagColors(tags.data);
   const save = useIdempotentMutation<void, TaskDraft>(
     async (next, idempotencyKey) => {
       const fields = itemPatch(task, next);
@@ -100,7 +102,7 @@ function TaskEditor({ task }: { task: Task }) {
         ) : (
           <View className="flex-row flex-wrap gap-2">
             {tags.data.map((tag) => (
-              <TagChip key={tag.id} label={tag.name} />
+              <TagChip key={tag.id} label={tag.name} teamColor={colorOf(tag)} />
             ))}
           </View>
         )}

@@ -6,6 +6,8 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { View } from "react-native";
 
+import { useTagColors } from "@/lib/tags";
+
 import {
   FILTER_DATE_FIELDS,
   FILTER_KINDS,
@@ -42,6 +44,7 @@ export function FilterBar({ filter, tags, onChange, showKinds = true }: FilterBa
   const api = useApi();
   // F3: only friends can be chosen. Shares its cache with the friends screen.
   const friends = useQuery({ queryKey: ["friends", "list"], queryFn: () => api.friends.list() });
+  const colorOf = useTagColors(tags);
   const state = filter.state ?? "active";
   const date = filter.date;
   return (
@@ -118,6 +121,7 @@ export function FilterBar({ filter, tags, onChange, showKinds = true }: FilterBa
             <TagChip
               key={tag.id}
               label={tag.name}
+              teamColor={colorOf(tag)}
               selected={filter.tag_ids?.includes(tag.id) ?? false}
               onPress={() => {
                 onChange({ ...filter, tag_ids: toggled(filter.tag_ids, tag.id) });

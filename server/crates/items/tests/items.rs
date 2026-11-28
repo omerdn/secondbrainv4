@@ -55,7 +55,7 @@ impl items::SharingPolicy for FakeSharing {
 
 /// Stand-in for the teams module (T5.1.3): members and whether their role may create items and
 /// assign others.
-/// (team, user) → (may create items, may assign others).
+/// (team, user) → (may create items, may assign others and manage tags).
 type TeamRights = std::collections::HashMap<(Uuid, Uuid), (bool, bool)>;
 
 #[derive(Clone, Default)]
@@ -71,6 +71,18 @@ impl FakeTeams {
 }
 
 impl items::TeamDirectory for FakeTeams {
+    fn teams_of(&self, user: Uuid) -> items::TeamsFuture<'_> {
+        let teams = self
+            .0
+            .lock()
+            .unwrap()
+            .keys()
+            .filter(|(_, u)| *u == user)
+            .map(|(t, _)| *t)
+            .collect();
+        Box::pin(async move { Ok(teams) })
+    }
+
     fn is_member(&self, team: Uuid, user: Uuid) -> items::TeamFuture<'_> {
         let member = self.0.lock().unwrap().contains_key(&(team, user));
         Box::pin(async move { Ok(member) })
@@ -80,7 +92,7 @@ impl items::TeamDirectory for FakeTeams {
         let rights = self.0.lock().unwrap().get(&(team, actor)).copied();
         let allowed = rights.is_some_and(|(create, assign)| match action {
             items::TeamAction::CreateItems => create,
-            items::TeamAction::Assign => assign,
+            items::TeamAction::Assign | items::TeamAction::ManageTags => assign,
         });
         Box::pin(async move { Ok(allowed) })
     }
@@ -2375,4 +2387,252 @@ async fn v12_team_items_over_http_leak_nothing() {
         .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(personal.team_visibility, None);
+}
+
+// --- team tags (T5.1.4, E3) ---------------------------------------------------------------------
+
+#[tokio::test]
+async fn e3_team_tags_are_visible_to_team_members_only() {
+    let w = World::new().await;
+    let (lead, member, outsider) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
+    let team = Uuid::now_v7();
+    w.teams.join(team, lead, true, true);
+    w.teams.join(team, member, true, false);
+    w.grant(RelationTuple::new(team, R::TeamAdmin, lead)).await;
+    w.grant(RelationTuple::new(team, R::TeamMember, member))
+        .await;
+
+    // Only roles with "manage tags" create them; outsiders cannot tell the team exists.
+    assert!(matches!(
+        w.items.create_team_tag(member, team, tag("Sprint")).await,
+        Err(AppError::Forbidden)
+    ));
+    for team_id in [team, Uuid::now_v7()] {
+        assert!(matches!(
+            w.items
+                .create_team_tag(outsider, team_id, tag("Sprint"))
+                .await,
+            Err(AppError::NotFound)
+        ));
+    }
+    let sprint = w
+        .items
+        .create_team_tag(lead, team, tag("Sprint"))
+        .await
+        .unwrap();
+    assert_eq!(sprint.team_id, Some(team));
+    // The same name is fine for a person and for the team, but not twice in the team.
+    let personal = w.items.create_tag(member, tag("Sprint")).await.unwrap();
+    assert_eq!(personal.team_id, None);
+    assert!(matches!(
+        w.items.create_team_tag(lead, team, tag("sprint")).await,
+        Err(AppError::Conflict(_))
+    ));
+
+    // E4: one list holds personal and team tags; outsiders see none of the team's.
+    let tag_ids = |tags: Vec<items::Tag>| tags.into_iter().map(|t| t.id).collect::<HashSet<_>>();
+    assert_eq!(
+        tag_ids(w.items.list_tags(member).await.unwrap()),
+        HashSet::from([sprint.id, personal.id])
+    );
+    assert!(w.items.list_tags(outsider).await.unwrap().is_empty());
+
+    // A team item tagged by a member with EDIT; every teammate who sees it sees the tag.
+    let new = items::CreateTeamItemRequest {
+        kind: "task".into(),
+        title: "Rapor".into(),
+        description: None,
+        visibility: None,
+        assignees: None,
+        watchers: None,
+    }
+    .validate()
+    .unwrap();
+    let item = w.items.create_team_item(lead, team, new).await.unwrap();
+    w.items
+        .attach_tag(member, item.id, sprint.id)
+        .await
+        .unwrap();
+    w.items
+        .attach_tag(member, item.id, personal.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        w.items.item_tags(lead, item.id).await.unwrap(),
+        vec![sprint.clone()]
+    );
+    assert_eq!(
+        tag_ids(w.items.item_tags(member, item.id).await.unwrap()),
+        HashSet::from([sprint.id, personal.id])
+    );
+    let tagged = w
+        .items
+        .items_by_tag(lead, sprint.id, ListState::Active)
+        .await
+        .unwrap();
+    assert_eq!(ids(&tagged), vec![item.id]);
+
+    // An outsider who sees the item (a watcher) still does not see the team tag, and the tag
+    // behaves as if it did not exist for them.
+    w.grant(RelationTuple::new(item.id, R::Watcher, outsider))
+        .await;
+    assert!(
+        w.items
+            .item_tags(outsider, item.id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let changes = items::TagChanges {
+        name: Some("X".into()),
+        color: None,
+    };
+    for result in [
+        w.items.attach_tag(outsider, item.id, sprint.id).await,
+        w.items.detach_tag(outsider, item.id, sprint.id).await,
+        w.items.delete_tag(outsider, sprint.id).await,
+        w.items
+            .update_tag(outsider, sprint.id, changes.clone())
+            .await
+            .map(|_| ()),
+        w.items
+            .items_by_tag(outsider, sprint.id, ListState::Active)
+            .await
+            .map(|_| ()),
+    ] {
+        assert!(matches!(result, Err(AppError::NotFound)));
+    }
+
+    // Members without "manage tags" may use the tag but not change it.
+    assert!(matches!(
+        w.items.update_tag(member, sprint.id, changes.clone()).await,
+        Err(AppError::Forbidden)
+    ));
+    assert!(matches!(
+        w.items.delete_tag(member, sprint.id).await,
+        Err(AppError::Forbidden)
+    ));
+    let renamed = w.items.update_tag(lead, sprint.id, changes).await.unwrap();
+    assert_eq!(renamed.name, "X");
+    w.items.delete_tag(lead, sprint.id).await.unwrap();
+    assert_eq!(
+        tag_ids(w.items.item_tags(member, item.id).await.unwrap()),
+        HashSet::from([personal.id])
+    );
+}
+
+/// A team tag changes what teammates see on an item, so it needs EDIT there; a viewer may only
+/// use their personal tags.
+#[tokio::test]
+async fn e3_attaching_a_team_tag_needs_edit() {
+    let w = World::new().await;
+    let (lead, member) = (Uuid::now_v7(), Uuid::now_v7());
+    let team = Uuid::now_v7();
+    w.teams.join(team, lead, true, true);
+    w.teams.join(team, member, true, false);
+    let sprint = w
+        .items
+        .create_team_tag(lead, team, tag("Sprint"))
+        .await
+        .unwrap();
+    let item = w.items.create(lead, World::task("Kişisel")).await.unwrap();
+    w.grant(RelationTuple::new(item.id, R::Watcher, member))
+        .await;
+    assert!(matches!(
+        w.items.attach_tag(member, item.id, sprint.id).await,
+        Err(AppError::Forbidden)
+    ));
+    let mine = w.items.create_tag(member, tag("Benim")).await.unwrap();
+    w.items.attach_tag(member, item.id, mine.id).await.unwrap();
+    w.items.attach_tag(lead, item.id, sprint.id).await.unwrap();
+    assert!(matches!(
+        w.items.detach_tag(member, item.id, sprint.id).await,
+        Err(AppError::Forbidden)
+    ));
+    // Team tags filter and are searched for members (E3, AR1).
+    let filter = items::ItemFilter {
+        tag_ids: Some(vec![sprint.id]),
+        ..items::ItemFilter::default()
+    };
+    assert_eq!(filtered(&w, member, filter).await, HashSet::from([item.id]));
+}
+
+#[tokio::test]
+async fn e3_team_tag_endpoints() {
+    let w = World::new().await;
+    let (lead, lead_token) = w.user("lead@example.com").await;
+    let (member, member_token) = w.user("member@example.com").await;
+    let (_, outsider_token) = w.user("outsider@example.com").await;
+    let team = Uuid::now_v7();
+    w.teams.join(team, lead, true, true);
+    w.teams.join(team, member, true, false);
+    let body = json!({ "name": "Sprint", "color": "#22C55E" });
+
+    let real = w
+        .call(
+            Method::POST,
+            &format!("/teams/{team}/tags"),
+            &outsider_token,
+            Some(body.clone()),
+        )
+        .await;
+    let fake = w
+        .call(
+            Method::POST,
+            &format!("/teams/{}/tags", Uuid::now_v7()),
+            &outsider_token,
+            Some(body.clone()),
+        )
+        .await;
+    assert_eq!(real.status(), StatusCode::NOT_FOUND);
+    assert_eq!(json_body(real).await, json_body(fake).await);
+    let response = w
+        .call(
+            Method::POST,
+            &format!("/teams/{team}/tags"),
+            &member_token,
+            Some(body.clone()),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let response = w
+        .call(
+            Method::POST,
+            &format!("/teams/{team}/tags"),
+            &lead_token,
+            Some(body),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let created = json_body(response).await;
+    assert_eq!(created["team_id"], json!(team));
+    assert_eq!(created["color"], "#22c55e");
+    let id = created["id"].as_str().unwrap();
+
+    let listed = json_body(w.call(Method::GET, "/tags", &member_token, None).await).await;
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    assert_eq!(listed[0]["id"], id);
+    let listed = json_body(w.call(Method::GET, "/tags", &outsider_token, None).await).await;
+    assert!(listed.as_array().unwrap().is_empty());
+
+    // Outsiders get the same 404 for the team's tag as for a missing one.
+    let hidden = w
+        .call(
+            Method::PATCH,
+            &format!("/tags/{id}"),
+            &outsider_token,
+            Some(json!({ "name": "X" })),
+        )
+        .await;
+    let absent = w
+        .call(
+            Method::PATCH,
+            &format!("/tags/{}", Uuid::now_v7()),
+            &outsider_token,
+            Some(json!({ "name": "X" })),
+        )
+        .await;
+    assert_eq!(hidden.status(), StatusCode::NOT_FOUND);
+    assert_eq!(json_body(hidden).await, json_body(absent).await);
 }
