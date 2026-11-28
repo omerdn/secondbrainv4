@@ -6,6 +6,7 @@
 //! |---|---|---|
 //! | GET  | `/notebooks` | 200 `NotebookSummary[]`; creates the default notebook once |
 //! | POST | `/notebooks` | 201 [`Notebook`] (Y1) |
+//! | POST | `/teams/{team_id}/notebooks` | 201 [`Notebook`]; body [`CreateTeamNotebookRequest`]; 404 outside the team, 403 without "create notebooks" (Y2) |
 //! | GET  | `/notebooks/{id}` | 200 [`Notebook`]; VIEW; visible pages only |
 //! | POST | `/notebooks/{id}/pages` | 201 [`Page`]; EDIT; owned by the notebook's owner (Y5) |
 //! | GET  | `/pages/{id}` | 200 [`Page`]; VIEW |
@@ -29,8 +30,8 @@ use uuid::Uuid;
 use crate::collab::Collab;
 use crate::embeds::{self, FetchPolicy, Preview, PreviewError, PreviewQuery};
 use crate::model::{
-    CreateNotebookRequest, CreatePageRequest, Notebook, NotebookSummary, Page, PageVersion,
-    PageVersionContent, VersionsQuery, default_title,
+    CreateNotebookRequest, CreatePageRequest, CreateTeamNotebookRequest, Notebook, NotebookSummary,
+    Page, PageVersion, PageVersionContent, VersionsQuery, default_title,
 };
 use crate::process::{ItemStatusLine, ProcessPage, ProcessPages};
 use crate::service::NotebooksService;
@@ -55,6 +56,7 @@ impl FromRef<NotebooksHttpState> for IdentityService {
 pub fn router(state: NotebooksHttpState) -> Router {
     Router::new()
         .route("/notebooks", get(list_notebooks).post(create_notebook))
+        .route("/teams/{team_id}/notebooks", post(create_team_notebook))
         .route("/notebooks/{id}", get(read_notebook))
         .route("/notebooks/{id}/pages", post(create_page))
         .route("/pages/{id}", get(read_page))
@@ -94,6 +96,19 @@ async fn create_notebook(
     let notebook = state
         .notebooks
         .create(auth.user_id.as_uuid(), request)
+        .await?;
+    Ok((StatusCode::CREATED, Json(notebook)))
+}
+
+async fn create_team_notebook(
+    State(state): State<NotebooksHttpState>,
+    Authenticated(auth): Authenticated,
+    Path(team): Path<Uuid>,
+    Json(request): Json<CreateTeamNotebookRequest>,
+) -> Result<(StatusCode, Json<Notebook>), AppError> {
+    let notebook = state
+        .notebooks
+        .create_for_team(auth.user_id.as_uuid(), team, request)
         .await?;
     Ok((StatusCode::CREATED, Json(notebook)))
 }

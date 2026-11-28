@@ -1,7 +1,7 @@
 //! Visibility rules V1–V12 (PRD §7, ARCHITECTURE §16) as server integration tests against a real
 //! Postgres 17. One module per rule; scenarios whose behaviour does not exist yet are `#[ignore]`d
-//! with the roadmap task that enables them (T1.1.7). Since T3.2.6 only team scenarios (`T5.1.x`)
-//! wait, until E5.1 turns them on.
+//! with the roadmap task that enables them (T1.1.7). Since T5.1.5 every scenario runs; the
+//! checks below keep a newly ignored one tied to a team task.
 //!
 //! Run the pending ones locally with `cargo test -p app --test visibility -- --ignored`.
 //! Requires Docker (or `TEST_DATABASE_URL`).
@@ -23,6 +23,7 @@ mod v09_hidden_links;
 mod v10_access_loss;
 mod v11_access_explanation;
 mod v12_team_visibility_mode;
+mod y2_team_notebooks;
 
 /// Every rule file, keyed by rule id, for the suite's own consistency checks.
 const RULE_FILES: [(&str, &str); 12] = [

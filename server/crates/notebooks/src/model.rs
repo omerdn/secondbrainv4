@@ -16,6 +16,32 @@ pub struct CreateNotebookRequest {
     pub description: Option<String>,
 }
 
+/// Most editors plus viewers a team notebook is created with.
+pub const TEAM_NOTEBOOK_MAX_PEOPLE: usize = 50;
+
+/// `POST /teams/{team_id}/notebooks` body (Y2, T5.1.5): visible to the whole team, or to the
+/// chosen people (`visibility: "assignees"`) and managers and above.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(export)]
+pub struct CreateTeamNotebookRequest {
+    pub title: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub description: Option<String>,
+    /// `all` when absent.
+    #[serde(default)]
+    #[ts(optional)]
+    pub visibility: Option<items::TeamVisibilityMode>,
+    /// Chosen team members who edit its pages.
+    #[serde(default)]
+    #[ts(optional)]
+    pub editors: Option<Vec<Uuid>>,
+    /// Chosen team members who read its pages; an editor listed here stays an editor.
+    #[serde(default)]
+    #[ts(optional)]
+    pub viewers: Option<Vec<Uuid>>,
+}
+
 /// `POST /notebooks/{id}/pages` body. The page belongs to the notebook's owner (Y5).
 #[derive(Debug, Clone, Deserialize, TS)]
 #[ts(export)]

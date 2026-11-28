@@ -274,9 +274,3 @@ pub(crate) fn id() -> Uuid {
 pub(crate) fn t(object: Uuid, relation: Relation, subject: Uuid) -> RelationTuple {
     RelationTuple::new(object, relation, subject)
 }
-
-/// Body of a scenario whose behaviour is not implemented yet. The test is `#[ignore]`d with the
-/// task that implements it; that task replaces this call with the real scenario.
-pub(crate) fn pending() -> ! {
-    panic!("scenario not implemented yet; see the #[ignore] reason for the task that enables it")
-}

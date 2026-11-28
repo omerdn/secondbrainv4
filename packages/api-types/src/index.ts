@@ -38,6 +38,7 @@ export type * from "./generated/CreateSubtaskRequest";
 export type * from "./generated/CreateTagRequest";
 export type * from "./generated/CreateTaskRequest";
 export type * from "./generated/CreateTeamItemRequest";
+export type * from "./generated/CreateTeamNotebookRequest";
 export type * from "./generated/CreateTeamRequest";
 export type * from "./generated/CreateTrackerEntryRequest";
 export type * from "./generated/CreateTrackerRequest";

@@ -91,7 +91,7 @@ impl items::TeamDirectory for FakeTeams {
     fn may(&self, actor: Uuid, team: Uuid, action: items::TeamAction) -> items::TeamFuture<'_> {
         let rights = self.0.lock().unwrap().get(&(team, actor)).copied();
         let allowed = rights.is_some_and(|(create, assign)| match action {
-            items::TeamAction::CreateItems => create,
+            items::TeamAction::CreateItems | items::TeamAction::CreateNotebooks => create,
             items::TeamAction::Assign | items::TeamAction::ManageTags => assign,
         });
         Box::pin(async move { Ok(allowed) })
