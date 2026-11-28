@@ -72,7 +72,10 @@ impl GoalsService {
         }
         .validate()?;
         let mut tx = self.pool.begin().await.map_err(internal)?;
-        let item = self.items.create_in(&mut tx, actor, new_item).await?;
+        let item = self
+            .items
+            .create_placed_in(&mut tx, actor, new_item, request.team)
+            .await?;
         let row = GoalRow {
             item_id: item.id,
             start_date,

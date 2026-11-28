@@ -28,6 +28,7 @@ fn day(d: u32) -> NaiveDate {
 
 fn request(title: &str) -> CreateTaskRequest {
     CreateTaskRequest {
+        team: None,
         title: title.into(),
         description: None,
         start_date: None,
@@ -77,6 +78,7 @@ impl World {
             .create(
                 self.owner,
                 CreateTaskRequest {
+                    team: None,
                     subtasks: Some(list),
                     ..request("Ship")
                 },
@@ -131,6 +133,7 @@ async fn g1_every_field_is_in_the_api() {
         .create(
             w.owner,
             CreateTaskRequest {
+                team: None,
                 description: Some("Details".into()),
                 start_date: Some(day(1)),
                 due_date: Some(day(9)),
@@ -192,6 +195,7 @@ async fn g2_a_task_without_subtasks_gets_one_from_its_title() {
     assert_eq!(task.subtasks[0].title, "Ship");
 
     let empty = CreateTaskRequest {
+        team: None,
         subtasks: Some(vec![]),
         ..request("Plan")
     };
@@ -536,6 +540,7 @@ async fn a_task_in_the_trash_cannot_change() {
 async fn invalid_requests_are_refused() {
     let w = World::new().await;
     let reversed = CreateTaskRequest {
+        team: None,
         start_date: Some(day(9)),
         due_date: Some(day(1)),
         ..request("Ship")
@@ -545,6 +550,7 @@ async fn invalid_requests_are_refused() {
         Err(AppError::Validation(_))
     ));
     let blank = CreateTaskRequest {
+        team: None,
         subtasks: Some(vec![subtask("  ")]),
         ..request("Ship")
     };
@@ -553,6 +559,7 @@ async fn invalid_requests_are_refused() {
         Err(AppError::Validation(_))
     ));
     let too_many = CreateTaskRequest {
+        team: None,
         subtasks: Some(vec![subtask("x"); tasks::SUBTASK_LIMIT + 1]),
         ..request("Ship")
     };
@@ -570,6 +577,7 @@ async fn g3_the_provider_reads_done_over_total_and_the_task_dates() {
         .create(
             w.owner,
             CreateTaskRequest {
+                team: None,
                 start_date: Some(day(1)),
                 due_date: Some(day(10)),
                 subtasks: Some(vec![subtask("a"), subtask("b"), subtask("c"), subtask("d")]),

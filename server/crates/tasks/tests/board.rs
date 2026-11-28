@@ -23,6 +23,7 @@ fn now() -> DateTime<Utc> {
 
 fn new_task(title: &str) -> CreateTaskRequest {
     CreateTaskRequest {
+        team: None,
         title: title.into(),
         description: None,
         start_date: None,

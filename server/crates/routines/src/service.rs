@@ -129,7 +129,10 @@ impl RoutinesService {
         }
         .validate()?;
         let mut tx = self.pool.begin().await.map_err(internal)?;
-        let item = self.items.create_in(&mut tx, actor, new_item).await?;
+        let item = self
+            .items
+            .create_placed_in(&mut tx, actor, new_item, request.team)
+            .await?;
         let row = RoutineRow {
             item_id: item.id,
             timezone: timezone.name().to_owned(),

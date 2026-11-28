@@ -36,6 +36,46 @@ fn invalid(field: &str, message: &str) -> AppError {
     ValidationErrors::from(FieldError::new(field, FieldErrorCode::Invalid, message)).into()
 }
 
+/// Someone chose a teammate for a team item, at creation or later (TK2, TK4, T5.1.8); published
+/// in that transaction. Choosing oneself publishes nothing. The notification center tells the
+/// person (BL2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeamMemberAdded {
+    pub item_id: Uuid,
+    pub assigned_by: Uuid,
+    pub user_id: Uuid,
+    pub role: InvitationRole,
+}
+
+impl kernel::DomainEvent for TeamMemberAdded {
+    const EVENT_TYPE: &'static str = "item.team_member_added";
+}
+
+/// `PUT /items/{id}/members/{user_id}` body: a team item's member, added directly (TK2).
+#[derive(Debug, Clone, Copy, Deserialize, TS)]
+#[ts(export)]
+pub struct AddTeamMemberRequest {
+    pub role: InvitationRole,
+}
+
+const fn role_of(relation: Relation) -> InvitationRole {
+    match relation {
+        Relation::Watcher => InvitationRole::Watcher,
+        Relation::Editor => InvitationRole::Editor,
+        Relation::Viewer => InvitationRole::Viewer,
+        _ => InvitationRole::Assignee,
+    }
+}
+
+const fn relation_of(role: InvitationRole) -> Relation {
+    match role {
+        InvitationRole::Assignee => Relation::Assignee,
+        InvitationRole::Watcher => Relation::Watcher,
+        InvitationRole::Editor => Relation::Editor,
+        InvitationRole::Viewer => Relation::Viewer,
+    }
+}
+
 /// Who of the team sees a team item (V12).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -121,6 +161,25 @@ pub struct CreateTeamItemRequest {
     #[serde(default)]
     #[ts(optional)]
     pub description: Option<String>,
+    /// `all` when absent (V12).
+    #[serde(default)]
+    #[ts(optional)]
+    pub visibility: Option<TeamVisibilityMode>,
+    /// Team members responsible for the item (TK4); the creator is not added (N3).
+    #[serde(default)]
+    #[ts(optional)]
+    pub assignees: Option<Vec<Uuid>>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub watchers: Option<Vec<Uuid>>,
+}
+
+/// Where a new task, routine, goal or tracker goes when its team is chosen (T5.1.8): the
+/// `team` field of their create requests. Absent, the item is personal.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[ts(export)]
+pub struct TeamPlacementRequest {
+    pub team_id: Uuid,
     /// `all` when absent (V12).
     #[serde(default)]
     #[ts(optional)]
@@ -244,6 +303,36 @@ impl CreateTeamItemRequest {
 }
 
 impl ItemsService {
+    /// Creates `new` inside the caller's transaction: personal without `team`, otherwise owned
+    /// by the chosen team with its visibility and people (V12, TK4). For the modules whose
+    /// detail row must exist together with the item (T5.1.8).
+    ///
+    /// # Errors
+    /// As [`Self::create_in`] or [`Self::create_team_item_in`], and [`AppError::Validation`]
+    /// for a placement the kind does not allow.
+    pub async fn create_placed_in(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        actor: Uuid,
+        new: NewItem,
+        team: Option<TeamPlacementRequest>,
+    ) -> Result<Item, AppError> {
+        let Some(team) = team else {
+            return self.create_in(conn, actor, new).await;
+        };
+        let placed = CreateTeamItemRequest {
+            kind: new.kind,
+            title: new.title,
+            description: new.description,
+            visibility: team.visibility,
+            assignees: team.assignees,
+            watchers: team.watchers,
+        }
+        .validate()?;
+        self.create_team_item_in(conn, actor, team.team_id, placed)
+            .await
+    }
+
     /// Creates an item owned by `team` (V12, TK4).
     ///
     /// # Errors
@@ -306,12 +395,82 @@ impl ItemsService {
             .insert_team_item(&mut *conn, actor, team, &new.item, new.visibility)
             .await?;
         for (person, relation) in new.people() {
-            self.access
-                .grant(&mut *conn, RelationTuple::new(item.id, relation, person))
+            self.add_member_in(&mut *conn, actor, item.id, person, relation)
+                .await?;
+        }
+        Ok(item)
+    }
+
+    /// Adds a teammate to a team item directly, without an invitation (TK2, T5.1.8): an
+    /// assignee or watcher, or a notebook's editor or viewer. Choosing someone else needs SHARE
+    /// on the item (V5: the role matrix); choosing oneself needs EDIT. Adding an existing member
+    /// again is a no-op.
+    ///
+    /// # Errors
+    /// [`AppError::NotFound`] for an item the actor cannot see, [`AppError::Forbidden`] without
+    /// the right, [`AppError::Validation`] for a personal item (it invites), a role the kind
+    /// does not have or someone outside the team, [`AppError::Conflict`] for an item in the
+    /// trash, or [`AppError::Internal`].
+    pub async fn add_team_member(
+        &self,
+        actor: Uuid,
+        item_id: Uuid,
+        user: Uuid,
+        role: InvitationRole,
+    ) -> Result<(), AppError> {
+        self.require(actor, item_id, Perms::VIEW).await?;
+        let needed = if user == actor {
+            Perms::EDIT
+        } else {
+            Perms::SHARE
+        };
+        self.require(actor, item_id, needed).await?;
+        let item = self.load(item_id).await?.ok_or(AppError::NotFound)?;
+        let crate::model::Owner::Team { team_id } = item.owner else {
+            return Err(invalid("user_id", "personal items invite people instead"));
+        };
+        if item.deleted_at.is_some() {
+            return Err(AppError::Conflict(
+                "the item is in the trash; restore it first".into(),
+            ));
+        }
+        if !role_allowed(&item.kind, role) {
+            return Err(invalid("role", "this item kind has no such role"));
+        }
+        if !self.teams.is_member(team_id, user).await? {
+            return Err(invalid("user_id", "not a member of this team"));
+        }
+        let mut tx = self.pool.begin().await.map_err(internal)?;
+        self.add_member_in(&mut tx, actor, item_id, user, relation_of(role))
+            .await?;
+        tx.commit().await.map_err(internal)
+    }
+
+    async fn add_member_in(
+        &self,
+        conn: &mut sqlx::PgConnection,
+        actor: Uuid,
+        item: Uuid,
+        user: Uuid,
+        relation: Relation,
+    ) -> Result<(), AppError> {
+        let added = self
+            .access
+            .grant(&mut *conn, RelationTuple::new(item, relation, user))
+            .await
+            .map_err(internal)?;
+        if added && user != actor {
+            let event = TeamMemberAdded {
+                item_id: item,
+                assigned_by: actor,
+                user_id: user,
+                role: role_of(relation),
+            };
+            db::outbox::publish(&mut *conn, &event)
                 .await
                 .map_err(internal)?;
         }
-        Ok(item)
+        Ok(())
     }
 
     /// A page in a team notebook, owned by the team (Y5). The caller has checked EDIT on the

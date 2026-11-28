@@ -148,6 +148,7 @@ impl World {
             .create(
                 owner,
                 CreateRoutineRequest {
+                    team: None,
                     title: "Su iç".into(),
                     description: None,
                     timezone: "Europe/Istanbul".into(),

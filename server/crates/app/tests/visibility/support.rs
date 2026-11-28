@@ -142,6 +142,11 @@ impl World {
 }
 
 impl World {
+    /// The identity service on this world's database (for services that need names).
+    pub(crate) fn identity_service(&self) -> identity::IdentityService {
+        self.identity()
+    }
+
     fn identity(&self) -> identity::IdentityService {
         identity::IdentityService::new(
             self.pool().clone(),

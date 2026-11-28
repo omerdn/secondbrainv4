@@ -33,6 +33,11 @@ pub struct CreateTaskRequest {
     #[serde(default)]
     #[ts(optional)]
     pub subtasks: Option<Vec<CreateSubtaskRequest>>,
+    /// The team that owns it, with its visibility and people (V12, TK4, T5.1.8); personal
+    /// when absent.
+    #[serde(default)]
+    #[ts(optional)]
+    pub team: Option<items::TeamPlacementRequest>,
 }
 
 /// `POST /tasks/{id}/subtasks` body.

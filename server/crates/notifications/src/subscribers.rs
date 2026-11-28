@@ -25,6 +25,8 @@ pub fn register(
     let (requests, request_names) = (notifications.clone(), identity.clone());
     let (assignments, assignment_items, assignment_names) =
         (notifications.clone(), items.clone(), identity.clone());
+    let (team_assignments, team_assignment_items, team_assignment_names) =
+        (notifications.clone(), items.clone(), identity.clone());
     let (removals, removal_names) = (notifications.clone(), identity.clone());
     let (owners, owner_items, owner_names) =
         (notifications.clone(), items.clone(), identity.clone());
@@ -211,6 +213,49 @@ pub fn register(
             }
         },
     );
+    // BL2, TK2 (T5.1.8): a teammate chose the user for a team item. Only while they still see it
+    // (V9): the title comes from the item as they see it now.
+    {
+        let (notifications, items, identity) = (
+            team_assignments,
+            team_assignment_items,
+            team_assignment_names,
+        );
+        dispatcher.subscribe(
+            "notifications.team-assignment",
+            move |event: items::TeamMemberAdded, stored| {
+                let (notifications, items, identity) =
+                    (notifications.clone(), items.clone(), identity.clone());
+                async move {
+                    let boxed = |err: kernel::AppError| Box::new(err) as HandlerError;
+                    let item = match items.get(event.user_id, event.item_id).await {
+                        Ok(item) => item,
+                        Err(kernel::AppError::NotFound) => return Ok(()),
+                        Err(err) => return Err(boxed(err)),
+                    };
+                    let from_name = identity
+                        .display_names(&[event.assigned_by])
+                        .await
+                        .map_err(boxed)?
+                        .remove(&event.assigned_by)
+                        .unwrap_or_default();
+                    let payload = NotificationPayload::Assignment {
+                        item_id: item.id,
+                        item_kind: item.kind,
+                        item_title: item.title,
+                        subtask_title: None,
+                        from_user: event.assigned_by,
+                        from_name,
+                    };
+                    notifications
+                        .deliver(event.user_id, &payload, stored.id)
+                        .await
+                        .map_err(boxed)?;
+                    Ok(())
+                }
+            },
+        );
+    }
     // T4.3.8: removed from an item. The person no longer sees it: only its title is told (V9).
     dispatcher.subscribe(
         "notifications.member-removed",

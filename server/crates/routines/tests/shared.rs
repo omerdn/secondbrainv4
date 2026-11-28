@@ -66,6 +66,7 @@ impl World {
             .create(
                 self.ali,
                 CreateRoutineRequest {
+                    team: None,
                     title: "Bulaşık".into(),
                     description: None,
                     timezone: "Europe/Istanbul".into(),
@@ -200,6 +201,7 @@ async fn r5_a_personal_routine_counts_its_owner() {
         .create(
             w.ali,
             CreateRoutineRequest {
+                team: None,
                 title: "Kitap".into(),
                 description: None,
                 timezone: "Europe/Istanbul".into(),

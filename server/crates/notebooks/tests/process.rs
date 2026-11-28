@@ -105,6 +105,7 @@ impl World {
             .create_tracker(
                 owner,
                 CreateTrackerRequest {
+                    team: None,
                     title: "Gitar".into(),
                     description: None,
                     unit: "dk".into(),

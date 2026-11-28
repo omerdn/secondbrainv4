@@ -212,6 +212,18 @@ export function endpoints(api: ApiClient) {
         body: { to_user: string; role: InvitationRole },
         options?: MutationOptions,
       ) => api.post<Invitation>(`/items/${encodeURIComponent(id)}/invitations`, body, options),
+      /** A teammate joins a team item directly, no invitation (PRD TK2, T5.1.8). */
+      addTeamMember: (
+        id: string,
+        userId: string,
+        body: { role: InvitationRole },
+        options?: MutationOptions,
+      ) =>
+        api.put<void>(
+          `/items/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`,
+          body,
+          options,
+        ),
       /** The owner removes anyone; a member removes only themselves (PRD V5). */
       removeMember: (id: string, userId: string, options?: MutationOptions) =>
         api.delete(

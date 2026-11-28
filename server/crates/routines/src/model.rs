@@ -53,6 +53,11 @@ pub struct CreateRoutineRequest {
     #[serde(default)]
     #[ts(optional)]
     pub rotation: Option<crate::rotation::RoutineRotation>,
+    /// The team that owns it, with its visibility and people (V12, TK4, T5.1.8); personal
+    /// when absent.
+    #[serde(default)]
+    #[ts(optional)]
+    pub team: Option<items::TeamPlacementRequest>,
 }
 
 /// `PATCH /routines/{id}` body: only the fields present change, and a `null` end date clears it.

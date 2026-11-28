@@ -31,6 +31,19 @@ impl SharingPolicy for Anyone {
     }
 }
 
+/// Everyone is in every team and may do anything there (T5.1.8).
+impl items::TeamDirectory for Anyone {
+    fn teams_of(&self, _user: Uuid) -> items::TeamsFuture<'_> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+    fn is_member(&self, _team: Uuid, _user: Uuid) -> items::TeamFuture<'_> {
+        Box::pin(async { Ok(true) })
+    }
+    fn may(&self, _actor: Uuid, _team: Uuid, _action: items::TeamAction) -> items::TeamFuture<'_> {
+        Box::pin(async { Ok(true) })
+    }
+}
+
 struct World {
     db: TestDb,
     clock: Arc<FixedClock>,
@@ -58,7 +71,8 @@ impl World {
         );
         let access = AccessEngine::new(ItemsAccessContext, AccessConfig::default());
         let items = ItemsService::new(pool.clone(), clock.clone(), access.clone())
-            .with_sharing(Arc::new(Anyone));
+            .with_sharing(Arc::new(Anyone))
+            .with_teams(Arc::new(Anyone));
         let routines = RoutinesService::new(
             pool.clone(),
             clock.clone(),
@@ -361,6 +375,7 @@ impl World {
             .create(
                 owner,
                 CreateRoutineRequest {
+                    team: None,
                     title: title.into(),
                     description: None,
                     timezone: "Europe/Istanbul".into(),
@@ -487,6 +502,7 @@ impl World {
             .create(
                 owner,
                 CreateRoutineRequest {
+                    team: None,
                     title: "Bulaşık".into(),
                     description: None,
                     timezone: "Europe/Istanbul".into(),
@@ -1234,6 +1250,7 @@ mod assignments {
                 .create(
                     ada,
                     tasks::CreateTaskRequest {
+                        team: None,
                         title: "Taşınma".into(),
                         description: None,
                         start_date: None,
@@ -1306,6 +1323,48 @@ mod assignments {
             w.assignments_of(ada).await.is_empty(),
             "no notice of one's own act"
         );
+    }
+
+    /// TK2, TK4 (T5.1.8): people chosen for a team item hear of it; choosing oneself is quiet.
+    #[tokio::test]
+    async fn bl2_team_assignments_are_told() {
+        let w = World::new().await;
+        let ada = w.user("ada@example.com", "Ada").await;
+        let bob = w.user("bob@example.com", "Bob").await;
+        let new = items::CreateTeamItemRequest {
+            kind: "task".into(),
+            title: "Sprint".into(),
+            description: None,
+            visibility: None,
+            assignees: Some(vec![bob, ada]),
+            watchers: None,
+        }
+        .validate()
+        .unwrap();
+        let item = w
+            .items
+            .create_team_item(ada, Uuid::now_v7(), new)
+            .await
+            .unwrap();
+        w.deliver().await;
+        w.redeliver_all().await;
+        let got = w.assignments_of(bob).await;
+        assert_eq!(got.len(), 1, "once, even after a redelivery");
+        let NotificationPayload::Assignment {
+            item_id,
+            item_title,
+            subtask_title,
+            from_name,
+            ..
+        } = &got[0]
+        else {
+            unreachable!()
+        };
+        assert_eq!(*item_id, item.id);
+        assert_eq!(item_title, "Sprint");
+        assert_eq!(*subtask_title, None);
+        assert_eq!(from_name, "Ada");
+        assert!(w.assignments_of(ada).await.is_empty());
     }
 
     #[tokio::test]
@@ -1489,6 +1548,7 @@ mod entry_reactions {
                 .create_tracker(
                     bob,
                     CreateTrackerRequest {
+                        team: None,
                         title: "Koşu".into(),
                         description: None,
                         unit: "km".into(),

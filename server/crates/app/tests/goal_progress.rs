@@ -63,6 +63,7 @@ async fn d5_a_routine_counts_only_inside_the_goal_and_tasks_weigh_in() {
         .create(
             me,
             CreateRoutineRequest {
+                team: None,
                 title: "Su".into(),
                 description: None,
                 timezone: "UTC".into(),
@@ -93,6 +94,7 @@ async fn d5_a_routine_counts_only_inside_the_goal_and_tasks_weigh_in() {
         .create(
             me,
             CreateTaskRequest {
+                team: None,
                 title: "Rapor".into(),
                 description: None,
                 start_date: None,
@@ -117,6 +119,7 @@ async fn d5_a_routine_counts_only_inside_the_goal_and_tasks_weigh_in() {
         .create(
             me,
             CreateGoalRequest {
+                team: None,
                 title: "Kasım sonu".into(),
                 description: None,
                 start_date: Some(day(23)),

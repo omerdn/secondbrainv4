@@ -169,6 +169,7 @@ impl World {
             .create(
                 owner,
                 CreateTaskRequest {
+                    team: None,
                     title: title.into(),
                     description: None,
                     start_date: start,
@@ -192,6 +193,7 @@ impl World {
             .create(
                 owner,
                 CreateRoutineRequest {
+                    team: None,
                     title: title.into(),
                     description: None,
                     timezone: zone.into(),
@@ -215,6 +217,7 @@ impl World {
             .create(
                 owner,
                 CreateGoalRequest {
+                    team: None,
                     title: title.into(),
                     description: None,
                     start_date: Some(start),
@@ -394,6 +397,7 @@ async fn h5_resume_lists_recent_items_with_their_status_lines() {
         .create_tracker(
             ada,
             CreateTrackerRequest {
+                team: None,
                 title: "Gitar".into(),
                 description: None,
                 unit: "dk".into(),
