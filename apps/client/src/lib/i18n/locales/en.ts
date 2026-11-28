@@ -118,6 +118,7 @@ export const en: Catalog = {
       date: "Date",
       dateField: "Date of",
       person: "Person",
+      team: "Team",
     },
     states: { active: "Active", archived: "Archive", trash: "Trash" },
     statuses: { open: "Open", done: "Done" },

@@ -120,6 +120,7 @@ export const tr = {
       date: "Tarih",
       dateField: "Tarihe göre",
       person: "Kişi",
+      team: "Takım",
     },
     states: { active: "Aktif", archived: "Arşiv", trash: "Çöp" },
     statuses: { open: "Açık", done: "Tamamlandı" },
