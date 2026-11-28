@@ -624,6 +624,8 @@ Her spike'ın sonucu bir ADR olarak yazılır.
   - 1000 üye ve 50 bin nesne
 - **T5.2.5** · Takım nesnesi oluşturma ve görünürlük modu · client · M
   - T5.1.3'ten çıktı; sahip seçimi, mod, sorumlular ve izleyiciler; genişletmeden önce uyarı (V12, V7)
+- **T5.2.6** · Takıma e-postayla davet · backend · S
+  - T5.2.1 için; hesap varlığı sızmaz (TK2, AK2)
 
 ---
 

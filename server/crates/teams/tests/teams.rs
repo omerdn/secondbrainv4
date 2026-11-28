@@ -412,3 +412,64 @@ async fn tk7_leaving_and_removing_members() {
     let left = w.teams.team(ada, team).await.unwrap();
     assert_eq!(left.members.len(), 2, "Ada and Bob remain");
 }
+
+/// T5.2.6: inviting by address. Rights come first; after that the answer is the same whether the
+/// address has an account, is invited already or is already in the team (TK2, V9).
+#[tokio::test]
+async fn tk2_invite_by_email_does_not_reveal_accounts() {
+    use teams::InviteToTeamByEmailRequest as ByEmail;
+    let w = World::new().await;
+    let ada = w.user("ada@example.com", "Ada").await;
+    let bob = w.user("bob@example.com", "Bob").await;
+    let cem = w.user("cem@example.com", "Cem").await;
+    let team = w.team(ada).await;
+    let by = |email: &str, role| ByEmail {
+        email: email.into(),
+        role,
+    };
+
+    w.teams
+        .invite_by_email(ada, team, by(" Bob@Example.com ", TeamRole::Member))
+        .await
+        .unwrap();
+    let invitations = w.teams.invitations(bob).await.unwrap();
+    assert_eq!(invitations.len(), 1);
+    // The same 204 for an unknown address, a repeated invitation, and a member.
+    for email in ["nobody@example.com", "bob@example.com"] {
+        w.teams
+            .invite_by_email(ada, team, by(email, TeamRole::Member))
+            .await
+            .unwrap();
+    }
+    assert_eq!(w.teams.invitations(bob).await.unwrap().len(), 1);
+    w.teams.accept(bob, team).await.unwrap();
+    w.teams
+        .invite_by_email(ada, team, by("bob@example.com", TeamRole::Member))
+        .await
+        .unwrap();
+
+    // Rights are checked before the address is looked at.
+    for email in ["cem@example.com", "nobody@example.com"] {
+        assert!(matches!(
+            w.teams
+                .invite_by_email(bob, team, by(email, TeamRole::Member))
+                .await,
+            Err(AppError::Forbidden)
+        ));
+        assert!(matches!(
+            w.teams
+                .invite_by_email(cem, team, by(email, TeamRole::Member))
+                .await,
+            Err(AppError::NotFound)
+        ));
+    }
+    assert!(w.teams.invitations(cem).await.unwrap().is_empty());
+    for email in ["not-an-address", "ada@example.com"] {
+        assert!(matches!(
+            w.teams
+                .invite_by_email(ada, team, by(email, TeamRole::Member))
+                .await,
+            Err(AppError::Validation(_))
+        ));
+    }
+}
