@@ -76,6 +76,15 @@ const filterOf = (call: Call): unknown =>
 const filterCalls = (calls: Call[]) =>
   calls.filter((call) => call.path.startsWith("/items/filter")).map(filterOf);
 
+const team = {
+  id: "team-1",
+  name: "Ekip",
+  color: "#16a34a",
+  logo_url: null,
+  role: "member" as const,
+  created_at: at,
+};
+
 const writes = (calls: Call[]) => calls.filter((call) => call.method !== "GET");
 
 function server(views: SavedView[] = [], extra: Record<string, (call: Call) => Response> = {}) {
@@ -206,6 +215,29 @@ describe("filter bar", () => {
     });
   });
 
+  it("filters by the user's teams (F1, T5.1.7)", async () => {
+    const s = server([], { "GET /teams": () => json(200, [team]) });
+    await open(s, "/views");
+    await screen.findByRole("button", { name: "Görev: Rapor yaz" });
+    expect(await screen.findByText("Takım")).toBeTruthy();
+    // Team chips use the team style.
+    expect(screen.getByText("# Ekip")).toBeTruthy();
+    await fireEvent.press(screen.getByRole("button", { name: "Ekip" }));
+    await waitFor(() => {
+      expect(filterCalls(s.calls)).toContainEqual({ team_ids: ["team-1"] });
+    });
+  });
+
+  it("shows no team row for someone in no team", async () => {
+    const s = server([], { "GET /teams": () => json(200, []) });
+    await open(s, "/views");
+    await screen.findByRole("button", { name: "Görev: Rapor yaz" });
+    await waitFor(() => {
+      expect(s.calls.some((call) => call.path === "/teams")).toBe(true);
+    });
+    expect(screen.queryByText("Takım")).toBeNull();
+  });
+
   it("offers only friends as people (F3)", async () => {
     const s = server([], { "GET /friends": () => json(200, []) });
     await open(s, "/views");
@@ -296,6 +328,20 @@ describe("saved views (F2)", () => {
           date: { field: "updated", last_days: 30 },
           statuses: ["open"],
         },
+      });
+    });
+  });
+
+  it("keeps the team in a saved view (F2, T5.1.7)", async () => {
+    const s = server([], { "GET /teams": () => json(200, [team]) });
+    await open(s, "/views");
+    await fireEvent.press(await screen.findByRole("button", { name: "Ekip" }));
+    await saveAs("Ekip işleri");
+    await waitFor(() => {
+      expect(writes(s.calls)[0]?.body).toEqual({
+        name: "Ekip işleri",
+        pinned: true,
+        filter: { team_ids: ["team-1"] },
       });
     });
   });
